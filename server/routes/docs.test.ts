@@ -10,6 +10,7 @@ import { registerDocRoutes } from "./docs.js";
 
 describe("GET /api/docs", () => {
   let repoDir: string;
+  let otherRepoDir: string;
   let db: Database.Database;
   let app: FastifyInstance;
 
@@ -18,12 +19,17 @@ describe("GET /api/docs", () => {
     mkdirSync(join(repoDir, ".pHive", "planning"), { recursive: true });
     writeFileSync(join(repoDir, ".pHive", "planning", "prd.md"), "# PRD\n\nhello world");
 
+    otherRepoDir = mkdtempSync(join(tmpdir(), "consus-other-repo-"));
+    mkdirSync(join(otherRepoDir, ".pHive", "planning"), { recursive: true });
+    writeFileSync(join(otherRepoDir, ".pHive", "planning", "architecture.md"), "# Architecture\n\nother project doc");
+
     db = new Database(":memory:");
     runMigration(db);
     scanRepo(db, { repoName: "consus", repoPath: repoDir });
+    scanRepo(db, { repoName: "other-project", repoPath: otherRepoDir });
 
     app = Fastify();
-    registerDocRoutes(app, { db, repos: { consus: repoDir } });
+    registerDocRoutes(app, { db, repos: { consus: repoDir, "other-project": otherRepoDir } });
     await app.ready();
   });
 
@@ -31,14 +37,24 @@ describe("GET /api/docs", () => {
     await app.close();
     db.close();
     rmSync(repoDir, { recursive: true, force: true });
+    rmSync(otherRepoDir, { recursive: true, force: true });
   });
 
-  it("lists docs grouped by repo/epic/phase", async () => {
+  it("lists docs grouped by repo/epic/phase across every configured project by default", async () => {
     const res = await app.inject({ method: "GET", url: "/api/docs" });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.consus).toBeDefined();
     expect(body.consus.planning).toBeDefined();
+    expect(body["other-project"]).toBeDefined();
+  });
+
+  it("scopes to a single project via ?project=, excluding every other project (REQ-27)", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/docs?project=consus" });
+    const body = res.json();
+
+    expect(body.consus).toBeDefined();
+    expect(body["other-project"]).toBeUndefined();
   });
 
   it("returns formatted content for a specific doc", async () => {

@@ -130,4 +130,5 @@ export function runMigration(db: Database.Database): void {
   addColumnIfMissing(db, "items", "decision_type", "TEXT");
   addColumnIfMissing(db, "items", "triage_bucket", "TEXT");
   addColumnIfMissing(db, "human_requests", "survey_id", "INTEGER REFERENCES surveys(id)");
+  addColumnIfMissing(db, "kb_entries", "source_repo", "TEXT");
 }

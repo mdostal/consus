@@ -20,9 +20,12 @@ interface GroupedDocs {
 }
 
 export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutesOptions): void {
-  app.get("/api/docs", async () => {
+  app.get<{ Querystring: { project?: string } }>("/api/docs", async (request) => {
+    const { project } = request.query;
+    const scopedRepos = project ? Object.keys(repos).filter((r) => r === project) : Object.keys(repos);
+
     const grouped: GroupedDocs = {};
-    for (const repo of Object.keys(repos)) {
+    for (const repo of scopedRepos) {
       grouped[repo] = {};
       for (const row of queryDocIndex(db, repo)) {
         const phase = row.phase ?? "unphased";

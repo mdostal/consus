@@ -1,0 +1,27 @@
+story_id: survey-queue-ui
+epic_id: consus-phase2-survey-kb-api
+methodology: bdd
+steps:
+  - id: research
+    status: complete
+    note: Confirmed survey progress API from minerva-survey-batching and DecisionCard's props.
+  - id: behavior-spec
+    status: complete
+    note: 4 tests — grouped rendering, batch progress display, shared-DecisionCard reuse, onAnswer callback with question id + verdict.
+  - id: ui-design
+    status: deferred
+    note: /design not run live this session, consistent with every prior UI story.
+  - id: implement
+    status: complete
+    note: web/src/features/minerva/SurveyGroup.tsx — wraps DecisionCard per sub-question with a grouping shell + progress header.
+  - id: test
+    status: complete
+    note: All 4 component tests pass.
+  - id: review
+    status: complete
+    note: All 106 project tests pass; npm run build succeeds.
+  - id: integrate
+    status: complete
+    note: Committed to feat/consus-phase2-survey-kb-api.
+verdict: pass-with-deferred-design-pass
+finished_at: "2026-07-25T22:20:00Z"

@@ -29,17 +29,26 @@ export function registerKbRoutes(app: FastifyInstance, { db }: KbRoutesOptions):
 
   // REQ-09 (P1 stretch): full KB backlog browse (search/filter across ALL
   // entries) + direct edit, versioned like every other write.
-  app.get<{ Querystring: { q?: string } }>("/api/kb-entries", async (request) => {
-    const { q } = request.query;
+  // REQ-27: optional ?project= scopes to one project's entries; omitted
+  // returns every project's entries (the "global" cross-project case).
+  app.get<{ Querystring: { q?: string; project?: string } }>("/api/kb-entries", async (request) => {
+    const { q, project } = request.query;
+
     if (q) {
-      return db
-        .prepare(
-          `SELECT DISTINCT e.* FROM kb_entries e
-           JOIN kb_versions v ON v.kb_entry_id = e.id
-           WHERE e.title LIKE ? OR v.content LIKE ?
-           ORDER BY e.created_at DESC`,
-        )
-        .all(`%${q}%`, `%${q}%`);
+      const params: string[] = [`%${q}%`, `%${q}%`];
+      let sql = `SELECT DISTINCT e.* FROM kb_entries e
+                 JOIN kb_versions v ON v.kb_entry_id = e.id
+                 WHERE (e.title LIKE ? OR v.content LIKE ?)`;
+      if (project) {
+        sql += " AND e.source_repo = ?";
+        params.push(project);
+      }
+      sql += " ORDER BY e.created_at DESC";
+      return db.prepare(sql).all(...params);
+    }
+
+    if (project) {
+      return db.prepare("SELECT * FROM kb_entries WHERE source_repo = ? ORDER BY created_at DESC").all(project);
     }
     return db.prepare("SELECT * FROM kb_entries ORDER BY created_at DESC").all();
   });

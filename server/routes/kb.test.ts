@@ -58,8 +58,8 @@ describe("KB backlog — search/filter + direct edit (REQ-09, P1)", () => {
   beforeEach(async () => {
     db = new Database(":memory:");
     runMigration(db);
-    createKbEntry(db, { id: "kb-1", title: "Adopt React Flow", author: "mathew", content: "decision content about React Flow" });
-    createKbEntry(db, { id: "kb-2", title: "OTEL telemetry backend", author: "mathew", content: "decision content about OTEL" });
+    createKbEntry(db, { id: "kb-1", title: "Adopt React Flow", author: "mathew", content: "decision content about React Flow", sourceRepo: "consus" });
+    createKbEntry(db, { id: "kb-2", title: "OTEL telemetry backend", author: "mathew", content: "decision content about OTEL", sourceRepo: "other-project" });
 
     app = Fastify();
     registerKbRoutes(app, { db });
@@ -79,9 +79,25 @@ describe("KB backlog — search/filter + direct edit (REQ-09, P1)", () => {
     expect(body[0].id).toBe("kb-1");
   });
 
-  it("returns every kb_entry when no filter is given", async () => {
+  it("returns every kb_entry when no filter is given (the global cross-project case)", async () => {
     const res = await app.inject({ method: "GET", url: "/api/kb-entries" });
     expect(res.json()).toHaveLength(2);
+  });
+
+  it("scopes to a single project via ?project=, excluding every other project's entries (REQ-27)", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/kb-entries?project=consus" });
+    const body = res.json();
+
+    expect(body).toHaveLength(1);
+    expect(body[0].id).toBe("kb-1");
+  });
+
+  it("combines ?project= with ?q= search scoping", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/kb-entries?project=other-project&q=OTEL" });
+    const body = res.json();
+
+    expect(body).toHaveLength(1);
+    expect(body[0].id).toBe("kb-2");
   });
 
   it("edits a kb_entry directly (outside the comment/decide flow), versioned per REQ-08", async () => {
