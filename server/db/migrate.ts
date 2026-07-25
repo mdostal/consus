@@ -85,6 +85,17 @@ export function runMigration(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_human_requests_minerva_id ON human_requests(minerva_question_id);
+
+    CREATE TABLE IF NOT EXISTS comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id TEXT NOT NULL REFERENCES items(id),
+      author TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      multica_comment_id TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_comments_item_id ON comments(item_id);
   `);
 
   // Guarded ALTER TABLE for columns added after a table already existed on
