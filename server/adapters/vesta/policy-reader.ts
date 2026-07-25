@@ -1,11 +1,11 @@
 /**
  * Vesta Policy Adapter — read-only client resolving auto-accept vs.
  * human-gate per item (REQ-13). "Vesta owns the SETTING (the knob)...
- * Delphi is the SURFACE + ENFORCER" (docs/prior-art.md §2).
+ * Consus is the SURFACE + ENFORCER" (docs/prior-art.md §2).
  *
  * RISK: no local Vesta repo/spec exists as of this reconciliation — same
  * adapter-first, schema-pending treatment as Auriga. This class exposes no
- * policy-configuration method by design; Delphi never owns the setting.
+ * policy-configuration method by design; Consus never owns the setting.
  */
 
 export type VestaFlag = "strategic" | "ambiguous" | "irreversible" | string;

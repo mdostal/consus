@@ -1,9 +1,9 @@
 {
-  "name": "delphi",
+  "name": "consus",
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Delphi — the Pantheon's rendered doc/decision surface",
+  "description": "Consus — the Pantheon's rendered doc/decision surface",
   "scripts": {
     "dev:web": "vite",
     "dev:server": "tsx watch server/index.ts",

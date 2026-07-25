@@ -23,7 +23,7 @@ export interface LivingDocView {
 }
 
 /**
- * REQ-10 (P1 stretch): Delphi's own rendered overlay, composing references
+ * REQ-10 (P1 stretch): Consus's own rendered overlay, composing references
  * from Multica (via the local comments cache) + .pHive/planning (via the
  * Doc Scanner) + the idea board. An overlay, not a copy of Multica's
  * board/task-state schema — it carries no board/task fields, only

@@ -15,8 +15,8 @@ export interface CommentThreadProps {
 /**
  * REQ-04: item-type-agnostic comment/chat thread, attached to any item view
  * (docs, human_requests, KB entries). Renders identically whether a comment
- * originated in Delphi or another Multica-connected surface — it just reads
- * author/body/createdAt, with no Delphi-origin-only fields.
+ * originated in Consus or another Multica-connected surface — it just reads
+ * author/body/createdAt, with no Consus-origin-only fields.
  */
 export function CommentThread({ comments, onSubmit }: CommentThreadProps) {
   const [draft, setDraft] = useState("");

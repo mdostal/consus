@@ -33,7 +33,7 @@ function itemIdFor(minervaQuestionId: string): string {
  * item, and populate a decision_payload translation (REQ-11) so it renders
  * through decision-card-renderer-ui's shared path instead of a bespoke UI.
  * Unknown channels are preserved as-is (default/catch-all queue behavior —
- * "unknown" just means Delphi has no dedicated UI section for it yet, the
+ * "unknown" just means Consus has no dedicated UI section for it yet, the
  * data is never dropped).
  */
 export function ingestQuestion(db: Database.Database, question: Question): void {
@@ -84,7 +84,7 @@ export interface AnswerHumanRequestInput {
 }
 
 /**
- * Answering a human_request in Delphi writes the new status locally AND
+ * Answering a human_request in Consus writes the new status locally AND
  * calls back to Minerva so Question.status stays in sync in both
  * directions (REQ-01 acceptance criterion).
  */
@@ -110,7 +110,7 @@ export async function answerHumanRequest(
 
   const result = await transport.invoke("answerQuestion", { id: minervaQuestionId, answer });
   if (!result.ok && !result.recoverable) {
-    // Local state is already updated (Delphi is the source of truth for the
+    // Local state is already updated (Consus is the source of truth for the
     // operator's answer); a non-recoverable write-back failure is logged,
     // not thrown — REQ-01 requires status sync, but a Minerva-side outage
     // must not lose the operator's answer.

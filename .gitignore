@@ -18,8 +18,8 @@ build/
 
 # Hive epics — blanket-ignored, allowlisted per epic below
 .pHive/epics/*
-!.pHive/epics/delphi-v1-core-loop/
-!.pHive/epics/delphi-v1-core-loop/**
+!.pHive/epics/consus-v1-core-loop/
+!.pHive/epics/consus-v1-core-loop/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/

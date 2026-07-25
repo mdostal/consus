@@ -2,32 +2,32 @@
    hardcoded light-only or dark-only styling anywhere downstream. */
 
 :root {
-  --delphi-bg: #f5f0e8;
-  --delphi-bg-subtle: #efe8dc;
-  --delphi-ink: #241d14;
-  --delphi-ink-muted: #5a4f40;
-  --delphi-accent: #b96e3a;
-  --delphi-good: #3f7a3a;
-  --delphi-warn: #9c7420;
-  --delphi-bad: #a5433b;
-  --delphi-line: #e3d8c6;
+  --consus-bg: #f5f0e8;
+  --consus-bg-subtle: #efe8dc;
+  --consus-ink: #241d14;
+  --consus-ink-muted: #5a4f40;
+  --consus-accent: #b96e3a;
+  --consus-good: #3f7a3a;
+  --consus-warn: #9c7420;
+  --consus-bad: #a5433b;
+  --consus-line: #e3d8c6;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --delphi-bg: #14110e;
-    --delphi-bg-subtle: #1b1713;
-    --delphi-ink: #f3ece2;
-    --delphi-ink-muted: #c7bbaa;
-    --delphi-accent: #d68a55;
-    --delphi-good: #79b072;
-    --delphi-warn: #d8a24a;
-    --delphi-bad: #c97b74;
-    --delphi-line: #332a20;
+    --consus-bg: #14110e;
+    --consus-bg-subtle: #1b1713;
+    --consus-ink: #f3ece2;
+    --consus-ink-muted: #c7bbaa;
+    --consus-accent: #d68a55;
+    --consus-good: #79b072;
+    --consus-warn: #d8a24a;
+    --consus-bad: #c97b74;
+    --consus-line: #332a20;
   }
 }
 
 body {
-  background: var(--delphi-bg);
-  color: var(--delphi-ink);
+  background: var(--consus-bg);
+  color: var(--consus-ink);
 }

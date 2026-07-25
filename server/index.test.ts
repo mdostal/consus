@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { buildServer } from "./index.js";
 
 describe("GET /health", () => {
-  const dbPath = join(mkdtempSync(join(tmpdir(), "delphi-test-")), "delphi.sqlite");
+  const dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
 
   afterAll(() => {
     if (existsSync(dbPath)) {

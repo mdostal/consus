@@ -12,13 +12,13 @@ describe("composeLivingDoc", () => {
   let db: Database.Database;
 
   beforeEach(() => {
-    repoDir = mkdtempSync(join(tmpdir(), "delphi-repo-"));
+    repoDir = mkdtempSync(join(tmpdir(), "consus-repo-"));
     mkdirSync(join(repoDir, ".pHive", "planning"), { recursive: true });
     writeFileSync(join(repoDir, ".pHive", "planning", "architecture.md"), "# Architecture\n\nplan content");
 
     db = new Database(":memory:");
     runMigration(db);
-    scanRepo(db, { repoName: "delphi", repoPath: repoDir });
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
 
     const now = new Date().toISOString();
     db.prepare(
@@ -35,7 +35,7 @@ describe("composeLivingDoc", () => {
   });
 
   it("composes references from Doc Scanner + local Multica-backed comments into one view", () => {
-    const view = composeLivingDoc(db, { repoName: "delphi", repoPath: repoDir, itemId: "item-1" });
+    const view = composeLivingDoc(db, { repoName: "consus", repoPath: repoDir, itemId: "item-1" });
 
     expect(view.docs).toHaveLength(1);
     expect(view.docs[0].file_path).toContain("architecture.md");
@@ -44,23 +44,23 @@ describe("composeLivingDoc", () => {
   });
 
   it("reflects current state on re-composition, not a one-time snapshot", () => {
-    composeLivingDoc(db, { repoName: "delphi", repoPath: repoDir, itemId: "item-1" });
+    composeLivingDoc(db, { repoName: "consus", repoPath: repoDir, itemId: "item-1" });
 
     writeFileSync(join(repoDir, ".pHive", "planning", "prd.md"), "# PRD\n\nnew doc");
-    scanRepo(db, { repoName: "delphi", repoPath: repoDir });
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
 
-    const view = composeLivingDoc(db, { repoName: "delphi", repoPath: repoDir, itemId: "item-1" });
+    const view = composeLivingDoc(db, { repoName: "consus", repoPath: repoDir, itemId: "item-1" });
     expect(view.docs).toHaveLength(2);
   });
 
   it("flags the idea board source as unavailable rather than silently omitting it", () => {
-    const view = composeLivingDoc(db, { repoName: "delphi", repoPath: repoDir, itemId: "item-1" });
+    const view = composeLivingDoc(db, { repoName: "consus", repoPath: repoDir, itemId: "item-1" });
 
     expect(view.ideaBoard).toEqual({ available: false, reason: "idea board integration point not yet specified" });
   });
 
   it("is confirmed distinct from Multica's board/task-state schema — an overlay, not a copy", () => {
-    const view = composeLivingDoc(db, { repoName: "delphi", repoPath: repoDir, itemId: "item-1" });
+    const view = composeLivingDoc(db, { repoName: "consus", repoPath: repoDir, itemId: "item-1" });
 
     // The overlay is a composed read-model; it carries no Multica board/task
     // fields (e.g. no `assignee`, `column`, `sprint`) — only references.

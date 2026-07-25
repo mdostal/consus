@@ -1,11 +1,19 @@
 # Delphi — Prior Art (seed for the greenfield build)
 
+> **Renamed 2026-07-25: the project this doc informed is now called Consus** (see
+> `docs/consus-definition.md`, `docs/north-star.md`). Every "Delphi" / `/delphi` reference
+> below is preserved as-is because it describes the **actual prior codebase's real names**
+> (routes, file paths, storage keys on the hive host) — renaming them here would misstate
+> where that code actually lives. Read "Delphi" throughout this doc as "Consus's
+> predecessor," not as this project's current name.
+
 _Purpose: this doc exists so `/hive:plan` **pulls apart the prior Delphi work** instead of
 starting from a blank page. There is a real, Playwright-verified prior `/delphi` surface and a
 large body of accumulated design decisions. Read this first; mine the prior code where it says
 LIFT, rebuild clean where it says REDO._
 
 > Provisional name. "Delphi" renames once it works — don't over-invest in the branding.
+> (It did: this project is now Consus.)
 
 ---
 

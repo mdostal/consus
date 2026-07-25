@@ -1,7 +1,7 @@
 /**
  * votem Router — hands quorum-scoped items to votem and surfaces its
  * resulting state; never implements voting itself (REQ-14). "votem is the
- * MECHANISM Delphi routes to when policy says quorum" (docs/prior-art.md §2).
+ * MECHANISM Consus routes to when policy says quorum" (docs/prior-art.md §2).
  *
  * RISK: no local votem repo/spec exists as of this reconciliation — same
  * adapter-first, schema-pending treatment as Vesta/Auriga.

@@ -22,7 +22,7 @@ describe("runMigration", () => {
   });
 
   it("creates the base items and audit_log tables", () => {
-    dbPath = join(mkdtempSync(join(tmpdir(), "delphi-test-")), "delphi.sqlite");
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
     const db = new Database(dbPath);
 
     runMigration(db);
@@ -35,7 +35,7 @@ describe("runMigration", () => {
   });
 
   it("is idempotent — running twice does not error or duplicate tables", () => {
-    dbPath = join(mkdtempSync(join(tmpdir(), "delphi-test-")), "delphi.sqlite");
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
     const db = new Database(dbPath);
 
     runMigration(db);
@@ -50,7 +50,7 @@ describe("runMigration", () => {
   });
 
   it("preserves existing rows across a second migration run", () => {
-    dbPath = join(mkdtempSync(join(tmpdir(), "delphi-test-")), "delphi.sqlite");
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
     const db = new Database(dbPath);
 
     runMigration(db);

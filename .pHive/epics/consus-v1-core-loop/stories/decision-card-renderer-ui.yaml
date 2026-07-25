@@ -1,0 +1,97 @@
+id: decision-card-renderer-ui
+epic: consus-v1-core-loop
+title: Decision Card Renderer — theme-aware baseline UX (REQ-15)
+status: pending
+complexity: high
+methodology: bdd
+depends_on: [decision-request-v1-contract]
+
+description: |
+  Implement REQ-15 and the frontend half of REQ-11: a shared decision-card
+  component that every other UI story (doc-browser-ui, kb-decide-ui,
+  minerva-qa-queue-ui) builds on rather than each inventing its own item view.
+  Renders the AnswerShape-driven primary control (yes/no, option cards,
+  checklist, redline editor, single greenlight) per decision-request-v1-contract,
+  plus the baseline visual contract from docs/north-star.md's rendering-
+  requirement addition: theme-aware light/dark tokens, status/severity pills,
+  collapsible source docs, scoped-scroll for wide content.
+
+  This story intentionally comes BEFORE doc-browser-ui/kb-decide-ui/
+  minerva-qa-queue-ui in the dependency graph (a resequencing from the original
+  epic plan) so those stories consume one shared rendering primitive instead of
+  three divergent ones.
+
+acceptance_criteria:
+  - "Given any decision item, when rendered, then it appears as a decision card: a question + a recommendation + an answer slot (the go/no-go pattern)."
+  - "Given the operator's system/app theme is light or dark, when Consus renders, then all surfaces use theme-aware tokens — no hardcoded light-only or dark-only styling."
+  - "Given an item has a status or severity (P0/P1, in-flight/dropped, ready/seed, etc.), when rendered, then it displays as a pill, not buried in prose."
+  - "Given a source doc is long, when displayed alongside a decision, then it renders as a collapsible block, not an always-expanded wall of text."
+  - "Given wide content (tables, diagrams), when rendered, then it scrolls within its own container — the page itself never scrolls horizontally."
+  - "Given an item's decision_payload AnswerShape, when the card renders, then the primary control matches (yes/no buttons, option cards, checklist, redline editor, or single greenlight) — never a lone generic 'Approve' button standing in for an actual decision."
+
+steps:
+  - id: research
+    description: Confirm the decision_payload/AnswerShape contract from decision-request-v1-contract and review the three hand-built precedent artifacts named in north-star.md's rendering-requirement addition (CADEX deep-dive, gig go/no-go, Consus/Heimdall setup) for the concrete visual bar.
+    agent: researcher
+  - id: behavior-spec
+    description: Write Given/When/Then specs for card rendering, theme-awareness, pills, collapsible sources, and scoped-scroll, derived from this story's acceptance criteria.
+    agent: tester
+    depends_on: [research]
+  - id: ui-design
+    description: Delegate to /design for wireframes (atomic external call; see skills/design/SKILL.md). Deferred — not run live during planning; run /design against this story before implementation, prioritized given this is the shared rendering primitive every other UI story depends on.
+    agent: ui-designer
+    delegates_to: design
+    depends_on: [research]
+  - id: implement
+    description: Implement the DecisionCard component family to satisfy the behavior specs and /design wireframe output.
+    agent: developer
+    depends_on: [behavior-spec, ui-design]
+  - id: test
+    description: Derive test cases from behavior specs and verify they pass.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Review implementation, behavior specs, and tests for correctness.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Code/consus
+  tech_stack:
+    frontend: react+vite
+
+files_to_modify:
+  - file: web/src/features/decisions/DecisionCard.tsx
+    change: Create — the shared card shell (question/recommendation/answer-slot/pills/collapsible-source).
+  - file: web/src/features/decisions/answer-shapes/
+    change: Create — one control component per AnswerShape (YesNo, ChooseOne, Survey, Edit, Approve).
+  - file: web/src/theme/tokens.ts
+    change: Create — light/dark theme-aware design tokens.
+
+code_examples: []  # First shared UI primitive in the epic — no prior pattern to reference yet.
+
+design_decisions:
+  - decision: This story is a dependency of doc-browser-ui/kb-decide-ui/minerva-qa-queue-ui, resequenced ahead of them.
+    rationale: Avoids three UI stories each inventing their own item-rendering pattern; matches prior-art.md's explicit call to make decision-request/v1 "the primary contract, not the fallback."
+
+cross_cutting:
+  - concern: documentation
+    action: "Add 'DecisionCard', 'AnswerShape controls' to CONTEXT.md; cross-reference the three precedent artifacts named in north-star.md as canonical visual references."
+
+risks:
+  - severity: medium
+    description: "Agent-ready checklist gap: /design wireframes deferred, not produced during this planning session — flagged as highest-priority /design pass given downstream stories depend on this one's output shape."
+    mitigation: "Run /design for this story before any dependent story's implement step starts."
+
+references:
+  - path: docs/north-star.md
+    relevant_excerpt: |
+      Baseline UX requirements drawn from those precedents: Real typographic
+      hierarchy; theme-aware tokens (light + dark). Decision cards — a question
+      + a recommendation + an answer slot (the go/no-go pattern). Status/severity
+      pills. Collapsible source docs; scannable tables; scoped-scroll for wide
+      content. One readable page per artifact.

@@ -7,7 +7,7 @@ export interface ArtifactLinkRoutesOptions {
 
 /**
  * REQ-05: store/serve claude.ai Artifact URLs associated with items, no
- * re-rendering — Delphi links, it does not reimplement the Artifact renderer.
+ * re-rendering — Consus links, it does not reimplement the Artifact renderer.
  */
 export function registerArtifactLinkRoutes(app: FastifyInstance, { db }: ArtifactLinkRoutesOptions): void {
   app.post<{ Params: { id: string }; Body: { url: string; label?: string } }>(

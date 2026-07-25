@@ -14,16 +14,16 @@ describe("GET /api/docs", () => {
   let app: FastifyInstance;
 
   beforeEach(async () => {
-    repoDir = mkdtempSync(join(tmpdir(), "delphi-repo-"));
+    repoDir = mkdtempSync(join(tmpdir(), "consus-repo-"));
     mkdirSync(join(repoDir, ".pHive", "planning"), { recursive: true });
     writeFileSync(join(repoDir, ".pHive", "planning", "prd.md"), "# PRD\n\nhello world");
 
     db = new Database(":memory:");
     runMigration(db);
-    scanRepo(db, { repoName: "delphi", repoPath: repoDir });
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
 
     app = Fastify();
-    registerDocRoutes(app, { db, repos: { delphi: repoDir } });
+    registerDocRoutes(app, { db, repos: { consus: repoDir } });
     await app.ready();
   });
 
@@ -37,14 +37,14 @@ describe("GET /api/docs", () => {
     const res = await app.inject({ method: "GET", url: "/api/docs" });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.delphi).toBeDefined();
-    expect(body.delphi.planning).toBeDefined();
+    expect(body.consus).toBeDefined();
+    expect(body.consus.planning).toBeDefined();
   });
 
   it("returns formatted content for a specific doc", async () => {
     const res = await app.inject({
       method: "GET",
-      url: `/api/docs/content?repo=delphi&path=${encodeURIComponent(join(".pHive", "planning", "prd.md"))}`,
+      url: `/api/docs/content?repo=consus&path=${encodeURIComponent(join(".pHive", "planning", "prd.md"))}`,
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();

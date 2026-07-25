@@ -6,14 +6,14 @@
  */
 export const tokens = {
   color: {
-    bg: "var(--delphi-bg)",
-    bgSubtle: "var(--delphi-bg-subtle)",
-    ink: "var(--delphi-ink)",
-    inkMuted: "var(--delphi-ink-muted)",
-    accent: "var(--delphi-accent)",
-    good: "var(--delphi-good)",
-    warn: "var(--delphi-warn)",
-    bad: "var(--delphi-bad)",
-    line: "var(--delphi-line)",
+    bg: "var(--consus-bg)",
+    bgSubtle: "var(--consus-bg-subtle)",
+    ink: "var(--consus-ink)",
+    inkMuted: "var(--consus-ink-muted)",
+    accent: "var(--consus-accent)",
+    good: "var(--consus-good)",
+    warn: "var(--consus-warn)",
+    bad: "var(--consus-bad)",
+    line: "var(--consus-line)",
   },
 } as const;

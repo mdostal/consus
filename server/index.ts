@@ -38,11 +38,11 @@ export function buildServer({ dbPath, repos = {} }: BuildServerOptions): Fastify
 const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
   const port = Number(process.env.PORT ?? 8722);
-  const dbPath = process.env.DELPHI_DB_PATH ?? ".pHive/delphi.sqlite";
-  const repos = { delphi: process.cwd() };
+  const dbPath = process.env.CONSUS_DB_PATH ?? ".pHive/consus.sqlite";
+  const repos = { consus: process.cwd() };
   const app = buildServer({ dbPath, repos });
   app.listen({ port, host: "0.0.0.0" }).then(() => {
     // eslint-disable-next-line no-console
-    console.log(`Delphi server listening on :${port} (db: ${dbPath})`);
+    console.log(`Consus server listening on :${port} (db: ${dbPath})`);
   });
 }

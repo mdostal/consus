@@ -1,0 +1,86 @@
+id: minerva-qa-queue-ui
+epic: consus-v1-core-loop
+title: Minerva Q&A Queue UI — answer async (REQ-02)
+status: pending
+complexity: medium
+methodology: bdd
+depends_on: [minerva-adapter-bridge, kb-store-schema-and-decide-api, decision-card-renderer-ui]
+
+description: |
+  Implement REQ-02 — the single biggest stated v1 priority: a queue of open
+  human_request items (from minerva-adapter-bridge) the operator can answer
+  async, tied to their originating ticket where available. Answering writes
+  through the decide API (kb-store-schema-and-decide-api) so answers are
+  audit-logged like any other decision.
+
+acceptance_criteria:
+  - "Given one or more open Minerva questions exist, when the operator opens Consus, then they see a queue of unanswered questions, each linked to its originating ticket."
+  - "Given the operator answers a question in Consus, when they submit, then the answer is persisted, the item's status moves to answered, and the answer is retrievable by whatever consumes it downstream."
+  - "Given a question has no ticket link (channel-only escalation), when rendered, then Consus still shows it in the queue without requiring a ticket to exist."
+
+steps:
+  - id: research
+    description: Confirm the human_request API from minerva-adapter-bridge and the decide API from kb-store-schema-and-decide-api.
+    agent: researcher
+  - id: behavior-spec
+    description: Write Given/When/Then specs for queue display, answering, and ticketless-question handling, derived from this story's acceptance criteria.
+    agent: tester
+    depends_on: [research]
+  - id: ui-design
+    description: Delegate to /design for wireframes (atomic external call; see skills/design/SKILL.md). Deferred — not run live during this /plan session; run /design against this story before /execute.
+    agent: ui-designer
+    delegates_to: design
+    depends_on: [research]
+  - id: implement
+    description: Implement the Q&A Queue UI to satisfy the behavior specs and /design wireframe output.
+    agent: developer
+    depends_on: [behavior-spec, ui-design]
+  - id: test
+    description: Derive test cases from behavior specs and verify they pass.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Review implementation, behavior specs, and tests for correctness.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Code/consus
+  tech_stack:
+    frontend: react+vite
+
+files_to_modify:
+  - file: web/src/features/minerva/QAQueue.tsx
+    change: Create — open-questions queue view, rendering each item via the shared DecisionCard (decision-card-renderer-ui) rather than a bespoke item view, since minerva-adapter-bridge now populates a decision_payload translation per Question.
+  - file: web/src/features/minerva/AnswerForm.tsx
+    change: Create — async answer submission, wired to the decide API; the answer control itself is the DecisionCard's AnswerShape control (typically yes_no or choose_one), not a separate form.
+
+code_examples:
+  - title: KB Browser's decide-action pattern to follow for answering
+    file: web/src/features/kb/KBBrowser.tsx
+    snippet: |
+      # Established by kb-decide-ui — AnswerForm.tsx calls the same decide
+      # API, scoped to human_request items.
+
+design_decisions:
+  - decision: Answering a question routes through the generic decide API rather than a Minerva-specific write path.
+    rationale: Keeps every decision in Consus audit-logged the same way, per REQ-08's "shared truth" model.
+
+cross_cutting:
+  - concern: documentation
+    action: "None new — consumes already-documented APIs from minerva-adapter-bridge and kb-store-schema-and-decide-api."
+
+risks:
+  - severity: medium
+    description: "Agent-ready checklist gap: /design wireframes deferred, not produced during this /plan session."
+    mitigation: "Run /design for this story explicitly before /execute — flagged in the plan confirmation output."
+
+references:
+  - path: .pHive/planning/product-brief.md
+    relevant_excerpt: |
+      Minerva questions/surveys surfaced into Consus, answerable there,
+      async, tied to tickets. The single biggest v1 priority.

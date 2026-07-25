@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { DocBrowser } from "./DocBrowser";
 
 const GROUPED = {
-  delphi: {
+  consus: {
     planning: [
       { epic: null, file_path: ".pHive/planning/prd.md", content_hash: "abc", last_scanned_at: "2026-07-25T00:00:00Z" },
     ],
@@ -17,7 +17,7 @@ describe("DocBrowser", () => {
   it("lists docs grouped by repo, then epic, then phase", () => {
     render(<DocBrowser grouped={GROUPED} onOpen={vi.fn()} />);
 
-    expect(screen.getByText("delphi")).toBeInTheDocument();
+    expect(screen.getByText("consus")).toBeInTheDocument();
     expect(screen.getByText("planning")).toBeInTheDocument();
     expect(screen.getByText("docs")).toBeInTheDocument();
     expect(screen.getByText("sample-epic")).toBeInTheDocument();
@@ -31,6 +31,6 @@ describe("DocBrowser", () => {
 
     fireEvent.click(screen.getByText(/prd\.md/));
 
-    expect(onOpen).toHaveBeenCalledWith("delphi", ".pHive/planning/prd.md");
+    expect(onOpen).toHaveBeenCalledWith("consus", ".pHive/planning/prd.md");
   });
 });

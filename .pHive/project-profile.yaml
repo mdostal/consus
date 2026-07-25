@@ -1,7 +1,7 @@
-project_name: "delphi"
+project_name: "consus"
 type: greenfield
 discovered: "2026-07-25"
-source: "kickoff elicitation + docs/north-star.md + docs/delphi-definition.md"
+source: "kickoff elicitation + docs/north-star.md + docs/consus-definition.md"
 
 project_type: consumer-app
 has_ui: true
@@ -9,7 +9,7 @@ has_ui: true
 ship_target:
   kind: github-release
   notes: >
-    Ships as a standalone plugin/repo (mdostal/delphi) that plugs into the
+    Ships as a standalone plugin/repo (mdostal/consus) that plugs into the
     Pantheon. Standalone mode: a UI for viewing/interacting with agent-generated
     docs (what Claude does manually today). Full-plugin mode: integrates with
     the rest of the Pantheon so other plugins can extend it toward the full
@@ -48,12 +48,12 @@ north_star:
     Replace manually pulling generated docs off the box and rendering them as
     ad hoc Artifacts with a persistent, agent-connected surface where Mathew
     works day-to-day on architecture, specs, and decisions across the
-    Pantheon — a Delphi item is the artifact itself, and approving it fires
+    Pantheon — a Consus item is the artifact itself, and approving it fires
     real work and becomes shared-truth KB.
   audience: >
     Primary: Mathew, running the Pantheon day-to-day. Secondary: future OSS
     adopters running their own multi-agent harness against their own repos
-    (Delphi ships standalone + as a full Pantheon plugin).
+    (Consus ships standalone + as a full Pantheon plugin).
   expected_scale: >
     Single-operator (Mathew) in v1 — no concurrency requirements identified.
     OSS adopters in standalone mode are unscoped/unspecified at this stage.
@@ -67,8 +67,8 @@ north_star:
     Zero terminal-surfaced docs or decisions in day-to-day Pantheon work; the
     manual doc-pull-and-render-as-Artifact workflow stops entirely.
   avoid: >
-    Verifying ticket/doc completeness (upstream's job, not Delphi's);
+    Verifying ticket/doc completeness (upstream's job, not Consus's);
     rebuilding the Artifact renderer; adopting a hosted platform's
     collaboration primitives as the core agent-comment loop (tried before,
     never integrated, confirmed dead end); dispatching work through Auriga
-    (Delphi is a state consumer only).
+    (Consus is a state consumer only).

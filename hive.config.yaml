@@ -12,7 +12,7 @@ developer:
     Methodology is split by layer: BDD (Given/When/Then) for UI work, TDD for
     backend work. Priority is solid, well-defined, well-tested foundations —
     explicitly avoiding "build it, then test it, discover it's wonky." A prior
-    implementation of Delphi exists to reference, but re-imagining is fine —
+    implementation of Consus exists to reference, but re-imagining is fine —
     do not treat the prior build as a hard constraint.
 
 planning:

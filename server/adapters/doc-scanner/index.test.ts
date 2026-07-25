@@ -11,7 +11,7 @@ describe("Doc Scanner", () => {
   let db: Database.Database;
 
   beforeEach(() => {
-    repoDir = mkdtempSync(join(tmpdir(), "delphi-repo-"));
+    repoDir = mkdtempSync(join(tmpdir(), "consus-repo-"));
     mkdirSync(join(repoDir, ".pHive", "planning"), { recursive: true });
     mkdirSync(join(repoDir, ".pHive", "epics", "sample-epic", "docs"), { recursive: true });
     writeFileSync(join(repoDir, ".pHive", "planning", "prd.md"), "# PRD\n\nhello");
@@ -30,9 +30,9 @@ describe("Doc Scanner", () => {
   });
 
   it("indexes every generated doc under .pHive/planning and .pHive/epics/*/docs", () => {
-    scanRepo(db, { repoName: "delphi", repoPath: repoDir });
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
 
-    const rows = queryDocIndex(db, "delphi");
+    const rows = queryDocIndex(db, "consus");
     const paths = rows.map((r) => r.file_path).sort();
 
     expect(paths).toEqual([
@@ -42,24 +42,24 @@ describe("Doc Scanner", () => {
   });
 
   it("derives repo/epic/phase from path structure", () => {
-    scanRepo(db, { repoName: "delphi", repoPath: repoDir });
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
 
-    const rows = queryDocIndex(db, "delphi");
+    const rows = queryDocIndex(db, "consus");
     const epicDoc = rows.find((r) => r.file_path.includes("sample-epic"));
 
-    expect(epicDoc?.repo).toBe("delphi");
+    expect(epicDoc?.repo).toBe("consus");
     expect(epicDoc?.epic).toBe("sample-epic");
     expect(epicDoc?.phase).toBe("docs");
   });
 
   it("updates content_hash when a doc changes on disk", () => {
-    scanRepo(db, { repoName: "delphi", repoPath: repoDir });
-    const before = queryDocIndex(db, "delphi").find((r) => r.file_path.endsWith("prd.md"));
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
+    const before = queryDocIndex(db, "consus").find((r) => r.file_path.endsWith("prd.md"));
 
     writeFileSync(join(repoDir, ".pHive", "planning", "prd.md"), "# PRD\n\nchanged content");
-    scanRepo(db, { repoName: "delphi", repoPath: repoDir });
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
 
-    const after = queryDocIndex(db, "delphi").find((r) => r.file_path.endsWith("prd.md"));
+    const after = queryDocIndex(db, "consus").find((r) => r.file_path.endsWith("prd.md"));
 
     // content_hash is the meaningful change-detection signal; last_scanned_at
     // is millisecond-resolution and can legitimately tie when two scans run
@@ -69,25 +69,25 @@ describe("Doc Scanner", () => {
   });
 
   it("is idempotent — re-scanning unchanged docs does not duplicate rows", () => {
-    scanRepo(db, { repoName: "delphi", repoPath: repoDir });
-    scanRepo(db, { repoName: "delphi", repoPath: repoDir });
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
 
-    const rows = queryDocIndex(db, "delphi");
+    const rows = queryDocIndex(db, "consus");
     expect(rows).toHaveLength(2);
   });
 
   it("groups query results repo -> epic -> phase", () => {
-    scanRepo(db, { repoName: "delphi", repoPath: repoDir });
-    const rows = queryDocIndex(db, "delphi");
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
+    const rows = queryDocIndex(db, "consus");
 
     for (const row of rows) {
-      expect(row.repo).toBe("delphi");
+      expect(row.repo).toBe("consus");
     }
   });
 
   it("returns raw content plus a format field for a given doc", () => {
-    scanRepo(db, { repoName: "delphi", repoPath: repoDir });
-    const rows = queryDocIndex(db, "delphi");
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
+    const rows = queryDocIndex(db, "consus");
     const prd = rows.find((r) => r.file_path.endsWith("prd.md"));
 
     expect(prd).toBeDefined();

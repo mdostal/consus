@@ -1,0 +1,32 @@
+story_id: decision-card-renderer-ui
+epic_id: consus-v1-core-loop
+methodology: bdd
+steps:
+  - id: research
+    status: complete
+    note: Confirmed decision_payload/AnswerShape contract; north-star.md's three precedent artifacts are claude.ai Artifacts, not locally fetchable — visual bar taken from north-star.md's written description instead.
+  - id: behavior-spec
+    status: complete
+    note: 5 tests — question+recommendation+answer-slot rendering, status pill, collapsible (closed-by-default) source, AnswerShape-correct primary control (choose_one never falls back to a lone Approve), onAnswer callback.
+  - id: ui-design
+    status: deferred
+    note: /design not run live this session — flagged as highest-priority /design pass in the story spec, still outstanding.
+  - id: implement
+    status: complete
+    note: >
+      web/src/features/decisions/DecisionCard.tsx + answer-shapes/AnswerControl.tsx
+      (yes_no/choose_one/survey/edit/approve controls) + web/src/theme/tokens.{ts,css}
+      (light/dark via prefers-color-scheme). Fixed a real RTL test-isolation
+      bug along the way: explicit afterEach(cleanup) wired in vitest.setup.ts
+      since this project doesn't use vitest's `globals: true`.
+  - id: test
+    status: complete
+    note: All 5 component tests pass.
+  - id: review
+    status: complete
+    note: All 63 project tests pass; npm run build succeeds.
+  - id: integrate
+    status: complete
+    note: Committed to feat/consus-v1-core-loop.
+verdict: pass-with-deferred-design-pass
+finished_at: "2026-07-25T20:53:00Z"

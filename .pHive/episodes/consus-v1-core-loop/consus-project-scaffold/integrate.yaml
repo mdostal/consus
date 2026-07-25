@@ -1,0 +1,27 @@
+story_id: consus-project-scaffold
+epic_id: consus-v1-core-loop
+methodology: tdd
+steps:
+  - id: research
+    status: complete
+    note: Confirmed React+Vite SPA / Node+TS Fastify / SQLite / self-hosted packaging from architecture.md.
+  - id: test-spec
+    status: complete
+    note: >
+      Wrote failing tests first: server/db/migrate.test.ts (3 tests — base
+      tables created, idempotent re-run, rows preserved across re-run) and
+      server/index.test.ts (1 test — GET /health returns 200 + sqlite:connected).
+  - id: implement
+    status: complete
+    note: >
+      Implemented server/db/connection.ts, server/db/migrate.ts, server/index.ts,
+      web/src/{main,App}.tsx, package.json/tsconfig/vite/vitest configs,
+      scripts/start.sh. All 4 tests pass (`npx vitest run`).
+  - id: review
+    status: complete
+    note: Self-reviewed for convention compliance; verified npm run build succeeds and the built server actually boots and serves /health (curl-verified), plus npm run dev boots both web (5173) and API (8722) dev servers.
+  - id: integrate
+    status: complete
+    note: Committed to feat/consus-v1-core-loop.
+verdict: pass
+finished_at: "2026-07-25T20:33:50Z"

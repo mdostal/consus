@@ -96,7 +96,7 @@ describe("Minerva Adapter — Question bridge", () => {
     expect(payload.question).toBe("Ship v1 with the flex-scope KB backlog cut?");
   });
 
-  it("syncs status back to Minerva when a human_request is answered in Delphi", async () => {
+  it("syncs status back to Minerva when a human_request is answered in Consus", async () => {
     ingestQuestion(db, { id: "q-5", text: "Test", channel: "general", reason: "n/a", status: "open" });
     const transport = fakeTransport();
 

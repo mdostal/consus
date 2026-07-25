@@ -3,7 +3,7 @@
  *
  * RISK (flagged in architecture.md and epic.yaml): the real
  * `decision-request.ts` source lives only on the hive host
- * (ssh dostal@100.75.161.82 -> Claud-ometer/src/lib/delphi/decision-request.ts)
+ * (ssh dostal@100.75.161.82 -> Claud-ometer/src/lib/consus/decision-request.ts)
  * and was not fetched during this implementation pass — fetching it and
  * reconciling this parser against the real source is a recommended
  * follow-up, not done here. This implementation is built from

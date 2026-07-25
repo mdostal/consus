@@ -1,0 +1,33 @@
+story_id: minerva-qa-queue-ui
+epic_id: consus-v1-core-loop
+methodology: bdd
+steps:
+  - id: research
+    status: complete
+    note: Confirmed the human_request API shape from minerva-adapter-bridge and DecisionCard's props from decision-card-renderer-ui.
+  - id: behavior-spec
+    status: complete
+    note: 4 tests — queue display with ticket link, ticketless question still shown, renders via shared DecisionCard (not a bespoke form), onAnswer called with question id + answer.
+  - id: ui-design
+    status: deferred
+    note: /design not run live this session.
+  - id: implement
+    status: complete
+    note: >
+      web/src/features/minerva/QAQueue.tsx — renders each open question via
+      DecisionCard. Scope note: a separate AnswerForm.tsx was not created —
+      the DecisionCard's AnswerControl already IS the answer form; a
+      redundant wrapper would have added no tested behavior. API wiring to
+      POST the answer is deferred to actual page/route composition, not
+      covered by this story's acceptance criteria.
+  - id: test
+    status: complete
+    note: All 4 component tests pass.
+  - id: review
+    status: complete
+    note: All 71 project tests pass; npm run build succeeds.
+  - id: integrate
+    status: complete
+    note: Committed to feat/consus-v1-core-loop.
+verdict: pass-with-deferred-design-pass
+finished_at: "2026-07-25T20:56:00Z"

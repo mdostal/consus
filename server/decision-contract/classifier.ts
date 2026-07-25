@@ -37,7 +37,7 @@ function heuristicTriageBucket(item: ItemRow): TriageBucket {
   if (item.type === "human_request") return "open_question";
   // v1 heuristic default for other item types — no strong signal yet to
   // distinguish your_action/agent_task/noise without more item metadata.
-  // Refinable once real Delphi traffic exists; the override table is the
+  // Refinable once real Consus traffic exists; the override table is the
   // safety valve in the meantime (see this story's Risks).
   return "research_plan";
 }
