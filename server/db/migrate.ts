@@ -96,6 +96,13 @@ export function runMigration(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_comments_item_id ON comments(item_id);
+
+    CREATE TABLE IF NOT EXISTS triage_overrides (
+      item_id TEXT PRIMARY KEY REFERENCES items(id),
+      bucket TEXT NOT NULL,
+      author TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
   `);
 
   // Guarded ALTER TABLE for columns added after a table already existed on

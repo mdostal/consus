@@ -1,0 +1,33 @@
+/* Theme-aware tokens (REQ-15) — light/dark via prefers-color-scheme, no
+   hardcoded light-only or dark-only styling anywhere downstream. */
+
+:root {
+  --delphi-bg: #f5f0e8;
+  --delphi-bg-subtle: #efe8dc;
+  --delphi-ink: #241d14;
+  --delphi-ink-muted: #5a4f40;
+  --delphi-accent: #b96e3a;
+  --delphi-good: #3f7a3a;
+  --delphi-warn: #9c7420;
+  --delphi-bad: #a5433b;
+  --delphi-line: #e3d8c6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --delphi-bg: #14110e;
+    --delphi-bg-subtle: #1b1713;
+    --delphi-ink: #f3ece2;
+    --delphi-ink-muted: #c7bbaa;
+    --delphi-accent: #d68a55;
+    --delphi-good: #79b072;
+    --delphi-warn: #d8a24a;
+    --delphi-bad: #c97b74;
+    --delphi-line: #332a20;
+  }
+}
+
+body {
+  background: var(--delphi-bg);
+  color: var(--delphi-ink);
+}
