@@ -29,5 +29,16 @@ export function runMigration(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_audit_log_item_id ON audit_log(item_id);
+
+    CREATE TABLE IF NOT EXISTS doc_index (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo TEXT NOT NULL,
+      epic TEXT,
+      phase TEXT,
+      file_path TEXT NOT NULL,
+      content_hash TEXT NOT NULL,
+      last_scanned_at TEXT NOT NULL,
+      UNIQUE(repo, file_path)
+    );
   `);
 }
