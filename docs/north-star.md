@@ -34,3 +34,14 @@ what runs the loop. Until then, **Mathew + Claude ARE Delphi (manual)**. First r
 the pantheon-orchestrator **CBA + plan + `initial-info` + the kickoff briefs**.
 
 _Artifacts to seed the KB: CBA `403f7c30…` · Plan `00372e22…` · Kickoff brief `7305504f…`._
+
+## Rendering requirement — the artifact UI (Mathew 2026-07-25)
+
+Delphi's document/decision rendering surface **should use the artifact-UI pattern prototyped in this session** — clean, **theme-aware** (light/dark), readable HTML surfaces that render generated docs, deep-dives, and go/no-go decisions. See the precedents built by hand tonight: the **CADEX deep-dive**, the **gig go/no-go**, and the **Delphi/Heimdall setup** artifacts.
+
+**Those artifacts ARE the manual Delphi output** — hand-rendered only because Delphi doesn't exist yet. Delphi productizes exactly that: every generated artifact + every decision rendered as a **readable, navigable surface** (not a terminal, not raw markdown). Baseline UX requirements drawn from those precedents:
+- Real typographic hierarchy; theme-aware tokens (light + dark).
+- **Decision cards** — a question + a recommendation + an answer slot (the go/no-go pattern).
+- Status/severity pills (P0/P1, in-flight/dropped, ready/seed).
+- Collapsible source docs; scannable tables; scoped-scroll for wide content.
+- One readable page per artifact — the thing you review instead of scrolling a shell.
