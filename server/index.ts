@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { openDb } from "./db/connection.js";
 import { runMigration } from "./db/migrate.js";
 import { registerDocRoutes } from "./routes/docs.js";
+import { registerKbRoutes } from "./routes/kb.js";
 
 export interface BuildServerOptions {
   dbPath: string;
@@ -15,6 +16,7 @@ export function buildServer({ dbPath, repos = {} }: BuildServerOptions): Fastify
   runMigration(db);
 
   registerDocRoutes(app, { db, repos });
+  registerKbRoutes(app, { db });
 
   app.get("/health", async () => {
     const row = db.prepare("SELECT 1 AS ok").get() as { ok: number } | undefined;

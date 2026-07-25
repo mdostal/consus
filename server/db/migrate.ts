@@ -1,9 +1,22 @@
 import type Database from "better-sqlite3";
 
+function addColumnIfMissing(
+  db: Database.Database,
+  table: string,
+  column: string,
+  definition: string,
+): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!columns.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
 /**
  * Idempotent base-schema migration. Safe to call on every server start —
- * every statement is CREATE TABLE IF NOT EXISTS, so re-running never errors
- * and never touches existing rows.
+ * every statement is CREATE TABLE IF NOT EXISTS (or a guarded ALTER TABLE),
+ * so re-running never errors, never duplicates, and never touches existing
+ * rows or data.
  */
 export function runMigration(db: Database.Database): void {
   db.exec(`
@@ -15,7 +28,8 @@ export function runMigration(db: Database.Database): void {
       source_repo TEXT,
       source_ref TEXT,
       created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      decided_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS audit_log (
@@ -40,5 +54,27 @@ export function runMigration(db: Database.Database): void {
       last_scanned_at TEXT NOT NULL,
       UNIQUE(repo, file_path)
     );
+
+    CREATE TABLE IF NOT EXISTS kb_entries (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      current_version_id INTEGER,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS kb_versions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kb_entry_id TEXT NOT NULL REFERENCES kb_entries(id),
+      content TEXT NOT NULL,
+      author TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_kb_versions_entry_id ON kb_versions(kb_entry_id);
   `);
+
+  // Guarded ALTER TABLE for columns added after a table already existed on
+  // some deployment — CREATE TABLE IF NOT EXISTS alone won't add these to a
+  // pre-existing items table.
+  addColumnIfMissing(db, "items", "decided_at", "TEXT");
 }
