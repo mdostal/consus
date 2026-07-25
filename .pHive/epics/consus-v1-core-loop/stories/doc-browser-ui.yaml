@@ -1,0 +1,91 @@
+id: doc-browser-ui
+epic: consus-v1-core-loop
+title: Doc Browser UI — render generated docs by repo/epic/phase
+status: pending
+complexity: medium
+methodology: bdd
+depends_on: [doc-scanner-and-index, decision-card-renderer-ui]
+
+description: |
+  Implement REQ-03's frontend half: a browsing UI over the doc_index API from
+  doc-scanner-and-index. Renders `.md` as formatted content and `.html` as
+  embedded content — the first genuinely working slice of "stop reading docs
+  in a terminal." This is the story that first replaces part of the manual
+  Claude-pulls-a-doc-and-renders-an-Artifact workaround described in the
+  product brief.
+
+acceptance_criteria:
+  - "Given the doc_index has entries, when the operator opens Consus, then docs are listed grouped by repo, then epic, then phase, matching REQ-03."
+  - "Given a doc is `.md`, when opened, then it renders as formatted content (headings, tables, lists) — not raw markup."
+  - "Given a doc is `.html`, when opened, then it displays as formatted content, not raw markup (REQ-03 acceptance criterion, verbatim)."
+  - "Given a new doc appears in the index after the operator's last visit, when they revisit the browser, then it appears without any manual pull step."
+
+steps:
+  - id: research
+    description: Confirm the doc_index API response shape from doc-scanner-and-index.
+    agent: researcher
+  - id: behavior-spec
+    description: |
+      Write Given/When/Then behavior specs (Gherkin or equivalent) covering:
+      grouped listing, markdown rendering, HTML rendering, and new-doc
+      appearance on revisit — derived directly from this story's acceptance criteria.
+    agent: tester
+    depends_on: [research]
+  - id: ui-design
+    description: Delegate to /design for wireframes (atomic external call; see skills/design/SKILL.md). Deferred — not run live during this /plan session; run /design against this story before /execute.
+    agent: ui-designer
+    delegates_to: design
+    depends_on: [research]
+  - id: implement
+    description: Implement the Doc Browser UI to satisfy the behavior specifications and the /design wireframe output.
+    agent: developer
+    depends_on: [behavior-spec, ui-design]
+  - id: test
+    description: Derive test cases from behavior specs and verify they pass.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Review implementation, behavior specs, and tests for correctness.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Code/consus
+  tech_stack:
+    frontend: react+vite
+
+files_to_modify:
+  - file: web/src/features/docs/DocBrowser.tsx
+    change: Create — grouped repo/epic/phase list view.
+  - file: web/src/features/docs/DocRenderer.tsx
+    change: Create — markdown + HTML content renderer; wraps output in DecisionCard's shell where an item carries a decision_payload.
+
+code_examples:
+  - title: Shared decision-card shell to build on
+    file: web/src/features/decisions/DecisionCard.tsx
+    snippet: |
+      # Established by decision-card-renderer-ui — DocRenderer.tsx uses the
+      # same card shell for consistent theme-aware presentation.
+
+design_decisions:
+  - decision: Client-side markdown rendering (not server-side HTML conversion).
+    rationale: Keeps the Doc Scanner (backend) purely a file-index/content service — rendering concerns stay in the SPA per component-boundary separation in architecture.md.
+
+cross_cutting:
+  - concern: documentation
+    action: "None — this story consumes an already-documented API (doc-scanner-and-index); no new schema/workflow introduced."
+
+risks:
+  - severity: medium
+    description: "Agent-ready checklist gap: /design wireframes are deferred, not produced during this /plan session (see ui-design step note)."
+    mitigation: "Run /design for this story explicitly before /execute dispatches the implement step — flagged in the plan confirmation output."
+
+references:
+  - path: .pHive/planning/prd.md
+    relevant_excerpt: |
+      REQ-03 acceptance: "Given a doc is .md or .html, when rendered, then it
+      displays as formatted content, not raw markup."

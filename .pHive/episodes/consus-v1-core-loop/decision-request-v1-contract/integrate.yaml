@@ -1,0 +1,27 @@
+story_id: decision-request-v1-contract
+epic_id: consus-v1-core-loop
+methodology: tdd
+steps:
+  - id: research
+    status: blocked-partial
+    note: >
+      Real decision-request.ts was NOT fetched (would require an
+      unprompted SSH connection to a new remote host mid-autonomous-run —
+      deferred as a recommended follow-up rather than attempted without
+      explicit operator confirmation). Built from docs/prior-art.md's
+      documented shape instead: pure, parses a fenced JSON block, no
+      external deps.
+  - id: test-spec
+    status: complete
+    note: 9 tests — round-trip parse/serialize, fenced-JSON-block extraction from ticket-body prose, graceful null on no match, AnswerShape resolution for all 5 shapes, null fallback for no payload.
+  - id: implement
+    status: complete
+    note: server/decision-contract/parser.ts — parseDecisionPayload/serializeDecisionPayload/resolveAnswerShape.
+  - id: review
+    status: complete
+    note: All 43 project tests pass; npm run build succeeds.
+  - id: integrate
+    status: complete
+    note: Committed to feat/consus-v1-core-loop.
+verdict: pass-with-flagged-gap
+finished_at: "2026-07-25T20:50:00Z"

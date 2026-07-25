@@ -1,0 +1,86 @@
+id: comment-thread-ui
+epic: consus-v1-core-loop
+title: Comment/Chat Thread UI — iterate in place (REQ-04)
+status: pending
+complexity: medium
+methodology: bdd
+depends_on: [multica-client-comment-write]
+
+description: |
+  Implement REQ-04: a comment/chat component, reusable across item types
+  (docs, human_requests, KB entries), wired to the Multica Client from
+  multica-client-comment-write. The back-and-forth that sharpens scope
+  before sign-off happens in place, not in a terminal.
+
+acceptance_criteria:
+  - "Given an artifact or KB entry is open, when the operator adds a comment, then the comment is persisted with author, timestamp, and target reference."
+  - "Given a comment is added via Multica's comment/decision model, when it's read back in Consus, then it renders identically regardless of whether it originated from Consus or another Multica-connected surface."
+  - "Given the operator iterates on an artifact (edits, replies, follow-ups), when each change is saved, then it's individually attributable and timestamped — not a silent overwrite."
+
+steps:
+  - id: research
+    description: Confirm the Multica Client's comment read/write API from multica-client-comment-write.
+    agent: researcher
+  - id: behavior-spec
+    description: Write Given/When/Then specs for comment add, cross-surface render parity, and per-change attribution, derived from this story's acceptance criteria.
+    agent: tester
+    depends_on: [research]
+  - id: ui-design
+    description: Delegate to /design for wireframes (atomic external call; see skills/design/SKILL.md). Deferred — not run live during this /plan session; run /design against this story before /execute.
+    agent: ui-designer
+    delegates_to: design
+    depends_on: [research]
+  - id: implement
+    description: Implement the Comment Thread UI to satisfy the behavior specs and /design wireframe output.
+    agent: developer
+    depends_on: [behavior-spec, ui-design]
+  - id: test
+    description: Derive test cases from behavior specs and verify they pass.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Review implementation, behavior specs, and tests for correctness.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Code/consus
+  tech_stack:
+    frontend: react+vite
+    realtime: websocket
+
+files_to_modify:
+  - file: web/src/features/comments/CommentThread.tsx
+    change: Create — reusable comment/chat component, item-type-agnostic.
+  - file: server/db/migrate.ts
+    change: Extend — add comments table (id, item_id FK, author, body, created_at, multica_comment_id nullable).
+
+code_examples:
+  - title: Reusable component pattern from Doc Renderer
+    file: web/src/features/docs/DocRenderer.tsx
+    snippet: |
+      # Established by doc-browser-ui — CommentThread.tsx follows the same
+      # item-agnostic component convention, attached to any item view.
+
+design_decisions:
+  - decision: CommentThread is item-type-agnostic — one component, attached to docs, human_requests, and kb_entries alike.
+    rationale: Avoids duplicating comment UX per item type; matches the "living overlay" spirit of Consus's item model.
+
+cross_cutting:
+  - concern: documentation
+    action: "None new — consumes already-documented comments table/API introduced in this same story alongside multica-client-comment-write's client."
+
+risks:
+  - severity: medium
+    description: "Agent-ready checklist gap: /design wireframes deferred, not produced during this /plan session."
+    mitigation: "Run /design for this story explicitly before /execute — flagged in the plan confirmation output."
+
+references:
+  - path: .pHive/planning/prd.md
+    relevant_excerpt: |
+      REQ-04: Comment / Chat / Iterate In Place — operator can comment,
+      chat, and iterate on artifacts and KB entries directly inside Consus.

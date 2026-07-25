@@ -1,0 +1,96 @@
+id: consus-project-scaffold
+epic: consus-v1-core-loop
+title: Scaffold Consus's server + SPA + SQLite foundation
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: []
+
+description: |
+  Stand up the empty but wired-together skeleton every other story builds on:
+  a Node/TypeScript Fastify server that serves a React/Vite SPA, an SQLite
+  database file with the base `items` and `audit_log` tables, and a local
+  dev/start script. No feature logic yet — this story's job is a working
+  `npm run dev` (SPA + API reachable) and `npm start` (production build,
+  matching the GitHub-release packaging target) with zero routes beyond a
+  health check.
+
+acceptance_criteria:
+  - "Given a fresh clone, when the operator runs `npm install && npm run dev`, then the Fastify server starts and the Vite dev server serves the SPA shell, both reachable locally."
+  - "Given the production build (`npm run build && npm start`), when the operator hits the server's health endpoint, then it returns 200 with a JSON body confirming SQLite connectivity."
+  - "Given the SQLite file does not exist yet, when the server starts, then it creates the file and runs the base schema migration (items, audit_log tables) idempotently — a second start does not error or duplicate tables."
+  - "Given `ship_target.kind: github-release`, when the project is built, then the output is a self-contained tarball (built SPA + server + migrations) that runs via a single start script, with no Vercel- or hosting-platform-specific dependency."
+
+steps:
+  - id: research
+    description: Confirm current Node/TS/Fastify/Vite conventions and the plugin-hive adapter-ABI dispatch pattern in ~/Code/plugin-hive/hive/lib/task-tracking-dispatch (reference for later adapter stories, not used directly here).
+    agent: researcher
+  - id: test-spec
+    description: |
+      Write failing tests for: server boots and responds 200 on /health;
+      SQLite migration is idempotent (run twice, second run is a no-op,
+      schema unchanged); production build produces a runnable start script.
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: Implement the server/SPA scaffold and SQLite migration runner to make the failing tests pass. Do not modify the tests.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: Review implementation and tests for correctness and convention compliance.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit and push to feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Code/consus
+  tech_stack:
+    frontend: react+vite
+    backend: node+typescript (fastify)
+    database: sqlite
+    realtime: websocket
+  key_files:
+    - path: .pHive/planning/architecture.md
+      purpose: Tech stack table and component map this scaffold must match.
+    - path: .pHive/project-profile.yaml
+      purpose: ship_target.kind (github-release) constrains the packaging approach — no Vercel-specific build output.
+
+files_to_modify:
+  - file: package.json
+    change: Create — workspace/scripts for dev, build, start.
+  - file: server/index.ts
+    change: Create — Fastify bootstrap + health route.
+  - file: server/db/migrate.ts
+    change: Create — idempotent SQLite migration runner (items, audit_log tables per architecture.md data model).
+  - file: web/src/main.tsx
+    change: Create — Vite/React SPA entry shell.
+  - file: scripts/start.sh
+    change: Create — production start script producing the GitHub-release-shaped runnable artifact.
+
+code_examples: []  # Greenfield — no existing reference implementation. This is the first story; flagged in Risks below.
+
+design_decisions:
+  - decision: SQLite over Postgres for v1.
+    rationale: Single-operator, local-first, zero-ops — see architecture.md Key Decisions #2.
+  - decision: React+Vite SPA over Next.js.
+    rationale: Avoids re-coupling to the previously-rejected Vercel-hosted direction — see architecture.md Key Decisions #1.
+
+cross_cutting:
+  - concern: documentation
+    action: "Update CONTEXT.md's Key paths section with server/, web/, and the SQLite file location once the scaffold lands — this is the first story to establish those paths."
+
+risks:
+  - severity: medium
+    description: No reference implementation exists (greenfield) — checklist item 7 (reference implementation) fails for this story specifically.
+    mitigation: Accepted gap for the foundational story; every subsequent story references this one's output as its pattern.
+
+references:
+  - path: .pHive/planning/architecture.md
+    relevant_excerpt: |
+      | Layer | Choice | ... |
+      | Frontend | React + Vite SPA | ... |
+      | Backend | Node.js + TypeScript (Fastify) | ... |
+      | Database | SQLite (embedded) | ... |

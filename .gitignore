@@ -1,0 +1,28 @@
+node_modules/
+dist/
+dist-web/
+dist-server/
+build/
+.env
+.env.local
+*.log
+.DS_Store
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Hive planning sidecars — generated on demand, not committed (transient retention)
+.pHive/epics/**/docs/*.html
+.pHive/epics/**/index.html
+.pHive/epics/**/docs/*.png
+
+# Hive epics — blanket-ignored, allowlisted per epic below
+.pHive/epics/*
+!.pHive/epics/consus-v1-core-loop/
+!.pHive/epics/consus-v1-core-loop/**
+
+# Hive runtime/session bookkeeping — not project state
+.pHive/agent-complete/
+.pHive/interrupts/
+.pHive/metrics/
+.pHive/session-effort.txt

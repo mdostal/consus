@@ -1,0 +1,74 @@
+project_name: "consus"
+type: greenfield
+discovered: "2026-07-25"
+source: "kickoff elicitation + docs/north-star.md + docs/consus-definition.md"
+
+project_type: consumer-app
+has_ui: true
+
+ship_target:
+  kind: github-release
+  notes: >
+    Ships as a standalone plugin/repo (mdostal/consus) that plugs into the
+    Pantheon. Standalone mode: a UI for viewing/interacting with agent-generated
+    docs (what Claude does manually today). Full-plugin mode: integrates with
+    the rest of the Pantheon so other plugins can extend it toward the full
+    vision. Needs agent-facing skills (so an agentic harness can read/write
+    status back and forth) plus its own storage/state to track long-lived
+    decisions, docs, and living diagrams across many projects (one tab per
+    codebase, plus a high-level/global view).
+
+integrations:
+  cli_tools:
+    linearis: missing
+    frame0: missing
+    codex: detected   # /Users/mdostal/.local/bin/codex
+    maestro: missing
+  mcp_servers:
+    firecrawl: missing
+    context7: missing
+    posthog: missing
+    firebase: missing
+    mobile-mcp: missing
+    # detected but outside the standard integration list — noted for completeness:
+    vibemon: detected
+    qdrant-nomic: detected
+  vaults:
+    obsidian: detected   # ~/.obsidian-cli.sock + md.obsidian.plist present
+
+tech_stack:
+  languages: [typescript, javascript]
+  frameworks: [react, vite, fastify]
+  build_tools: [vite]
+  package_managers: [npm]
+  versions: {}   # not yet pinned — project not scaffolded
+
+north_star:
+  goal: >
+    Replace manually pulling generated docs off the box and rendering them as
+    ad hoc Artifacts with a persistent, agent-connected surface where Mathew
+    works day-to-day on architecture, specs, and decisions across the
+    Pantheon — a Consus item is the artifact itself, and approving it fires
+    real work and becomes shared-truth KB.
+  audience: >
+    Primary: Mathew, running the Pantheon day-to-day. Secondary: future OSS
+    adopters running their own multi-agent harness against their own repos
+    (Consus ships standalone + as a full Pantheon plugin).
+  expected_scale: >
+    Single-operator (Mathew) in v1 — no concurrency requirements identified.
+    OSS adopters in standalone mode are unscoped/unspecified at this stage.
+  pain_points: >
+    Cannot read the swarm's outputs in a terminal — briefs/PRDs/architecture/
+    CBAs/specs generate as unreadable .md/.html on disk. Minerva's questions
+    have no rendered home to be answered in. Today's workaround (Claude
+    manually pulling a doc and rendering it as an Artifact) is fully manual
+    and per-artifact.
+  success: >
+    Zero terminal-surfaced docs or decisions in day-to-day Pantheon work; the
+    manual doc-pull-and-render-as-Artifact workflow stops entirely.
+  avoid: >
+    Verifying ticket/doc completeness (upstream's job, not Consus's);
+    rebuilding the Artifact renderer; adopting a hosted platform's
+    collaboration primitives as the core agent-comment loop (tried before,
+    never integrated, confirmed dead end); dispatching work through Auriga
+    (Consus is a state consumer only).

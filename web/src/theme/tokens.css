@@ -1,0 +1,33 @@
+/* Theme-aware tokens (REQ-15) — light/dark via prefers-color-scheme, no
+   hardcoded light-only or dark-only styling anywhere downstream. */
+
+:root {
+  --consus-bg: #f5f0e8;
+  --consus-bg-subtle: #efe8dc;
+  --consus-ink: #241d14;
+  --consus-ink-muted: #5a4f40;
+  --consus-accent: #b96e3a;
+  --consus-good: #3f7a3a;
+  --consus-warn: #9c7420;
+  --consus-bad: #a5433b;
+  --consus-line: #e3d8c6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --consus-bg: #14110e;
+    --consus-bg-subtle: #1b1713;
+    --consus-ink: #f3ece2;
+    --consus-ink-muted: #c7bbaa;
+    --consus-accent: #d68a55;
+    --consus-good: #79b072;
+    --consus-warn: #d8a24a;
+    --consus-bad: #c97b74;
+    --consus-line: #332a20;
+  }
+}
+
+body {
+  background: var(--consus-bg);
+  color: var(--consus-ink);
+}

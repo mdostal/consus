@@ -1,0 +1,27 @@
+story_id: comment-thread-ui
+epic_id: consus-v1-core-loop
+methodology: bdd
+steps:
+  - id: research
+    status: complete
+    note: Confirmed the comments table shape from multica-client-comment-write.
+  - id: behavior-spec
+    status: complete
+    note: 3 tests — renders comments regardless of origin (Consus vs. another Multica surface), submits via onSubmit and clears input, does not submit empty comments.
+  - id: ui-design
+    status: deferred
+    note: /design not run live this session.
+  - id: implement
+    status: complete
+    note: web/src/features/comments/CommentThread.tsx — item-type-agnostic, no Consus-origin-only fields.
+  - id: test
+    status: complete
+    note: All 3 component tests pass.
+  - id: review
+    status: complete
+    note: All 63 project tests pass; npm run build succeeds.
+  - id: integrate
+    status: complete
+    note: Committed to feat/consus-v1-core-loop.
+verdict: pass-with-deferred-design-pass
+finished_at: "2026-07-25T20:53:00Z"

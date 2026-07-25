@@ -1,0 +1,94 @@
+id: minerva-adapter-bridge
+epic: consus-v1-core-loop
+title: Minerva Adapter — Question bridge (REQ-01)
+status: pending
+complexity: high
+methodology: tdd
+depends_on: [consus-project-scaffold]
+parallel_allowed: true
+parallel_rationale: bounded-slice
+
+description: |
+  Implement REQ-01: the Minerva↔Consus bridge. Build a stdio JSON-RPC-shaped
+  adapter mirroring Hive's existing @hive/task-tracking-dispatch ABI pattern
+  (capabilities/abi_version handshake, invoke(method, params), {ok,result}/
+  {ok:false,recoverable,code} error mapping) that ingests a Minerva
+  `Question {id, text, channel, reason, status}` and classifier output
+  `{question, suggested_channel, confidence, reason}`, translates it into a
+  new `human_request` item type, and writes status changes back to Minerva.
+  This is the confirmed contract-gap fix flagged during architecture — without
+  it, REQ-02 (the single biggest v1 priority) has no landing type to render into.
+
+acceptance_criteria:
+  - "Given a Minerva Question {id, text, channel, reason, status} arrives over stdio, when Consus ingests it, then it is stored and rendered as a human_request item without loss of any field."
+  - "Given a Minerva escalation-classifier output {question, suggested_channel, confidence, reason}, when Consus renders it, then confidence and reason are visible to the operator alongside the question text."
+  - "Given a human_request item's status changes in Consus, when the status write-back fires, then Minerva's Question.status reflects the same value."
+  - "Given a Minerva Question with a channel Consus doesn't yet have a queue for, when it arrives, then Consus surfaces it in a default/catch-all queue rather than dropping it silently."
+  - "Given a Minerva Question is ingested, when stored, then its human_request record also carries a decision_payload translation (typically yes_no or choose_one AnswerShape, per REQ-11) so it renders through decision-card-renderer-ui's shared path rather than a bespoke UI — requires decision-request-v1-contract to be available; if not yet merged, store the human_request without a payload and backfill once it lands."
+
+steps:
+  - id: research
+    description: Read ~/Code/plugin-hive/hive/lib/task-tracking-dispatch/README.md and confirm the exact ABI shape (capabilities, abi_version, invoke(method,params), NOT_FOUND/AUTH_FAILURE/RATE_LIMIT/UNKNOWN_METHOD/OPERATION_UNSUPPORTED/TIMEOUT/NO_ADAPTER error codes) to mirror faithfully.
+    agent: researcher
+  - id: test-spec
+    description: Write failing tests for Question ingestion, classifier-output rendering fields, bidirectional status sync, and unknown-channel fallback.
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: Implement the Minerva Adapter and human_request item type to make failing tests pass.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: Review implementation and tests for correctness, and confirm ABI-pattern fidelity against the Hive dispatch module.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit and push to feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Code/consus
+  tech_stack:
+    backend: node+typescript (fastify)
+    database: sqlite
+  key_files:
+    - path: /Users/mdostal/Code/plugin-hive/hive/lib/task-tracking-dispatch/README.md
+      purpose: The ABI pattern this adapter deliberately mirrors — capabilities/abi_version handshake, invoke(method,params), error-code mapping.
+
+files_to_modify:
+  - file: server/adapters/minerva/index.ts
+    change: Create — stdio adapter mirroring the Hive dispatch ABI pattern.
+  - file: server/db/migrate.ts
+    change: Extend — add human_requests table (id, item_id FK, minerva_question_id, text, channel, reason, confidence, suggested_channel, status).
+  - file: server/routes/human-requests.ts
+    change: Create — API surface for reading/answering human_request items.
+
+code_examples:
+  - title: Hive's existing adapter-dispatch ABI to mirror
+    file: /Users/mdostal/Code/plugin-hive/hive/lib/task-tracking-dispatch/README.md
+    snippet: |
+      const dispatch = new TaskTrackingDispatch();
+      await dispatch.load({ adapter: "github", ... });
+      const r = await dispatch.invoke("createStory", { ... });
+      if (r.ok) { /* r.result */ } else if (r.recoverable) { /* retry */ } else { /* terminal */ }
+
+design_decisions:
+  - decision: Reuse Hive's existing ABI dispatch shape rather than invent a new stdio protocol.
+    rationale: architecture.md Key Decisions #4 — smaller surface area, and it's the concrete shape behind the "plugin-hive adapter ABI" named as the shared transport.
+
+cross_cutting:
+  - concern: documentation
+    action: "Add 'human_request', 'Minerva Adapter', and the Question bridge contract to CONTEXT.md — new domain vocabulary and the fold-in requirement from the contract-gap finding."
+
+risks:
+  - severity: high
+    description: Minerva's actual stdio transport availability/exact wire format was described by the operator, not verified against a local Minerva spec (none exists in this repo tree).
+    mitigation: test-spec step should include a contract test against Minerva's real process once available; treat the Hive ABI mirror as the interface contract, verify field-for-field against Minerva at integration time.
+
+references:
+  - path: .pHive/planning/product-brief.md
+    relevant_excerpt: |
+      Minerva↔Consus bridge (human-request type) — a new Consus item type
+      that a Minerva Question serializes into. Confirmed contract gap: today
+      a Question maps to none of Consus's existing decision-item types.

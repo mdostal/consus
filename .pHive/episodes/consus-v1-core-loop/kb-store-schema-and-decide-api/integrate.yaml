@@ -1,0 +1,28 @@
+story_id: kb-store-schema-and-decide-api
+epic_id: consus-v1-core-loop
+methodology: tdd
+steps:
+  - id: research
+    status: complete
+    note: Confirmed items table shape from consus-project-scaffold; anchored kb_entries/kb_versions/decided_at to it.
+  - id: test-spec
+    status: complete
+    note: >
+      4 tests in server/kb/store.test.ts (audit_log write on decide,
+      decided-store amnesia fix, kb_versions history, SQLite-not-flat-file)
+      + 2 tests in server/routes/kb.test.ts (decide endpoint, 404 on unknown item).
+  - id: implement
+    status: complete
+    note: >
+      server/kb/store.ts (decideItem/getAuditLog/createKbEntry/getKbVersions),
+      server/routes/kb.ts (POST /api/items/:id/decide), kb_entries/kb_versions
+      tables + items.decided_at column added to migrate.ts (with guarded
+      ALTER TABLE for schema evolution on existing DBs).
+  - id: review
+    status: complete
+    note: All 18 project tests pass; npm run build succeeds.
+  - id: integrate
+    status: complete
+    note: Committed to feat/consus-v1-core-loop.
+verdict: pass
+finished_at: "2026-07-25T20:41:00Z"

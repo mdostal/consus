@@ -1,0 +1,22 @@
+metrics:
+  enabled: true
+
+execution:
+  default_methodology: hybrid   # BDD for UI, TDD for backend — see developer.notes
+
+developer:
+  pr_style: single-commit
+  commit_granularity: medium
+  review_depth: thorough
+  notes: >
+    Methodology is split by layer: BDD (Given/When/Then) for UI work, TDD for
+    backend work. Priority is solid, well-defined, well-tested foundations —
+    explicitly avoiding "build it, then test it, discover it's wonky." A prior
+    implementation of Consus exists to reference, but re-imagining is fine —
+    do not treat the prior build as a hard constraint.
+
+planning:
+  collaborative_review: true
+
+meta_team:
+  github_forwarding: false
