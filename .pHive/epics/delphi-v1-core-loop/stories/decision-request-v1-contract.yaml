@@ -1,0 +1,92 @@
+id: decision-request-v1-contract
+epic: delphi-v1-core-loop
+title: Decision Contract (decision-request/v1) + deterministic renderer selection
+status: pending
+complexity: high
+methodology: tdd
+depends_on: [delphi-project-scaffold]
+parallel_allowed: true
+parallel_rationale: bounded-slice
+
+description: |
+  Implement REQ-11: a structured decision-object schema (question, choices/options,
+  CBA table, AnswerShape) that items optionally carry as a `decision_payload` JSON
+  column, plus the server-side logic that resolves which deterministic control an
+  item should render (yes_no/choose_one/survey/edit/approve). This is additive to
+  the existing `items` table — items without a payload are unaffected. Per
+  prior-art.md, this is "the best pattern in the codebase" and should become the
+  primary contract for new decision items, not a fallback.
+
+  IMPORTANT: the real `decision-request.ts` source exists only on the hive host
+  (`ssh dostal@100.75.161.82` → `Claud-ometer/src/lib/delphi/decision-request.ts`)
+  and was NOT fetched during planning. Before implementing, fetch and read that
+  file — prior-art.md explicitly calls for porting it "nearly verbatim," not
+  reinventing it from the summary in this story or in prior-art.md.
+
+acceptance_criteria:
+  - "Given an item carries a decision_payload conforming to decision-request/v1, when Delphi resolves its renderer, then the resolved AnswerShape matches the payload (yes_no/choose_one/survey/edit/approve)."
+  - "Given an item has no decision_payload, when queried, then it behaves exactly as REQ-01..REQ-10 already specified — this contract is additive, not a breaking schema change."
+  - "Given a fenced JSON block matching decision-request/v1's shape, when parsed, then it round-trips without loss (parse → serialize → identical payload) — the parser is pure, no external dependencies, per prior-art.md's description of the original."
+
+steps:
+  - id: research
+    description: |
+      Fetch the real decision-request.ts from the hive host
+      (ssh dostal@100.75.161.82 -> Claud-ometer/src/lib/delphi/decision-request.ts)
+      and read it in full before writing tests. If SSH access is unavailable in
+      this environment, escalate to the operator rather than guessing at the
+      schema beyond what docs/prior-art.md documents.
+    agent: researcher
+  - id: test-spec
+    description: Write failing tests for decision_payload parse/round-trip and AnswerShape resolution, based on the real source (or, if unavailable, the documented prior-art.md shape with the gap flagged).
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: Implement the decision_payload schema, parser, and AnswerShape resolver to make failing tests pass.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: Review implementation and tests for correctness, and confirm fidelity to the real prior source where it was available.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit and push to feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Code/delphi
+  tech_stack:
+    backend: node+typescript (fastify)
+    database: sqlite
+  key_files:
+    - path: docs/prior-art.md
+      purpose: "§1 and §3 LIFT #2 — the only local description of decision-request/v1's shape; the real source is remote."
+
+files_to_modify:
+  - file: server/decision-contract/parser.ts
+    change: Create — decision_payload parse/serialize + AnswerShape resolution.
+  - file: server/db/migrate.ts
+    change: Extend — add decision_payload JSON column to items.
+
+code_examples: []  # Real reference (decision-request.ts) is remote and unfetched — see Risks.
+
+design_decisions:
+  - decision: decision_payload is additive on items, not a schema fork.
+    rationale: architecture.md Key Decisions #6 — items without a payload keep working unchanged.
+
+cross_cutting:
+  - concern: documentation
+    action: "Add 'decision-request/v1', 'decision_payload', 'AnswerShape' to CONTEXT.md Terminology — core new domain vocabulary discovered via prior-art.md."
+
+risks:
+  - severity: high
+    description: The real decision-request.ts source was not fetched during planning; building purely from prior-art.md's summary risks drifting from the actual proven shape prior-art.md explicitly says to port "nearly verbatim."
+    mitigation: research step requires fetching the real file before test-spec; if SSH access fails, escalate rather than guess.
+
+references:
+  - path: docs/prior-art.md
+    relevant_excerpt: |
+      `decision-request.ts` (`dostal:decision-request/v1`) — the STRUCTURED decision
+      schema (the newest, best pattern). Pure, parses a fenced JSON block from a
+      ticket body. ... port nearly verbatim.

@@ -1,0 +1,89 @@
+id: living-docs-overlay
+epic: delphi-v1-core-loop
+title: "[P1 stretch] Living Docs Overlay"
+status: pending
+complexity: high
+methodology: bdd
+depends_on: [doc-scanner-and-index, multica-client-comment-write]
+
+description: |
+  Implement REQ-10 (P1 stretch): Delphi's own rendered overlay referencing
+  Multica + `.pHive/planning/` + the idea board — composed, not copied.
+  Distinct from Multica's board/task-state data model per architecture.md's
+  "living docs vs. Multica" clarification. The idea board integration point
+  is not yet specified anywhere in this session's research — flagged as an
+  open dependency below, not assumed.
+
+acceptance_criteria:
+  - "Given content exists in Multica, .pHive/planning/, and the idea board, when Delphi renders a living doc, then it composes references from all three sources into one view."
+  - "Given the underlying sources change, when the operator revisits the living doc, then it reflects current state — it is not a one-time snapshot."
+  - "Given Delphi's living-docs store, when inspected, then it is confirmed distinct from Multica's board/task-state schema — an overlay, not a duplicate copy."
+
+steps:
+  - id: research
+    description: |
+      Confirm the Doc Scanner API (doc-scanner-and-index) and Multica Client
+      (multica-client-comment-write) as the two confirmed sources. Locate
+      the "idea board" integration point — no local spec was found during
+      this epic's planning; this is a genuine open dependency, not a known API.
+    agent: researcher
+  - id: behavior-spec
+    description: Write Given/When/Then specs for cross-source composition and live-refresh, derived from this story's acceptance criteria.
+    agent: tester
+    depends_on: [research]
+  - id: ui-design
+    description: Delegate to /design for wireframes (atomic external call; see skills/design/SKILL.md). Deferred — not run live during this /plan session; run /design against this story before /execute.
+    agent: ui-designer
+    delegates_to: design
+    depends_on: [research]
+  - id: implement
+    description: Implement the Living Docs Overlay to satisfy the behavior specs and /design wireframe output, scoped to whichever sources are actually confirmed integrable at execution time (idea board may need its own spike first).
+    agent: developer
+    depends_on: [behavior-spec, ui-design]
+  - id: test
+    description: Derive test cases from behavior specs and verify they pass.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Review implementation, behavior specs, and tests for correctness.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Code/delphi
+  tech_stack:
+    frontend: react+vite
+    backend: node+typescript (fastify)
+
+files_to_modify:
+  - file: server/features/living-docs/compose.ts
+    change: Create — composition layer referencing Doc Scanner + Multica Client (+ idea board once specified).
+  - file: web/src/features/living-docs/LivingDocView.tsx
+    change: Create — rendered overlay UI.
+
+code_examples: []  # No reference implementation — first cross-source composition story in the epic.
+
+design_decisions:
+  - decision: Living docs are an overlay (references + render), never a copy of Multica's board/task-state schema.
+    rationale: architecture.md explicit clarification, directly sourced from the operator's answer during discovery.
+
+cross_cutting:
+  - concern: documentation
+    action: "Add 'Living docs overlay' and its source-composition model to CONTEXT.md once implemented; document the idea board integration once it's specified."
+
+risks:
+  - severity: high
+    description: The "idea board" source has no confirmed local spec/API — this is the least-grounded of the three composed sources.
+    mitigation: research step treats this as an open spike; if the idea board integration point isn't resolved by execution time, this story ships with two of three sources (Multica + .pHive/planning) and the idea board is explicitly deferred further, not silently dropped.
+
+references:
+  - path: .pHive/planning/architecture.md
+    relevant_excerpt: |
+      Living docs vs. Multica: Multica's data model is the board/task state
+      machine, not the living-docs model. Delphi's living docs are a
+      separate store that references Multica + .pHive/planning/ + the idea
+      board and renders them — an overlay, not a copy of Multica's schema.

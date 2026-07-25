@@ -1,0 +1,81 @@
+id: decision-taxonomy-and-triage
+epic: delphi-v1-core-loop
+title: Decision-type taxonomy + triage bucket classifier
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: [decision-request-v1-contract]
+
+description: |
+  Implement REQ-12: classify each item into one of 7 decision-type renderer labels
+  (cba/choose/survey/edit/quorum/doc/default, first-match-wins) and separately into
+  one of 5 triage buckets (open_question/your_action/agent_task/research_plan/noise),
+  with a human-authored override table that beats the heuristic. Explicitly generic
+  — no hardcoded per-item ID allowlists (the prior build's REDO-flagged mistake).
+
+acceptance_criteria:
+  - "Given an item, when classified, then it receives exactly one decision-type label via first-match-wins across the 7 types."
+  - "Given an item, when triaged, then it receives exactly one bucket label; open_question items surface first in the operator's Needs-you view."
+  - "Given a human-authored override entry exists for an item, when classification runs, then the override wins over the heuristic classifier's bucket assignment."
+  - "Given the classifier's implementation, when reviewed, then it contains no hardcoded per-item identifier allowlist — classification is generic and driven by decision_payload where present, not scraped prose plus a hand-patched ID list."
+
+steps:
+  - id: research
+    description: Confirm the decision_payload schema from decision-request-v1-contract to drive classification where present.
+    agent: researcher
+  - id: test-spec
+    description: Write failing tests for decision-type resolution, triage-bucket assignment, and override precedence.
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: Implement the classifier and triage_overrides table to make failing tests pass.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: Review implementation and tests for correctness, specifically confirming no hardcoded ID allowlist exists.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit and push to feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Code/delphi
+  tech_stack:
+    backend: node+typescript (fastify)
+    database: sqlite
+
+files_to_modify:
+  - file: server/decision-contract/classifier.ts
+    change: Create — decision-type + triage-bucket classification.
+  - file: server/db/migrate.ts
+    change: Extend — add decision_type, triage_bucket columns to items; add triage_overrides table.
+
+code_examples:
+  - title: decision_payload shape to classify against
+    file: server/decision-contract/parser.ts
+    snippet: |
+      # Established by decision-request-v1-contract — classifier reads
+      # items.decision_payload when present to inform decision-type resolution.
+
+design_decisions:
+  - decision: Generic, contract-first classification — no per-item ID allowlists.
+    rationale: prior-art.md's explicit REDO instruction — the prior build's KNOWN_HUMAN_IDENTIFIERS/FORCE_INCLUDE_IDENTIFIERS was backlog-specific firefighting, not architecture.
+
+cross_cutting:
+  - concern: documentation
+    action: "Add 'triage bucket', 'decision type' to CONTEXT.md Terminology with the 5/7-label enums."
+
+risks:
+  - severity: low
+    description: Heuristic classification quality (recall/precision on real Delphi traffic) can't be validated until real items flow through — v1 ships with the override table as the safety valve.
+    mitigation: The human-authored override table (triage_overrides) is the escape hatch; not blocking for v1.
+
+references:
+  - path: docs/prior-art.md
+    relevant_excerpt: |
+      Triage buckets ... 200 mis-routed items collapse to what needs YOU: open_question
+      (Needs you — surfaced first) · your_action · agent_task (In the swarm) ·
+      research_plan · noise (Archive). A human-authored ... override map so ops/stale
+      garbage never reaches Needs-you and genuine decisions always do.

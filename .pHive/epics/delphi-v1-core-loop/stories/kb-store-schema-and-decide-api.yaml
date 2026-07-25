@@ -1,0 +1,83 @@
+id: kb-store-schema-and-decide-api
+epic: delphi-v1-core-loop
+title: KB Store — schema, audit log, versions, decide API
+status: pending
+complexity: high
+methodology: tdd
+depends_on: [delphi-project-scaffold]
+parallel_allowed: true
+parallel_rationale: bounded-slice
+
+description: |
+  Implement REQ-08's backend: kb_entries + kb_versions tables, and a
+  "decide" API path that, on any item, writes an audit_log entry (actor,
+  timestamp, field, old_value, new_value) and — for kb_entries specifically
+  — a new kb_versions row. This is the durable "shared truth" store the
+  product brief calls "the Delphi section." v1 is single-operator; schema
+  must not block later multi-user/voting (REQ-09/P2) but does not implement
+  it now.
+
+acceptance_criteria:
+  - "Given a decision is approved in Delphi on any item, when it's written, then an audit_log entry records actor, timestamp, field, and old→new value (REQ-08, verbatim)."
+  - "Given a kb_entry changes over time, when queried, then every prior version is retrievable via kb_versions, not just current state."
+  - "Given the KB store, when queried, then it is backed by SQLite — consistent with the audit/version requirements above, not flat files."
+  - "Given v1 is single-operator, when the schema is inspected, then it contains no multi-user/voting fields, but no field forecloses adding them in a later migration."
+
+steps:
+  - id: research
+    description: Confirm the items table shape from delphi-project-scaffold to anchor kb_entries/audit_log correctly.
+    agent: researcher
+  - id: test-spec
+    description: Write failing tests for kb_entries/kb_versions CRUD, the decide API's audit_log write, and version-history retrieval.
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: Implement the KB store schema and decide API to make failing tests pass.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: Review implementation and tests for correctness and convention compliance.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit and push to feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Code/delphi
+  tech_stack:
+    backend: node+typescript (fastify)
+    database: sqlite
+  key_files:
+    - path: .pHive/planning/architecture.md
+      purpose: kb_entries/kb_versions/audit_log table shapes and the "audit-log-append-only" invariant.
+
+files_to_modify:
+  - file: server/db/migrate.ts
+    change: Extend — add kb_entries, kb_versions, audit_log tables.
+  - file: server/routes/kb.ts
+    change: Create — decide/approve endpoint writing audit_log + kb_versions.
+
+code_examples: []  # Extends delphi-project-scaffold's migrate.ts pattern.
+
+design_decisions:
+  - decision: audit_log is append-only — no UPDATE/DELETE statements against it.
+    rationale: Matches architecture.md's audit-log integrity requirement and REQ-08's "shared truth" framing.
+  - decision: SQLite schema explicitly leaves room for a future multi-user column set without a breaking migration.
+    rationale: REQ-09/P2 (multi-user/voting) is deferred but the schema shouldn't require a rewrite to add it.
+
+cross_cutting:
+  - concern: documentation
+    action: "Add 'KB store', 'audit_log', 'kb_versions' as CONTEXT.md Terminology entries — core new domain vocabulary for the project."
+
+risks:
+  - severity: medium
+    description: GAP-01 from the PRD Gap Report — exact first-slice size of KB entity types for v1 is not finalized.
+    mitigation: This story ships the schema/API generically (any item type can be kb_entries-backed); scope narrowing happens at kb-decide-ui and kb-backlog-full-crud, not here.
+
+references:
+  - path: .pHive/planning/architecture.md
+    relevant_excerpt: |
+      kb_entries       id, title, current_version_id, created_at
+      kb_versions      id, kb_entry_id FK, content, author, created_at  -- REQ-08

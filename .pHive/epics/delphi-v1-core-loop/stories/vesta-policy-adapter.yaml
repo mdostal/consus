@@ -1,0 +1,85 @@
+id: vesta-policy-adapter
+epic: delphi-v1-core-loop
+title: Vesta Policy Adapter — read approval policy, resolve auto-accept (REQ-13)
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: [delphi-project-scaffold]
+parallel_allowed: true
+parallel_rationale: bounded-slice
+
+description: |
+  Implement REQ-13: a read-only adapter against Vesta's approval policy
+  (scope: global/per-repo/per-decision-type/per-risk-level) that resolves
+  whether an item should be auto-accepted or surfaced to the human queue.
+  Same treatment as Auriga: no local Vesta repo/spec exists (confirmed
+  during this reconciliation), so build against the documented behavioral
+  contract from docs/prior-art.md and flag the exact wire schema as pending.
+
+acceptance_criteria:
+  - "Given Vesta's policy for an item's repo/decision-type/risk combination is 'auto', when the item arrives, then Delphi accepts it without surfacing a human gate."
+  - "Given Vesta's policy flags an item as strategic, ambiguous, or irreversible, when the item arrives, then Delphi surfaces it in the human queue regardless of any other signal."
+  - "Given Delphi is running standalone (no Pantheon, no Vesta reachable), when policy lookup fails, then Delphi falls back to a local default policy (auto / bare gate) rather than blocking or crashing."
+  - "Given this adapter's implementation, when reviewed, then it never exposes a policy-configuration UI beyond the standalone-mode local default — Delphi reads and enforces, it does not own the setting."
+
+steps:
+  - id: research
+    description: |
+      Confirm no local Vesta repo/spec exists (already checked during
+      planning — re-verify at execution time in case Vesta has since
+      landed, mirroring auriga-tracker-reader's research step pattern).
+      If still absent, build the adapter's internal interface against
+      REQ-13's behavioral contract only.
+    agent: researcher
+  - id: test-spec
+    description: Write failing tests against the internal Vesta Policy Adapter interface (mocked transport) — auto-accept resolution, human-gate flagging, and standalone-mode fallback.
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: Implement the Vesta Policy Adapter to make failing tests pass, wiring the real transport if Vesta is confirmed reachable, else the documented fallback.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: Review implementation and tests for correctness, confirming Delphi never owns the policy setting itself.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit and push to feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Code/delphi
+  tech_stack:
+    backend: node+typescript (fastify)
+  key_files:
+    - path: docs/prior-art.md
+      purpose: "§2 'Approval policy is CENTRAL' — the only local description of Vesta's role; no Vesta repo exists to verify against."
+
+files_to_modify:
+  - file: server/adapters/vesta/policy-reader.ts
+    change: Create — read-only client resolving auto-accept vs. human-gate.
+
+code_examples: []  # No local Vesta spec to pattern-match against — see Risks.
+
+design_decisions:
+  - decision: Build the adapter's internal interface first, wire the real client once Vesta is confirmed reachable.
+    rationale: architecture.md Key Decisions #7 — same adapter-first pattern as Auriga.
+
+cross_cutting:
+  - concern: documentation
+    action: "Add 'Vesta', 'approval policy' to CONTEXT.md Terminology; cross-reference the Vesta=knob/Delphi=surface+enforcer/votem=mechanism split from prior-art.md."
+
+risks:
+  - severity: high
+    description: No local Vesta repo/spec exists as of this reconciliation — same category of risk as Auriga's tracker contract.
+    mitigation: Adapter-first implementation against the behavioral contract; real schema wired once Vesta is reachable.
+
+references:
+  - path: docs/prior-art.md
+    relevant_excerpt: |
+      Vesta owns the SETTING (the knob): the approval policy, scoped global /
+      per-repo / per-decision-type/risk. Set once. Delphi is the SURFACE +
+      ENFORCER: reads the policy, renders docs/diagrams, auto-accepts until it
+      hits something the policy flags (strategic / ambiguous / irreversible),
+      then surfaces the human gate.

@@ -1,0 +1,86 @@
+id: kb-decide-ui
+epic: delphi-v1-core-loop
+title: KB Browser UI — view + decide on items
+status: pending
+complexity: medium
+methodology: bdd
+depends_on: [kb-store-schema-and-decide-api, doc-browser-ui, decision-card-renderer-ui]
+
+description: |
+  Implement REQ-08's frontend: a KB browser where the operator can view
+  items (starting with the doc_ref items doc-browser-ui already surfaces)
+  and take a "decide" action (approve/reject/annotate), which calls
+  kb-store-schema-and-decide-api's decide endpoint. This is the first
+  moment an item becomes "shared truth" rather than just readable —
+  "go-build," not "done," per the product brief's core differentiator.
+
+acceptance_criteria:
+  - "Given an item is open in the KB browser, when the operator takes a decide action, then the decision is persisted via the decide API and an audit_log entry is visible in the item's history view."
+  - "Given a KB entry has version history, when the operator views it, then every prior version is browsable, not just the current one."
+  - "Given the KB browser, when the operator uses it, then it operates as single-operator view+decide+store — no multi-user/voting UI is present (deferred to REQ-09/P2)."
+
+steps:
+  - id: research
+    description: Confirm the decide API and version-history endpoints from kb-store-schema-and-decide-api.
+    agent: researcher
+  - id: behavior-spec
+    description: Write Given/When/Then specs for the decide action and version-history view, derived from this story's acceptance criteria.
+    agent: tester
+    depends_on: [research]
+  - id: ui-design
+    description: Delegate to /design for wireframes (atomic external call; see skills/design/SKILL.md). Deferred — not run live during this /plan session; run /design against this story before /execute.
+    agent: ui-designer
+    delegates_to: design
+    depends_on: [research]
+  - id: implement
+    description: Implement the KB Browser UI to satisfy the behavior specs and /design wireframe output.
+    agent: developer
+    depends_on: [behavior-spec, ui-design]
+  - id: test
+    description: Derive test cases from behavior specs and verify they pass.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Review implementation, behavior specs, and tests for correctness.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Code/delphi
+  tech_stack:
+    frontend: react+vite
+
+files_to_modify:
+  - file: web/src/features/kb/KBBrowser.tsx
+    change: Create — item view + decide action UI.
+  - file: web/src/features/kb/VersionHistory.tsx
+    change: Create — kb_versions browsing component.
+
+code_examples:
+  - title: Doc Browser's list/render split to follow for KB items
+    file: web/src/features/docs/DocBrowser.tsx
+    snippet: |
+      # Established by doc-browser-ui — KBBrowser.tsx follows the same
+      # list-view + item-detail-view split.
+
+design_decisions:
+  - decision: Decide action is generic across item types (doc_ref today, human_request/kb_entry later), not KB-store-entity-specific.
+    rationale: Keeps the UI reusable as minerva-qa-queue-ui and comment-thread-ui land later in the epic.
+
+cross_cutting:
+  - concern: documentation
+    action: "None new — consumes already-documented decide API from kb-store-schema-and-decide-api."
+
+risks:
+  - severity: medium
+    description: "Agent-ready checklist gap: /design wireframes deferred, not produced during this /plan session."
+    mitigation: "Run /design for this story explicitly before /execute — flagged in the plan confirmation output."
+
+references:
+  - path: .pHive/planning/product-brief.md
+    relevant_excerpt: |
+      approve FIRES OFF work + becomes KB — it is "go-build," not "done."
