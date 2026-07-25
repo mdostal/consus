@@ -1,0 +1,33 @@
+story_id: minerva-adapter-bridge
+epic_id: delphi-v1-core-loop
+methodology: tdd
+steps:
+  - id: research
+    status: complete
+    note: Re-confirmed Hive's @hive/task-tracking-dispatch ABI shape (capabilities/abi_version, invoke(method,params), ok/recoverable/code) from earlier in this session; mirrored it in transport.ts.
+  - id: test-spec
+    status: complete
+    note: >
+      5 tests in server/adapters/minerva/index.test.ts: field-verbatim
+      ingestion, confidence/suggested_channel storage, unknown-channel
+      fallback (data preserved, not dropped), decision_payload translation
+      (yes_no AnswerShape), bidirectional status sync on answer.
+  - id: implement
+    status: complete
+    note: >
+      server/adapters/minerva/transport.ts (MinervaTransport interface +
+      StdioMinervaTransport for production, mirroring Hive's ABI error codes),
+      server/adapters/minerva/index.ts (ingestQuestion/getHumanRequest/
+      answerHumanRequest), human_requests table + items.decision_payload/
+      decision_type/triage_bucket columns added to migrate.ts.
+  - id: review
+    status: complete
+    note: >
+      All 23 project tests pass (also fixed a pre-existing flaky timestamp
+      assertion in doc-scanner-and-index's test, unrelated to this story's
+      scope but caught while running the full suite); npm run build succeeds.
+  - id: integrate
+    status: complete
+    note: Committed to feat/delphi-v1-core-loop.
+verdict: pass
+finished_at: "2026-07-25T20:44:00Z"

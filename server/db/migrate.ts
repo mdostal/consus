@@ -71,10 +71,27 @@ export function runMigration(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_kb_versions_entry_id ON kb_versions(kb_entry_id);
+
+    CREATE TABLE IF NOT EXISTS human_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id TEXT NOT NULL REFERENCES items(id),
+      minerva_question_id TEXT NOT NULL UNIQUE,
+      text TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      reason TEXT,
+      confidence REAL,
+      suggested_channel TEXT,
+      status TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_human_requests_minerva_id ON human_requests(minerva_question_id);
   `);
 
   // Guarded ALTER TABLE for columns added after a table already existed on
   // some deployment — CREATE TABLE IF NOT EXISTS alone won't add these to a
   // pre-existing items table.
   addColumnIfMissing(db, "items", "decided_at", "TEXT");
+  addColumnIfMissing(db, "items", "decision_payload", "TEXT");
+  addColumnIfMissing(db, "items", "decision_type", "TEXT");
+  addColumnIfMissing(db, "items", "triage_bucket", "TEXT");
 }

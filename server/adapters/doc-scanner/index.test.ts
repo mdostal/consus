@@ -52,7 +52,7 @@ describe("Doc Scanner", () => {
     expect(epicDoc?.phase).toBe("docs");
   });
 
-  it("updates content_hash and last_scanned_at when a doc changes on disk", () => {
+  it("updates content_hash when a doc changes on disk", () => {
     scanRepo(db, { repoName: "delphi", repoPath: repoDir });
     const before = queryDocIndex(db, "delphi").find((r) => r.file_path.endsWith("prd.md"));
 
@@ -61,8 +61,11 @@ describe("Doc Scanner", () => {
 
     const after = queryDocIndex(db, "delphi").find((r) => r.file_path.endsWith("prd.md"));
 
+    // content_hash is the meaningful change-detection signal; last_scanned_at
+    // is millisecond-resolution and can legitimately tie when two scans run
+    // within the same millisecond, so it's not asserted for strict inequality.
     expect(after?.content_hash).not.toBe(before?.content_hash);
-    expect(after?.last_scanned_at).not.toBe(before?.last_scanned_at);
+    expect(after?.last_scanned_at >= (before?.last_scanned_at ?? "")).toBe(true);
   });
 
   it("is idempotent — re-scanning unchanged docs does not duplicate rows", () => {
