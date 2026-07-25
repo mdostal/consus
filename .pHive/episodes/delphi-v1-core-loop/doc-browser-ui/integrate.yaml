@@ -1,0 +1,30 @@
+story_id: doc-browser-ui
+epic_id: delphi-v1-core-loop
+methodology: bdd
+steps:
+  - id: research
+    status: complete
+    note: Confirmed the /api/docs grouped response shape from doc-scanner-and-index; confirmed DecisionCard's theme tokens to reuse for the doc rendering container.
+  - id: behavior-spec
+    status: complete
+    note: 2 tests in DocBrowser.test.tsx (grouped listing, onOpen callback) + 2 in DocRenderer.test.tsx (markdown renders formatted not raw, html renders in an isolated container).
+  - id: ui-design
+    status: deferred
+    note: /design not run live this session.
+  - id: implement
+    status: complete
+    note: >
+      web/src/features/docs/DocBrowser.tsx (grouped repo->epic->phase list),
+      web/src/features/docs/DocRenderer.tsx (marked-based markdown rendering
+      + raw HTML container). Added the `marked` dependency.
+  - id: test
+    status: complete
+    note: All 4 component tests pass.
+  - id: review
+    status: complete
+    note: All 71 project tests pass; npm run build succeeds.
+  - id: integrate
+    status: complete
+    note: Committed to feat/delphi-v1-core-loop.
+verdict: pass-with-deferred-design-pass
+finished_at: "2026-07-25T20:56:00Z"
