@@ -288,6 +288,33 @@ These are not yet scoped into epic stories — recommended next step is a follow
 pass once v1 ships, scoping REQ-16..REQ-20 the same way REQ-11..REQ-15 were scoped after
 the prior-art.md reconciliation.
 
+---
+
+## Backlog, part 2 — full lineage scrape (`docs/delphi-lineage-inventory.md`, post-v1)
+
+After v1 shipped, a deeper scrape (Claud-ometer's real classifier/persistence source via SSH,
+`mdostal/delphi`'s remaining server files, `mdostal/approval`, `mdostal/human-review`) surfaced
+more backlog — **and a correction**: `approval` and the `pantheon` dashboard shell will both be
+**redone**; they're design lessons, not integration targets. The only final Pantheon components
+are Consus, Heimdall, Minerva, and Auriga. Full detail and phasing lives in
+`.pHive/planning/roadmap.md`; requirements summarized here for traceability:
+
+- **REQ-22:** Legacy heuristic decision-type + triage classification (v1 has no fallback path
+  for items without a `decision_payload`; also fixes a real default-bucket bug).
+- **REQ-23:** Decision-request heuristic fallback tier (v1 only implements the structured-block
+  parse tier).
+- **REQ-24:** Real Multica auth (v1's client has none).
+- **REQ-25:** Chat-summarization-on-decide.
+- **REQ-26:** Minerva survey responses — batched, multi-question, not just one at a time.
+- **REQ-27:** Knowledgebase depth — per-project structure + cross-project view (closes GAP-01).
+- **REQ-28:** Agent-harness/API surface, formalized and documented — prep for plugging into the
+  Pantheon once it's redone.
+
+REQ-16 (fire-agents-to-iterate), REQ-17 (save≠submit), REQ-18 (sectional review+diff), REQ-19
+(Pantheon embed handshake), REQ-20 (multi-repo doc resolution) carry forward from the first
+lineage pass — see `roadmap.md` for updated phase placement (REQ-19 in particular is now
+deliberately last, since it targets a protocol owned by the shell being redone).
+
 ## Gap Report
 
 - **GAP-01:** Exact first-slice size for the KB "big doc store" (which entity types ship in v1 vs. wait) is still open per the Discovery Brief's remaining open items.
