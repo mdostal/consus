@@ -1,58 +1,63 @@
 import { describe, it, expect } from "vitest";
-import { parseDecisionPayload, serializeDecisionPayload, resolveAnswerShape } from "./parser.js";
+import { parseDecisionPayload, serializeDecisionPayload, verdictStatus } from "./parser.js";
+
+const SAMPLE_PAYLOAD = {
+  version: "dostal:decision-request/v1" as const,
+  title: "Wrap Multica in our shell vs embed our stack into Multica",
+  context: "Why this decision exists.",
+  options: [
+    { id: "A", title: "WRAP — our shell hosts Multica as one tab", tradeoffs: "+ no upstream dep; - we own the shell" },
+    { id: "B", title: "EMBED — our plugins mount inside Multica", tradeoffs: "+ single-pane; - upstream PR required" },
+  ],
+  recommended: "A",
+};
 
 describe("decision-request/v1 parser", () => {
   it("round-trips a payload through parse -> serialize without loss", () => {
-    const payload = {
-      contractVersion: "decision-request/v1" as const,
-      answerShape: "choose_one" as const,
-      question: "Which DAG engine?",
-      choices: ["React Flow", "tldraw", "Excalidraw"],
-    };
-
-    const serialized = serializeDecisionPayload(payload);
+    const serialized = serializeDecisionPayload(SAMPLE_PAYLOAD);
     const parsed = parseDecisionPayload(serialized);
 
-    expect(parsed).toEqual(payload);
+    expect(parsed).toEqual(SAMPLE_PAYLOAD);
   });
 
-  it("parses a fenced JSON block from a ticket body", () => {
+  it("parses a fenced ```decision-request block from a ticket body", () => {
     const ticketBody = [
       "Some prose before the block.",
-      "```json",
-      JSON.stringify({ contractVersion: "decision-request/v1", answerShape: "yes_no", question: "Ship it?" }),
+      "```decision-request",
+      JSON.stringify(SAMPLE_PAYLOAD),
       "```",
       "Some prose after.",
     ].join("\n");
 
     const parsed = parseDecisionPayload(ticketBody);
 
-    expect(parsed?.question).toBe("Ship it?");
-    expect(parsed?.answerShape).toBe("yes_no");
+    expect(parsed?.title).toBe(SAMPLE_PAYLOAD.title);
+    expect(parsed?.options).toHaveLength(2);
+    expect(parsed?.recommended).toBe("A");
   });
 
-  it("returns null for content with no fenced JSON block rather than throwing", () => {
+  it("returns null for content with no fenced decision-request block rather than throwing", () => {
     expect(parseDecisionPayload("just plain prose, no JSON here")).toBeNull();
   });
 
-  describe("resolveAnswerShape", () => {
-    it.each([
-      ["yes_no", "yes_no"],
-      ["choose_one", "choose_one"],
-      ["survey", "survey"],
-      ["edit", "edit"],
-      ["approve", "approve"],
-    ] as const)("resolves %s payloads to the %s control", (shape, expected) => {
-      const resolved = resolveAnswerShape({
-        contractVersion: "decision-request/v1",
-        answerShape: shape,
-        question: "q",
-      });
-      expect(resolved).toBe(expected);
-    });
+  it("returns null when recommended is missing — agents must always take a position", () => {
+    const { recommended, ...withoutRecommended } = SAMPLE_PAYLOAD;
+    void recommended;
+    expect(parseDecisionPayload(JSON.stringify(withoutRecommended))).toBeNull();
+  });
 
-    it("returns null for an item with no decision_payload — falls back to the generic item view", () => {
-      expect(resolveAnswerShape(null)).toBeNull();
+  it("returns null when fewer than 2 options are given", () => {
+    expect(parseDecisionPayload(JSON.stringify({ ...SAMPLE_PAYLOAD, options: [SAMPLE_PAYLOAD.options[0]] }))).toBeNull();
+  });
+
+  describe("verdictStatus", () => {
+    it.each([
+      [{ kind: "accepted" as const }, "done"],
+      [{ kind: "option_chosen" as const, optionId: "A" }, "done"],
+      [{ kind: "mix" as const, optionIds: ["A", "B"], why: "combine" }, "done"],
+      [{ kind: "rejected_iteration_requested" as const, commentary: "redo" }, "in_progress"],
+    ] as const)("maps %o to status %s", (verdict, expected) => {
+      expect(verdictStatus(verdict)).toBe(expected);
     });
   });
 });

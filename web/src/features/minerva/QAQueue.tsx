@@ -1,5 +1,5 @@
 import { DecisionCard } from "../decisions/DecisionCard";
-import type { DecisionPayload } from "../decisions/answer-shapes/types";
+import type { DecisionPayload, Verdict } from "../decisions/answer-shapes/types";
 
 export interface QueuedQuestion {
   minervaQuestionId: string;
@@ -10,7 +10,7 @@ export interface QueuedQuestion {
 
 export interface QAQueueProps {
   questions: QueuedQuestion[];
-  onAnswer: (minervaQuestionId: string, answer: string) => void;
+  onAnswer: (minervaQuestionId: string, verdict: Verdict) => void;
 }
 
 /**
@@ -29,7 +29,7 @@ export function QAQueue({ questions, onAnswer }: QAQueueProps) {
           <DecisionCard
             question={q.text}
             payload={q.decisionPayload}
-            onAnswer={(answer) => onAnswer(q.minervaQuestionId, answer)}
+            onVerdict={(verdict) => onAnswer(q.minervaQuestionId, verdict)}
           />
         </div>
       ))}

@@ -142,6 +142,27 @@ prior_art_reconciliation: >
   decision-request.ts from the hive host (ssh dostal@100.75.161.82) before
   decision-request-v1-contract's implement step — flagged in that story's Risks.
 
+second_reconciliation_2026_07_25: >
+  All 18 stories were implemented and merged before this reconciliation — found
+  while pushing v1 live. mdostal/delphi (github.com/mdostal/delphi) is a real,
+  separate, more mature prior standalone build (2026-07-11 to 2026-07-23),
+  distinct from Claud-ometer. Its docs/decision-request-format.md is the
+  authoritative field-precise spec for dostal:decision-request/v1 — the shape
+  decision-request-v1-contract had approximated incorrectly. Corrected in place
+  post-hoc: server/decision-contract/parser.ts, classifier.ts, the Minerva
+  adapter's payload translation, and all three consuming UI components
+  (DecisionCard, AnswerControl, QAQueue, KBBrowser) were rewritten to the real
+  options-A-Z + tradeoffs + required-recommended + four-verdict shape, with
+  every affected test updated. 89/89 tests pass after the fix. Five NEW
+  requirements (REQ-16 fire-agents-to-iterate, REQ-17 save-not-submit drafts,
+  REQ-18 sectional review with non-destructive diff, REQ-19 the
+  dostal:plugin-bridge/v1 Pantheon embed handshake, REQ-20 multi-repo live-git
+  doc resolution + cross-source versions) are documented in prd.md's Backlog
+  section as NOT implemented this pass — explicit operator decision to keep
+  moving on the push/PR rather than block on a third full implementation round.
+  mdostal/delphi itself was left untouched; this project pushes to a fresh
+  mdostal/consus repo instead (unrelated git histories).
+
 deferred_ceremony_note: >
   This epic was decomposed directly from existing product-discovery-brief /
   product-brief / prd / architecture docs (already produced earlier in this

@@ -1,5 +1,5 @@
 import { DecisionCard } from "../decisions/DecisionCard";
-import type { DecisionPayload } from "../decisions/answer-shapes/types";
+import type { DecisionPayload, Verdict } from "../decisions/answer-shapes/types";
 import { VersionHistory, type KbVersion } from "./VersionHistory";
 
 export interface KbItem {
@@ -23,7 +23,7 @@ export interface KBBrowserProps {
   item: KbItem;
   versions: KbVersion[];
   auditLog: AuditLogEntry[];
-  onDecide: (itemId: string, answer: string) => void;
+  onDecide: (itemId: string, verdict: Verdict) => void;
 }
 
 /**
@@ -38,7 +38,7 @@ export function KBBrowser({ item, versions, auditLog, onDecide }: KBBrowserProps
         question={item.title}
         status={item.status}
         payload={item.decisionPayload}
-        onAnswer={(answer) => onDecide(item.id, answer)}
+        onVerdict={(verdict) => onDecide(item.id, verdict)}
       />
 
       <VersionHistory versions={versions} />

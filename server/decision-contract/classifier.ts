@@ -22,15 +22,24 @@ interface ItemRow {
   decision_payload: string | null;
 }
 
-/** First-match-wins across the 7 decision-type renderer labels. */
+/**
+ * First-match-wins across the 7 decision-type renderer labels. CORRECTED:
+ * the real decision-request/v1 payload (see parser.ts) is always an
+ * options[] (A-Z) + recommended shape — there is no per-payload
+ * answerShape/cbaTable field to switch on. A payload with `diagram: true`
+ * classifies as "cba" (the real spec's own field-reference table notes
+ * `diagram` is set "if the doc body contains an architecture diagram,"
+ * which is the CBA-with-diagram case); any other valid payload is "choose".
+ * "survey"/"edit"/"doc" remain reachable only via the legacy heuristic
+ * fallback path (unstructured items with no decision_payload) — the real
+ * system "falls back to heuristics... for legacy docs," which this
+ * classifier doesn't yet implement beyond the "default" catch-all (see
+ * this story's Risks).
+ */
 function classifyDecisionType(payload: DecisionPayload | null): DecisionType {
   if (!payload) return "default";
-  if (payload.cbaTable && payload.cbaTable.length > 0) return "cba";
-  if (payload.answerShape === "choose_one") return "choose";
-  if (payload.answerShape === "survey") return "survey";
-  if (payload.answerShape === "edit") return "edit";
-  if (payload.answerShape === "approve") return "doc";
-  return "default";
+  if (payload.diagram === true) return "cba";
+  return "choose";
 }
 
 function heuristicTriageBucket(item: ItemRow): TriageBucket {

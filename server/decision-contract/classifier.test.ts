@@ -10,6 +10,11 @@ function insertItem(db: Database.Database, id: string, opts: { decisionPayload?:
   ).run(id, "doc_ref", opts.title ?? "Test item", "open", now, now, opts.decisionPayload ?? null);
 }
 
+const OPTIONS = [
+  { id: "A", title: "Option A", tradeoffs: "+ pro; - con" },
+  { id: "B", title: "Option B", tradeoffs: "+ pro; - con" },
+];
+
 describe("Decision-type + triage classifier", () => {
   let db: Database.Database;
 
@@ -18,13 +23,15 @@ describe("Decision-type + triage classifier", () => {
     runMigration(db);
   });
 
-  it("classifies a CBA-shaped payload as decision-type 'cba'", () => {
+  it("classifies a decision_payload with diagram:true as decision-type 'cba'", () => {
     insertItem(db, "item-1", {
       decisionPayload: JSON.stringify({
-        contractVersion: "decision-request/v1",
-        answerShape: "approve",
-        question: "Approve CBA?",
-        cbaTable: [{ option: "A" }],
+        version: "dostal:decision-request/v1",
+        title: "Approve CBA?",
+        context: "ctx",
+        options: OPTIONS,
+        recommended: "A",
+        diagram: true,
       }),
     });
 
@@ -32,20 +39,18 @@ describe("Decision-type + triage classifier", () => {
     expect(result.decisionType).toBe("cba");
   });
 
-  it("classifies a choose_one payload as 'choose', a survey payload as 'survey', an edit payload as 'edit'", () => {
+  it("classifies any other valid decision_payload as 'choose' — the real contract is always option-based", () => {
     insertItem(db, "item-2", {
-      decisionPayload: JSON.stringify({ contractVersion: "decision-request/v1", answerShape: "choose_one", question: "q", choices: ["a", "b"] }),
-    });
-    insertItem(db, "item-3", {
-      decisionPayload: JSON.stringify({ contractVersion: "decision-request/v1", answerShape: "survey", question: "q" }),
-    });
-    insertItem(db, "item-4", {
-      decisionPayload: JSON.stringify({ contractVersion: "decision-request/v1", answerShape: "edit", question: "q" }),
+      decisionPayload: JSON.stringify({
+        version: "dostal:decision-request/v1",
+        title: "Choose an option",
+        context: "ctx",
+        options: OPTIONS,
+        recommended: "A",
+      }),
     });
 
     expect(classifyItem(db, "item-2").decisionType).toBe("choose");
-    expect(classifyItem(db, "item-3").decisionType).toBe("survey");
-    expect(classifyItem(db, "item-4").decisionType).toBe("edit");
   });
 
   it("falls back to 'default' when no decision_payload and no other signal matches", () => {

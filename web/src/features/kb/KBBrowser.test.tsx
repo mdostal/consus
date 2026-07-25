@@ -6,17 +6,26 @@ const ITEM = {
   id: "item-1",
   title: "Adopt React Flow for the DAG viewer",
   status: "open",
-  decisionPayload: { contractVersion: "decision-request/v1" as const, answerShape: "approve" as const, question: "Adopt React Flow for the DAG viewer" },
+  decisionPayload: {
+    version: "dostal:decision-request/v1" as const,
+    title: "Adopt React Flow for the DAG viewer",
+    context: "",
+    options: [
+      { id: "A", title: "React Flow", tradeoffs: "+ own the JSON" },
+      { id: "B", title: "tldraw", tradeoffs: "+ best canvas" },
+    ],
+    recommended: "A",
+  },
 };
 
 describe("KBBrowser", () => {
-  it("renders the item via the shared DecisionCard and calls onDecide with the answer", () => {
+  it("renders the item via the shared DecisionCard and calls onDecide with the verdict", () => {
     const onDecide = vi.fn();
     render(<KBBrowser item={ITEM} versions={[]} auditLog={[]} onDecide={onDecide} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /approve/i }));
+    fireEvent.click(screen.getByRole("button", { name: /accept/i }));
 
-    expect(onDecide).toHaveBeenCalledWith("item-1", "approve");
+    expect(onDecide).toHaveBeenCalledWith("item-1", { kind: "accepted" });
   });
 
   it("shows version history, not just the current state", () => {

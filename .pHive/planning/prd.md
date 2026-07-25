@@ -109,33 +109,51 @@ scope. REQ-01 (Minerva bridge) and REQ-08 (KB store) are unchanged but now expli
 compose with REQ-11.
 
 ### REQ-11: Decision Contract (`decision-request/v1`) + Deterministic Renderer
-A structured decision-object schema — question, choices/options, CBA table, `AnswerShape`
-(`yes_no` | `choose_one` | `survey` | `edit` | `approve`) — that items optionally carry as
-a `decision_payload`. When present, Consus renders a deterministic native UI driven by the
-`AnswerShape`, instead of generic prose or a scraped/guessed control.
-- **Source:** prior-art.md §1 "What to REDO" / §3 LIFT #2 — explicitly called "the best
-  pattern in the codebase" and "the correct architecture... make it the primary contract,
-  not the fallback."
-- **User value:** The real choice + a real Submit always appear — never a lone "Approve"
+**CORRECTED 2026-07-25** after finding the actual `mdostal/delphi` GitHub repo (a real,
+separate, more mature prior standalone build, 2026-07-11–23 — distinct from the
+`Claud-ometer` prior-art) whose `docs/decision-request-format.md` is the authoritative,
+field-precise definition of `dostal:decision-request/v1`. The original REQ-11 pass (below,
+struck through in spirit) approximated this contract from prior-art.md's summary and got
+the shape wrong; the real contract is:
+
+```json
+{
+  "version": "dostal:decision-request/v1",
+  "title": "...", "context": "...",
+  "options": [{"id": "A", "title": "...", "tradeoffs": "..."}],
+  "recommended": "A", "diagram": true,
+  "doc": {"repo": "...", "path": "...", "ref": "main"}
+}
+```
+
+embedded in a fenced ` ```decision-request ` block (not ` ```json `). Options are lettered
+A-Z (2-26 entries); `recommended` is required — "agents must always take a position." The
+verdict a reviewer renders is one of **ACCEPTED** / **OPTION X CHOSEN** / **MIX** (several
+options + a required "why") / **REJECTED — ITERATION REQUESTED** (commentary, re-dispatches
+to agents). This has already been implemented correctly in `server/decision-contract/parser.ts`
+per the real spec, superseding the original `AnswerShape` enum design.
+- **Source:** `mdostal/delphi` repo, `docs/decision-request-format.md` (the authoritative
+  source — same `dostal:decision-request/v1` identifier prior-art.md referenced but didn't
+  fully specify).
+- **User value:** The real choice + a real verdict always appear — never a lone "Approve"
   button standing in for an actual decision.
 - **Acceptance criteria:**
-  - Given an item carries a `decision_payload` conforming to `decision-request/v1`, when
-    Consus renders it, then the primary control matches its `AnswerShape` (yes/no buttons
-    for `yes_no`, option cards for `choose_one`, a checklist for `survey`, a redline editor
-    for `edit`, a single greenlight for `approve`).
+  - Given an item carries a `decision_payload` conforming to `dostal:decision-request/v1`,
+    when Consus renders it, then every option (A-Z) is shown with its tradeoffs, the
+    `recommended` option is visually marked, and the four verdict actions (Accept/Option
+    Chosen/Mix/Reject-iterate) are all available.
   - Given an item has no `decision_payload`, when Consus renders it, then it falls back to
     the generic item view (REQ-03/REQ-05 doc rendering) — the contract is additive, not a
     hard requirement on every item.
   - Given a Minerva `Question` (REQ-01) is ingested, when it's stored, then its
-    `human_request` record also carries a `decision_payload` translation (typically
-    `yes_no` or `choose_one` shape) so it renders through this same deterministic path
-    rather than a bespoke queue-item UI.
-  - Given the real `decision-request.ts` source exists only on the remote hive host
-    (`ssh dostal@100.75.161.82` → `Claud-ometer/src/lib/consus/decision-request.ts`, not
-    fetched during this reconciliation), when this contract is implemented, then it is
-    built from prior-art.md's documented shape (pure, parses a fenced JSON block, no
-    external deps) rather than guessed further — flagged as a risk in architecture.md,
-    same treatment as the Auriga contract.
+    `human_request` record also carries a `decision_payload` translation (a minimal 2-option
+    A=Yes/B=No shape, `recommended: "A"` absent a stronger signal) so it renders through this
+    same deterministic path rather than a bespoke queue-item UI.
+  - Given a MIX verdict, when submitted, then it requires both 2+ selected option ids AND a
+    non-empty "why" — a mix without rationale is rejected client-side.
+  - Given a REJECTED verdict, when submitted, then it requires non-empty commentary and maps
+    to ticket status `in_progress` (all other verdicts map to `done`), per the real spec's
+    verdict table.
 
 ### REQ-12: Decision-Type Taxonomy + Triage Buckets
 Classify each item into one of 7 decision-type renderers (`cba` | `choose` | `survey` |
@@ -217,6 +235,58 @@ The baseline visual/UX contract every rendered artifact and decision follows.
     collapsible block, not an always-expanded wall of text.
   - Given wide content (tables, diagrams), when rendered, then it scrolls within its own
     container — the page itself never scrolls horizontally.
+
+---
+
+## Backlog — requirements found via `mdostal/delphi` reconciliation (NOT implemented this pass)
+
+Discovered 2026-07-25 while pushing v1 live: `mdostal/delphi` is a real, separate, more
+mature prior standalone build (2026-07-11–23) with genuine feature depth v1 doesn't have.
+Per operator decision, REQ-11 above was corrected against its documented contract (done),
+but the following are **documented backlog only** — not built in this pass, so the
+push/PR isn't blocked on them. Each references the exact feature in that repo's README.
+
+### REQ-16: Fire-Agents-to-Iterate
+From any item, section, or diagram: ask a question or dispatch an agent to redo/extend the
+work; results return as a NEW version on the same item, comparable in a Versions view.
+Posts an iterate-request comment via Multica dispatch; logged for traceability.
+- **Source:** `mdostal/delphi` README "Fire-agents-to-iterate (🔥)"; API shape:
+  `POST /api/decisions/:key/iterate {prompt, agentId?, agentName?, scope:{section?,diagram?}}`.
+
+### REQ-17: Save ≠ Submit (Draft Persistence)
+A reviewer can SAVE an in-progress review (edits/notes/ticks/commentary) as a server-side
+draft and return later — distinct from SUBMIT, which fires the write-back and consumes the
+draft. Reset undoes back to the delivered original.
+- **Source:** `mdostal/delphi` README "SAVE ≠ SUBMIT"; API: `GET|PUT|DELETE /api/drafts/:key`.
+
+### REQ-18: Sectional Review with Non-Destructive Diff
+Long docs split into heading-delimited sections; inline note/edit per section as a
+non-destructive overlay (the underlying file is never touched); a Diff tab shows
+delivered-vs-reviewer as a unified diff, which is what gets written back.
+- **Source:** `mdostal/delphi` README "Sectional review."
+
+### REQ-19: Pantheon Mount / Embed Handshake (`dostal:plugin-bridge/v1`)
+Consus runs standalone-first but is host-mountable via iframe embed
+(`?embed=1`, hides its own branding chrome). On load, posts
+`{protocol:'dostal:plugin-bridge/v1', app, event:'ready', pendingCount}` to `window.parent`,
+and `{event:'badge', pendingCount}` on queue changes; the host may post
+`{event:'navigate', key}` to deep-link into a specific item.
+- **Source:** `mdostal/delphi` README "Pantheon mount contract"; `web/src/bridge.js` in that
+  repo. This is the concrete mechanism behind the "mounts as a tab in Pantheon" framing
+  already in `docs/consus-definition.md` — previously undocumented as a wire protocol.
+
+### REQ-20: Multi-Repo Live-Git Doc Resolution + Cross-Source Versions
+Prefer the live git file on its current branch (across multiple configured repos under a
+code root) over a stale attachment/description copy; compare every available version
+(live git, each attachment iteration, description-embedded, working draft) side-by-side or
+as a unified diff.
+- **Source:** `mdostal/delphi` README "Everything in-app, zero downloads," "Versions
+  side-by-side." Extends REQ-03's Doc Scanner (currently single-repo, `.pHive/planning/`
+  and `.pHive/epics/*/docs/` only) to arbitrary configured repos + git refs.
+
+These are not yet scoped into epic stories — recommended next step is a follow-up `/plan`
+pass once v1 ships, scoping REQ-16..REQ-20 the same way REQ-11..REQ-15 were scoped after
+the prior-art.md reconciliation.
 
 ## Gap Report
 

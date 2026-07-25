@@ -1,42 +1,72 @@
 /**
  * decision-request/v1 — the structured decision-object contract (REQ-11).
  *
- * RISK (flagged in architecture.md and epic.yaml): the real
- * `decision-request.ts` source lives only on the hive host
- * (ssh dostal@100.75.161.82 -> Claud-ometer/src/lib/consus/decision-request.ts)
- * and was not fetched during this implementation pass — fetching it and
- * reconciling this parser against the real source is a recommended
- * follow-up, not done here. This implementation is built from
- * docs/prior-art.md's documented shape: "pure, parses a fenced JSON block
- * from a ticket body," no external dependencies.
+ * CORRECTED against the real spec, found in the pre-existing mdostal/delphi
+ * repo's docs/decision-request-format.md (`dostal:decision-request/v1`) —
+ * the actual documented contract, not the approximate shape this file
+ * originally guessed at from docs/prior-art.md's summary. Real shape:
+ * fenced ```decision-request block, options A-Z with tradeoffs, a required
+ * `recommended` letter ("agents must always take a position"), an optional
+ * `doc` live-git pointer.
  */
 
-export type AnswerShape = "yes_no" | "choose_one" | "survey" | "edit" | "approve";
-
-export interface DecisionPayload {
-  contractVersion: "decision-request/v1";
-  answerShape: AnswerShape;
-  question: string;
-  reason?: string | null;
-  choices?: string[];
-  cbaTable?: Array<Record<string, string>>;
+export interface DecisionOption {
+  /** Single capital letter A-Z, in order. */
+  id: string;
+  title: string;
+  tradeoffs: string;
 }
 
-const FENCED_JSON_BLOCK = /```json\s*\n([\s\S]*?)\n```/;
+export interface DecisionDocPointer {
+  repo: string;
+  path: string;
+  ref?: string;
+}
+
+export interface DecisionPayload {
+  version: "dostal:decision-request/v1";
+  title: string;
+  context: string;
+  options: DecisionOption[];
+  /** Letter of the agent's recommended default — required, never omitted. */
+  recommended: string;
+  diagram?: boolean;
+  doc?: DecisionDocPointer;
+}
+
+export type Verdict =
+  | { kind: "accepted" }
+  | { kind: "option_chosen"; optionId: string }
+  | { kind: "mix"; optionIds: string[]; why: string }
+  | { kind: "rejected_iteration_requested"; commentary: string };
+
+/** Maps a verdict to the ticket status transition (accept/choose/mix -> done, reject -> in_progress). */
+export function verdictStatus(verdict: Verdict): "done" | "in_progress" {
+  return verdict.kind === "rejected_iteration_requested" ? "in_progress" : "done";
+}
+
+const FENCED_DECISION_REQUEST_BLOCK = /```decision-request\s*\n([\s\S]*?)\n```/;
 
 /**
- * Parses a fenced ```json block out of arbitrary ticket-body prose, or a
- * bare JSON string. Returns null (never throws) when no valid
+ * Parses a fenced ```decision-request block out of arbitrary ticket-body
+ * prose, or a bare JSON string. Returns null (never throws) when no valid
  * decision-request/v1 payload is found — callers treat this as "no
- * decision_payload," falling back to the generic item view.
+ * decision_payload," falling back to the generic item view or the legacy
+ * heuristic classifier (decision-taxonomy-and-triage).
  */
 export function parseDecisionPayload(input: string): DecisionPayload | null {
-  const fenced = FENCED_JSON_BLOCK.exec(input);
+  const fenced = FENCED_DECISION_REQUEST_BLOCK.exec(input);
   const jsonText = fenced ? fenced[1] : input;
 
   try {
     const candidate = JSON.parse(jsonText) as Partial<DecisionPayload>;
-    if (candidate.contractVersion !== "decision-request/v1" || !candidate.answerShape || !candidate.question) {
+    if (
+      candidate.version !== "dostal:decision-request/v1" ||
+      !candidate.title ||
+      !candidate.options ||
+      candidate.options.length < 2 ||
+      !candidate.recommended
+    ) {
       return null;
     }
     return candidate as DecisionPayload;
@@ -47,13 +77,4 @@ export function parseDecisionPayload(input: string): DecisionPayload | null {
 
 export function serializeDecisionPayload(payload: DecisionPayload): string {
   return JSON.stringify(payload);
-}
-
-/**
- * Resolves which deterministic control should render for an item. Returns
- * null when the item has no decision_payload — additive, not a hard
- * requirement on every item (REQ-11 acceptance criterion).
- */
-export function resolveAnswerShape(payload: DecisionPayload | null): AnswerShape | null {
-  return payload?.answerShape ?? null;
 }

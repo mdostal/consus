@@ -78,7 +78,7 @@ describe("Minerva Adapter — Question bridge", () => {
     expect(stored?.channel).toBe("totally-new-channel-type");
   });
 
-  it("populates a decision_payload translation (yes_no shape) so it renders through the shared decision card", () => {
+  it("populates a real decision-request/v1 translation (2-option yes/no) so it renders through the shared decision card", () => {
     ingestQuestion(db, {
       id: "q-4",
       text: "Ship v1 with the flex-scope KB backlog cut?",
@@ -92,8 +92,13 @@ describe("Minerva Adapter — Question bridge", () => {
       | undefined;
     expect(item?.decision_payload).toBeTruthy();
     const payload = JSON.parse(item!.decision_payload as string);
-    expect(payload.answerShape).toBe("yes_no");
-    expect(payload.question).toBe("Ship v1 with the flex-scope KB backlog cut?");
+    expect(payload.version).toBe("dostal:decision-request/v1");
+    expect(payload.title).toBe("Ship v1 with the flex-scope KB backlog cut?");
+    expect(payload.options).toEqual([
+      { id: "A", title: "Yes", tradeoffs: "" },
+      { id: "B", title: "No", tradeoffs: "" },
+    ]);
+    expect(payload.recommended).toBe("A");
   });
 
   it("syncs status back to Minerva when a human_request is answered in Consus", async () => {

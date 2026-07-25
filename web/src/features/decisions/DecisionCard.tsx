@@ -1,5 +1,5 @@
 import { AnswerControl } from "./answer-shapes/AnswerControl";
-import type { DecisionPayload } from "./answer-shapes/types";
+import type { DecisionPayload, Verdict } from "./answer-shapes/types";
 import "../../theme/tokens.css";
 
 export interface DecisionCardProps {
@@ -8,7 +8,7 @@ export interface DecisionCardProps {
   payload: DecisionPayload;
   status?: string;
   sourceDoc?: string;
-  onAnswer: (answer: string) => void;
+  onVerdict: (verdict: Verdict) => void;
 }
 
 /**
@@ -18,7 +18,7 @@ export interface DecisionCardProps {
  * Minerva human_requests) composes on top of this instead of inventing its
  * own presentation.
  */
-export function DecisionCard({ question, recommendation, payload, status, sourceDoc, onAnswer }: DecisionCardProps) {
+export function DecisionCard({ question, recommendation, payload, status, sourceDoc, onVerdict }: DecisionCardProps) {
   return (
     <article className="decision-card">
       {status ? (
@@ -32,7 +32,7 @@ export function DecisionCard({ question, recommendation, payload, status, source
       {recommendation ? <p className="decision-card__recommendation">{recommendation}</p> : null}
 
       <div className="decision-card__answer-slot">
-        <AnswerControl payload={payload} onAnswer={onAnswer} />
+        <AnswerControl payload={payload} onVerdict={onVerdict} />
       </div>
 
       {sourceDoc ? (

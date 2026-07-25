@@ -40,11 +40,21 @@ export function ingestQuestion(db: Database.Database, question: Question): void 
   const itemId = itemIdFor(question.id);
   const now = new Date().toISOString();
 
+  // Real decision-request/v1 shape (corrected against the documented spec
+  // in mdostal/delphi's docs/decision-request-format.md): options A-Z with
+  // tradeoffs, a required `recommended` letter. A Minerva yes/no Question
+  // maps onto the minimal 2-option case; "recommended" defaults to "A"
+  // (Yes) absent a stronger signal from Minerva's classifier — the real
+  // spec requires every payload to take a position.
   const decisionPayload = JSON.stringify({
-    contractVersion: "decision-request/v1",
-    answerShape: "yes_no",
-    question: question.text,
-    reason: question.reason,
+    version: "dostal:decision-request/v1",
+    title: question.text,
+    context: question.reason ?? "",
+    options: [
+      { id: "A", title: "Yes", tradeoffs: "" },
+      { id: "B", title: "No", tradeoffs: "" },
+    ],
+    recommended: "A",
   });
 
   const tx = db.transaction(() => {

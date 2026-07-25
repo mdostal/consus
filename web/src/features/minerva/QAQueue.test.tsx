@@ -2,18 +2,29 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { QAQueue } from "./QAQueue";
 
+const YES_NO_PAYLOAD = {
+  version: "dostal:decision-request/v1" as const,
+  title: "Ship v1 with the flex-scope KB backlog cut?",
+  context: "",
+  options: [
+    { id: "A", title: "Yes", tradeoffs: "" },
+    { id: "B", title: "No", tradeoffs: "" },
+  ],
+  recommended: "A",
+};
+
 const QUESTIONS = [
   {
     minervaQuestionId: "q-1",
     text: "Ship v1 with the flex-scope KB backlog cut?",
     ticketId: "DOS-1",
-    decisionPayload: { contractVersion: "decision-request/v1" as const, answerShape: "yes_no" as const, question: "Ship v1 with the flex-scope KB backlog cut?" },
+    decisionPayload: YES_NO_PAYLOAD,
   },
   {
     minervaQuestionId: "q-2",
     text: "Channel-only escalation, no ticket",
     ticketId: null,
-    decisionPayload: { contractVersion: "decision-request/v1" as const, answerShape: "yes_no" as const, question: "Channel-only escalation, no ticket" },
+    decisionPayload: { ...YES_NO_PAYLOAD, title: "Channel-only escalation, no ticket" },
   },
 ];
 
@@ -31,19 +42,19 @@ describe("QAQueue", () => {
     expect(screen.getByText(/Channel-only escalation, no ticket/)).toBeInTheDocument();
   });
 
-  it("renders each question through the shared DecisionCard (yes/no buttons), not a bespoke form", () => {
+  it("renders each question through the shared DecisionCard (Yes/No options), not a bespoke form", () => {
     render(<QAQueue questions={[QUESTIONS[0]]} onAnswer={vi.fn()} />);
 
-    expect(screen.getByRole("button", { name: /^yes$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^no$/i })).toBeInTheDocument();
+    expect(screen.getByText("Yes")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /choose no/i })).toBeInTheDocument();
   });
 
-  it("calls onAnswer with the question id and the operator's answer", () => {
+  it("calls onAnswer with the question id and the operator's verdict", () => {
     const onAnswer = vi.fn();
     render(<QAQueue questions={[QUESTIONS[0]]} onAnswer={onAnswer} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /^yes$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /accept/i }));
 
-    expect(onAnswer).toHaveBeenCalledWith("q-1", "yes");
+    expect(onAnswer).toHaveBeenCalledWith("q-1", { kind: "accepted" });
   });
 });
