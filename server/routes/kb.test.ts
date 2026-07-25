@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import Database from "better-sqlite3";
 import { runMigration } from "../db/migrate.js";
 import { registerKbRoutes } from "./kb.js";
+import { createKbEntry } from "../kb/store.js";
 
 describe("POST /api/items/:id/decide", () => {
   let db: Database.Database;
@@ -47,5 +48,54 @@ describe("POST /api/items/:id/decide", () => {
     });
 
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe("KB backlog — search/filter + direct edit (REQ-09, P1)", () => {
+  let db: Database.Database;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    runMigration(db);
+    createKbEntry(db, { id: "kb-1", title: "Adopt React Flow", author: "mathew", content: "decision content about React Flow" });
+    createKbEntry(db, { id: "kb-2", title: "OTEL telemetry backend", author: "mathew", content: "decision content about OTEL" });
+
+    app = Fastify();
+    registerKbRoutes(app, { db });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+  });
+
+  it("filters/searches across ALL kb_entries, not just recently-decided ones", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/kb-entries?q=React" });
+    const body = res.json();
+
+    expect(body).toHaveLength(1);
+    expect(body[0].id).toBe("kb-1");
+  });
+
+  it("returns every kb_entry when no filter is given", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/kb-entries" });
+    expect(res.json()).toHaveLength(2);
+  });
+
+  it("edits a kb_entry directly (outside the comment/decide flow), versioned per REQ-08", async () => {
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/kb-entries/kb-1",
+      payload: { author: "mathew", content: "revised decision content" },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    const versions = await app.inject({ method: "GET", url: "/api/kb-entries/kb-1/versions" });
+    const versionBodies = versions.json();
+    expect(versionBodies).toHaveLength(2);
+    expect(versionBodies[1].content).toBe("revised decision content");
   });
 });

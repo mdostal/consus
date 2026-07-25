@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
-import { decideItem, getAuditLog } from "../kb/store.js";
+import { decideItem, getAuditLog, createKbEntry, getKbVersions } from "../kb/store.js";
 
 export interface KbRoutesOptions {
   db: Database.Database;
@@ -26,4 +26,39 @@ export function registerKbRoutes(app: FastifyInstance, { db }: KbRoutesOptions):
       return { item, auditLog: getAuditLog(db, id) };
     },
   );
+
+  // REQ-09 (P1 stretch): full KB backlog browse (search/filter across ALL
+  // entries) + direct edit, versioned like every other write.
+  app.get<{ Querystring: { q?: string } }>("/api/kb-entries", async (request) => {
+    const { q } = request.query;
+    if (q) {
+      return db
+        .prepare(
+          `SELECT DISTINCT e.* FROM kb_entries e
+           JOIN kb_versions v ON v.kb_entry_id = e.id
+           WHERE e.title LIKE ? OR v.content LIKE ?
+           ORDER BY e.created_at DESC`,
+        )
+        .all(`%${q}%`, `%${q}%`);
+    }
+    return db.prepare("SELECT * FROM kb_entries ORDER BY created_at DESC").all();
+  });
+
+  app.put<{ Params: { id: string }; Body: { author: string; content: string } }>(
+    "/api/kb-entries/:id",
+    async (request) => {
+      const { id } = request.params;
+      const { author, content } = request.body;
+      const existing = db.prepare("SELECT title FROM kb_entries WHERE id = ?").get(id) as
+        | { title: string }
+        | undefined;
+
+      createKbEntry(db, { id, title: existing?.title ?? id, author, content });
+      return { ok: true };
+    },
+  );
+
+  app.get<{ Params: { id: string } }>("/api/kb-entries/:id/versions", async (request) => {
+    return getKbVersions(db, request.params.id);
+  });
 }
