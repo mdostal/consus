@@ -4,6 +4,7 @@ import { runMigration } from "./db/migrate.js";
 import { registerDocRoutes } from "./routes/docs.js";
 import { registerKbRoutes } from "./routes/kb.js";
 import { registerArtifactLinkRoutes } from "./routes/artifact-links.js";
+import { loadProjectRegistry } from "./config/project-registry.js";
 
 export interface BuildServerOptions {
   dbPath: string;
@@ -39,7 +40,8 @@ const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}
 if (isMain) {
   const port = Number(process.env.PORT ?? 8722);
   const dbPath = process.env.CONSUS_DB_PATH ?? ".pHive/consus.sqlite";
-  const repos = { consus: process.cwd() };
+  const projectsConfigPath = process.env.CONSUS_PROJECTS_CONFIG ?? ".pHive/consus-projects.json";
+  const repos = loadProjectRegistry(projectsConfigPath, process.cwd());
   const app = buildServer({ dbPath, repos });
   app.listen({ port, host: "0.0.0.0" }).then(() => {
     // eslint-disable-next-line no-console

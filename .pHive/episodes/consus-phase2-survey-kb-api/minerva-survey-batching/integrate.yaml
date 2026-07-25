@@ -1,0 +1,26 @@
+story_id: minerva-survey-batching
+epic_id: consus-phase2-survey-kb-api
+methodology: tdd
+steps:
+  - id: research
+    status: complete
+    note: Confirmed human_requests/items schema from v1's minerva-adapter-bridge to anchor surveys table + survey_id FK.
+  - id: test-spec
+    status: complete
+    note: 4 tests — batch ingestion with per-question decision_payload, partial progress reporting, completion transition on last answer, group retrieval by survey_id.
+  - id: implement
+    status: complete
+    note: >
+      surveys table + human_requests.survey_id column added to migrate.ts.
+      server/adapters/minerva/survey.ts (ingestSurvey/getSurveyQuestions/
+      getSurveyProgress) reuses v1's ingestQuestion() unchanged per
+      sub-question. answerHumanRequest (index.ts) inlines the
+      survey-completion check (avoiding a circular import with survey.ts).
+  - id: review
+    status: complete
+    note: All 97 project tests pass; npm run build succeeds.
+  - id: integrate
+    status: complete
+    note: Committed to feat/consus-phase2-survey-kb-api.
+verdict: pass
+finished_at: "2026-07-25T22:15:00Z"

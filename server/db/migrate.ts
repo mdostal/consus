@@ -112,6 +112,14 @@ export function runMigration(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_artifact_links_item_id ON artifact_links(item_id);
+
+    CREATE TABLE IF NOT EXISTS surveys (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      minerva_survey_id TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TEXT NOT NULL
+    );
   `);
 
   // Guarded ALTER TABLE for columns added after a table already existed on
@@ -121,4 +129,5 @@ export function runMigration(db: Database.Database): void {
   addColumnIfMissing(db, "items", "decision_payload", "TEXT");
   addColumnIfMissing(db, "items", "decision_type", "TEXT");
   addColumnIfMissing(db, "items", "triage_bucket", "TEXT");
+  addColumnIfMissing(db, "human_requests", "survey_id", "INTEGER REFERENCES surveys(id)");
 }
