@@ -33,6 +33,9 @@ Source: `.pHive/planning/prd.md`
 11. **Decision-Type & Triage Classifier** — assigns each item a decision-type label (`cba`/`choose`/`survey`/`edit`/`quorum`/`doc`/`default`, first-match-wins) and a triage bucket (`open_question`/`your_action`/`agent_task`/`research_plan`/`noise`), consulting a human-authored override map before the heuristic (REQ-12). Generic and contract-first — no hardcoded per-item ID allowlists, per prior-art.md's explicit REDO instruction.
 12. **Vesta Policy Adapter** — reads Vesta's approval policy (scope: global/repo/decision-type/risk) and determines auto-accept vs. human-gate per item (REQ-13). Schema unconfirmed locally (see Risks) — built adapter-first like the Auriga Tracker Reader.
 13. **votem Router** — hands quorum-scoped items to votem and surfaces its resulting state; never implements voting itself (REQ-14). Schema unconfirmed locally (see Risks).
+14. **Survey Manager** — groups N related Minerva human_request sub-items under one survey record, tracks batch-completion progress, and signals completion once every sub-question is answered (REQ-26).
+15. **Project Registry** — config-driven `name -> repoPath` map (replacing v1's hardcoded single-repo `{ consus: process.cwd() }`), read at server start; the source of the `project` dimension the KB Store and Doc Scanner group by (REQ-27).
+16. **API Reference + Agent Skill Definition** — a standalone markdown doc covering every `/api/*` route (method, path, body, response) plus a companion `SKILL.md` so any Claude-Code-compatible harness can read the queue and submit verdicts without reading source (REQ-28). Documentation artifacts, not runtime components — listed here because they're architecture-level deliverables.
 
 ## Data Model (v1 sketch)
 
@@ -45,7 +48,10 @@ items            id, type (human_request | doc_ref | cba | decision | kb_entry),
                  decided_at (nullable) -- REQ-08 decided-store amnesia fix: non-null items never resurface in the open queue
 
 human_requests   id, item_id FK, minerva_question_id, text, channel, reason,
-                 confidence, suggested_channel, status        -- REQ-01/REQ-02
+                 confidence, suggested_channel, status,
+                 survey_id (nullable FK -> surveys.id)         -- REQ-01/REQ-02/REQ-26
+
+surveys          id, minerva_survey_id, title, status (open|answered), created_at  -- REQ-26
 
 comments         id, item_id FK, author, body, created_at, multica_comment_id (nullable)  -- REQ-04/REQ-07
 
@@ -78,6 +84,9 @@ triage_overrides subject (item_id or a stable content key), bucket, author, crea
 5. **Auriga Tracker Reader built adapter-first, schema-pending** — rather than guessing at unconfirmed internals (`EventContract`/`ConsumerContract`/`LockContract`/`TrackerAdapter` have no local spec to verify against yet). Previously the single largest open architecture risk in this doc — now joined by Vesta and votem (#6, #7 below) under the same pattern.
 6. **`decision_payload` is additive on `items`, not a schema fork** — REQ-11's `decision-request/v1` contract layers onto the existing `items` table (nullable JSON column) rather than requiring a parallel item model. Items without a payload keep working exactly as REQ-01..REQ-10 already specified.
 7. **Vesta Policy Adapter and votem Router built adapter-first, schema-pending** — same pattern as #5, applied to REQ-13/REQ-14. Consus never owns the policy setting or the vote itself — only reads/routes.
+8. **`surveys` is a thin grouping table, not a schema fork** — REQ-26 adds one table + a nullable `survey_id` FK on `human_requests`; individual sub-questions remain full `items` with their own `decision_payload`, so REQ-01/REQ-02/REQ-11's existing behavior is unchanged for non-survey questions.
+9. **Project scoping reuses the existing `items.source_repo` column** — REQ-27 doesn't add a new column; it adds a config-driven repo registry (replacing the hardcoded single-repo map in `server/index.ts`) and UI/query grouping by the column that already exists but was never used for grouping.
+10. **API reference + skill definition are documentation, not new endpoints** — REQ-28 writes down the contract of routes that already exist (plus REQ-26's new survey routes); it does not require new API surface beyond what REQ-01–27 already produce.
 
 ## Risks / Open Items (carried from PRD Gap Report)
 

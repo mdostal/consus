@@ -1,0 +1,86 @@
+id: minerva-survey-batching
+epic: consus-phase2-survey-kb-api
+title: Survey Manager — batch Minerva questions into one survey (REQ-26 backend)
+status: pending
+complexity: high
+methodology: tdd
+depends_on: []
+parallel_allowed: true
+parallel_rationale: bounded-slice
+
+description: |
+  Implement REQ-26's backend: a `surveys` table grouping N related Minerva
+  human_request sub-items, tracking batch-completion progress, and signaling
+  completion once every sub-question is answered. Extends
+  minerva-adapter-bridge (already shipped in v1) — individual sub-questions
+  remain full items with their own decision_payload; this story only adds
+  the grouping layer on top.
+
+acceptance_criteria:
+  - "Given Minerva sends a survey (a batch of N related questions sharing one surveyId), when ingested, then Consus stores N individual human_request sub-items, each independently carrying its own decision_payload, all linked to one survey record via survey_id."
+  - "Given a survey is partially answered, when queried, then it reports accurate progress (e.g. 3 of 5 answered) distinguishable from fully-answered or untouched."
+  - "Given all N sub-questions in a survey are answered, when the last one is submitted, then the survey transitions to status=answered and a completion signal is available for downstream consumers."
+  - "Given a survey's sub-questions, when queried, then they are retrievable as a group (all rows sharing survey_id), not just individually by their own item id."
+
+steps:
+  - id: research
+    description: Confirm the human_requests/items schema from minerva-adapter-bridge (v1) to anchor the new surveys table and survey_id FK correctly.
+    agent: researcher
+  - id: test-spec
+    description: Write failing tests for batch ingestion, progress reporting, completion-signal transition, and group retrieval.
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: Implement the surveys table, ingestSurvey(), getSurveyProgress(), and answerHumanRequest's completion-check to make failing tests pass.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: Review implementation and tests for correctness, confirming individual sub-questions are unaffected outside survey grouping.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit and push to feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Code/delphi
+  tech_stack:
+    backend: node+typescript (fastify)
+    database: sqlite
+  key_files:
+    - path: server/adapters/minerva/index.ts
+      purpose: v1's single-question ingestQuestion/answerHumanRequest — this story extends it with a batch/grouping layer, not a rewrite.
+
+files_to_modify:
+  - file: server/db/migrate.ts
+    change: Extend — add surveys table; add nullable survey_id FK column to human_requests.
+  - file: server/adapters/minerva/survey.ts
+    change: Create — ingestSurvey(questions[]), getSurveyProgress(surveyId), checkSurveyCompletion().
+
+code_examples:
+  - title: Single-question ingestion pattern to extend
+    file: server/adapters/minerva/index.ts
+    snippet: |
+      # ingestQuestion() from v1 — survey.ts calls this once per sub-question,
+      # then links each resulting human_request row to the shared survey_id.
+
+design_decisions:
+  - decision: surveys is a thin grouping table; sub-questions stay full items with their own decision_payload.
+    rationale: architecture.md Key Decisions #8 — REQ-01/REQ-02/REQ-11's existing single-question behavior is unchanged for non-survey questions.
+
+cross_cutting:
+  - concern: documentation
+    action: "Add 'survey', 'survey_id' to CONTEXT.md Terminology."
+
+risks:
+  - severity: medium
+    description: Minerva's actual survey/batch wire format is inferred (no confirmed real spec for a batch-of-questions message, only the single-Question shape from v1's research).
+    mitigation: Built against the behavioral contract (N related questions, shared surveyId) consistent with REQ-01's existing adapter-first pattern for unconfirmed Minerva specifics.
+
+references:
+  - path: .pHive/planning/prd.md
+    relevant_excerpt: |
+      REQ-26: Minerva Survey Responses (batched, multi-question) ... Claud-ometer's
+      real decision-request.ts ... a DecisionRequest carries decisions: Decision[]
+      (plural), confirming "batch of related decisions" is a real, previously-solved shape.

@@ -65,21 +65,24 @@ export interface CreateKbEntryInput {
   title: string;
   author: string;
   content: string;
+  /** Project/repo this entry belongs to (REQ-27) — nullable for backward compatibility. */
+  sourceRepo?: string | null;
 }
 
 /**
  * Create (or add a new version to) a kb_entry. Every call appends a new
  * kb_versions row and repoints current_version_id — history is never lost.
  */
-export function createKbEntry(db: Database.Database, { id, title, author, content }: CreateKbEntryInput): void {
+export function createKbEntry(
+  db: Database.Database,
+  { id, title, author, content, sourceRepo }: CreateKbEntryInput,
+): void {
   const now = new Date().toISOString();
 
   const tx = db.transaction(() => {
-    db.prepare("INSERT OR IGNORE INTO kb_entries (id, title, current_version_id, created_at) VALUES (?, ?, NULL, ?)").run(
-      id,
-      title,
-      now,
-    );
+    db.prepare(
+      "INSERT OR IGNORE INTO kb_entries (id, title, current_version_id, created_at, source_repo) VALUES (?, ?, NULL, ?, ?)",
+    ).run(id, title, now, sourceRepo ?? null);
 
     const result = db
       .prepare("INSERT INTO kb_versions (kb_entry_id, content, author, created_at) VALUES (?, ?, ?, ?)")

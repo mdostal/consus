@@ -1,0 +1,83 @@
+id: survey-queue-ui
+epic: consus-phase2-survey-kb-api
+title: Survey Queue UI — grouped view with batch progress (REQ-26 frontend)
+status: pending
+complexity: medium
+methodology: bdd
+depends_on: [minerva-survey-batching]
+
+description: |
+  Implement REQ-26's frontend: render a survey's N sub-questions grouped
+  together (not interleaved with unrelated queue items), showing visible
+  batch-completion progress. Each sub-question still renders through the
+  shared DecisionCard (decision-card-renderer-ui, already shipped in v1).
+
+acceptance_criteria:
+  - "Given the operator views the open queue, when a survey exists, then its sub-questions are grouped and rendered together as one survey view, not interleaved with unrelated queue items."
+  - "Given a survey is partially answered, when rendered, then progress is visibly shown (e.g. '3 of 5 answered') — not indistinguishable from fully-answered or untouched."
+  - "Given a sub-question within a survey, when rendered, then it uses the same shared DecisionCard as any other item — no bespoke per-survey answer UI."
+
+steps:
+  - id: research
+    description: Confirm the survey progress API from minerva-survey-batching and DecisionCard's props from decision-card-renderer-ui.
+    agent: researcher
+  - id: behavior-spec
+    description: Write Given/When/Then specs for grouped rendering, progress display, and shared-DecisionCard reuse, derived from this story's acceptance criteria.
+    agent: tester
+    depends_on: [research]
+  - id: ui-design
+    description: Delegate to /design for wireframes (atomic external call; see skills/design/SKILL.md). Deferred — not run live during planning, consistent with every other UI story in this project so far.
+    agent: ui-designer
+    delegates_to: design
+    depends_on: [research]
+  - id: implement
+    description: Implement the SurveyGroup component to satisfy the behavior specs and /design wireframe output.
+    agent: developer
+    depends_on: [behavior-spec, ui-design]
+  - id: test
+    description: Derive test cases from behavior specs and verify they pass.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Review implementation, behavior specs, and tests for correctness.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Code/delphi
+  tech_stack:
+    frontend: react+vite
+
+files_to_modify:
+  - file: web/src/features/minerva/SurveyGroup.tsx
+    change: Create — grouped survey view with progress indicator, rendering each sub-question via DecisionCard.
+
+code_examples:
+  - title: QAQueue's DecisionCard usage to follow
+    file: web/src/features/minerva/QAQueue.tsx
+    snippet: |
+      # Established by minerva-qa-queue-ui (v1) — SurveyGroup.tsx wraps the
+      # same DecisionCard-per-question pattern with a grouping shell + progress.
+
+design_decisions:
+  - decision: SurveyGroup wraps QAQueue's existing per-question DecisionCard rendering rather than inventing a new answer UI.
+    rationale: Consistency with decision-card-renderer-ui's "shared primitive" intent.
+
+cross_cutting:
+  - concern: documentation
+    action: "None new — consumes already-documented survey progress API from minerva-survey-batching."
+
+risks:
+  - severity: low
+    description: "Agent-ready checklist gap: /design wireframes deferred, matching every other UI story in this project."
+    mitigation: "Run /design for this story before /execute dispatches implement, same as v1's UI stories."
+
+references:
+  - path: .pHive/planning/prd.md
+    relevant_excerpt: |
+      REQ-26 acceptance: given the operator views the open queue, when a
+      survey exists, then its sub-questions are grouped and rendered together.

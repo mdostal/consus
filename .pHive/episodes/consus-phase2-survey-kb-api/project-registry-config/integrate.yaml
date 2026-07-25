@@ -1,0 +1,21 @@
+story_id: project-registry-config
+epic_id: consus-phase2-survey-kb-api
+methodology: tdd
+steps:
+  - id: research
+    status: complete
+    note: Confirmed v1's hardcoded `{ consus: process.cwd() }` in server/index.ts.
+  - id: test-spec
+    status: complete
+    note: 4 tests — backward-compatible default, multi-project registration, missing-path skip-with-warning, listProjects accessor.
+  - id: implement
+    status: complete
+    note: server/config/project-registry.ts (loadProjectRegistry/listProjects); wired into server/index.ts via CONSUS_PROJECTS_CONFIG env var.
+  - id: review
+    status: complete
+    note: All 97 project tests pass; npm run build succeeds.
+  - id: integrate
+    status: complete
+    note: Committed to feat/consus-phase2-survey-kb-api.
+verdict: pass
+finished_at: "2026-07-25T22:15:00Z"

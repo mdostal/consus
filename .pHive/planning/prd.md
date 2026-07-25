@@ -305,15 +305,81 @@ are Consus, Heimdall, Minerva, and Auriga. Full detail and phasing lives in
   parse tier).
 - **REQ-24:** Real Multica auth (v1's client has none).
 - **REQ-25:** Chat-summarization-on-decide.
-- **REQ-26:** Minerva survey responses — batched, multi-question, not just one at a time.
-- **REQ-27:** Knowledgebase depth — per-project structure + cross-project view (closes GAP-01).
-- **REQ-28:** Agent-harness/API surface, formalized and documented — prep for plugging into the
-  Pantheon once it's redone.
 
 REQ-16 (fire-agents-to-iterate), REQ-17 (save≠submit), REQ-18 (sectional review+diff), REQ-19
 (Pantheon embed handshake), REQ-20 (multi-repo doc resolution) carry forward from the first
 lineage pass — see `roadmap.md` for updated phase placement (REQ-19 in particular is now
-deliberately last, since it targets a protocol owned by the shell being redone).
+deliberately last, since it targets a protocol owned by the shell being redone). REQ-22..25 are
+Phase 3 — not scoped into stories yet.
+
+---
+
+## Phase 2 requirements (scoped for the next epic)
+
+### REQ-26: Minerva Survey Responses (batched, multi-question)
+v1's Minerva bridge (REQ-01/02) models exactly one question at a time — `ingestQuestion` stores
+a single `human_request`. Minerva can also emit a **survey**: a batch of N related sub-questions
+that belong together and should be considered as a set, not scattered across the general queue
+as N unrelated items. Claud-ometer's real `decision-request.ts` (SSH-fetched, see lineage
+inventory) is the concrete precedent for this shape — a `DecisionRequest` carries `decisions:
+Decision[]` (plural), not a single decision — confirming "batch of related decisions" is a real,
+previously-solved shape, distinct from the single-decision `dostal:decision-request/v1` format
+REQ-11 already implements correctly (mdostal/delphi's variant).
+- **Source:** Operator ask (2026-07-25) + Claud-ometer's `decision-request.ts` `decisions[]` shape.
+- **User value:** Related questions get answered as a set with visible batch-completion progress,
+  not as disconnected items competing for attention in the general queue.
+- **Acceptance criteria:**
+  - Given Minerva sends a survey (a batch of N related questions sharing one `surveyId`), when
+    ingested, then Consus stores N individual sub-items, each independently carrying its own
+    `decision_payload`, all linked to one survey record.
+  - Given a survey is partially answered, when the operator views it, then it shows visible
+    progress (e.g. "3 of 5 answered") — not indistinguishable from a fully answered or untouched
+    survey.
+  - Given all N sub-questions in a survey are answered, when the last one is submitted, then the
+    survey as a whole transitions to `answered` and a completion signal is available for whatever
+    consumes it downstream (Minerva, or a future write-back).
+  - Given the operator views the open queue, when a survey exists, then its sub-questions are
+    grouped and rendered together (one survey view), not interleaved with unrelated queue items.
+
+### REQ-27: Knowledgebase Depth — Multi-Project ("Different Areas")
+Closes PRD **GAP-01** (open since the original PRD, never resolved): the KB store today is a flat
+`kb_entries` table with no per-project structure, even though `items.source_repo` already exists
+as a column. The original pitch (`docs/prior-art.md`, `docs/consus-definition.md`) is explicit:
+Consus "holds MANY projects underneath, each with its own view + a high-level cross-project
+view" — replacing "the documentation + knowledge-center for a dev team," not a single-repo log.
+- **Source:** Operator ask (2026-07-25); `docs/prior-art.md` §2 "Consumer-app + docs/
+  knowledge-center vision."
+- **User value:** One place to see either "everything happening in this one project" or "the
+  shape of things across every project" — the actual pitch, not a single-repo decision log.
+- **Acceptance criteria:**
+  - Given items/kb_entries span multiple projects (distinct `source_repo` values), when browsing
+    the KB, then the operator can scope the view to one project or see all projects at once.
+  - Given a project-scoped view, when rendered, then only that project's items appear — no
+    cross-project leakage.
+  - Given the global cross-project view, when rendered, then items are grouped with a
+    project-name heading per group, not a flat undifferentiated list.
+  - Given a new project/repo is added to Consus's configuration, when Consus restarts, then it
+    appears as its own scope without a code change — config-driven, not hardcoded (v1's Doc
+    Scanner currently hardcodes a single `{ consus: process.cwd() }` repo map in `server/index.ts`).
+
+### REQ-28: Agent-Harness / API Surface — Formalized
+Architecture component #9 ("Agent-facing Skill/API surface") was named in `architecture.md` but
+never built beyond the HTTP routes the web UI itself uses. This is the concrete prep for
+"plugging into the Pantheon as a whole" once the rebuilt shell exists — Consus should already be
+pluggable *before* that shell asks for it, per the explicit operator ask.
+- **Source:** Operator ask (2026-07-25); `architecture.md` component #9 (previously unbuilt).
+- **User value:** Any Claude-Code-compatible harness — not just Consus's own web UI — can read
+  the open-decision queue and submit verdicts without reading Consus's source code.
+- **Acceptance criteria:**
+  - Given every existing `/api/*` route (docs, kb decide, artifact-links, and the new survey
+    endpoints from REQ-26), when documented, then each has its method, path, request body/params,
+    and response shape written down in one reference doc a harness author can read standalone.
+  - Given a companion skill definition (Claude-Code `SKILL.md` convention, matching the ones this
+    session has used throughout), when loaded by a harness, then it has enough information to
+    list open decisions and submit a verdict without additional source-reading.
+  - Given Consus's dual-mode distribution (standalone vs. Pantheon-plugin, established at
+    kickoff), when the documented API surface is reviewed, then the same endpoints serve both
+    modes — no Pantheon-only route is required for basic queue-read/decide operation.
 
 ## Gap Report
 

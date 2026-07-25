@@ -20,6 +20,8 @@ build/
 .pHive/epics/*
 !.pHive/epics/consus-v1-core-loop/
 !.pHive/epics/consus-v1-core-loop/**
+!.pHive/epics/consus-phase2-survey-kb-api/
+!.pHive/epics/consus-phase2-survey-kb-api/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/

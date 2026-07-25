@@ -1,0 +1,35 @@
+story_id: kb-project-views
+epic_id: consus-phase2-survey-kb-api
+methodology: bdd
+steps:
+  - id: research
+    status: complete
+    note: Confirmed the project registry API and v1's /api/docs, /api/kb-entries route shapes.
+  - id: behavior-spec
+    status: complete
+    note: >
+      5 backend tests (docs.test.ts: default multi-project listing +
+      ?project= scoping; kb.test.ts: global case, ?project= scoping,
+      ?project=+?q= combined) + 2 component tests (GlobalView grouping,
+      ProjectView no-leakage isolation).
+  - id: ui-design
+    status: deferred
+    note: /design not run live this session, consistent with every prior UI story.
+  - id: implement
+    status: complete
+    note: >
+      kb_entries.source_repo column added (guarded ALTER); createKbEntry
+      accepts optional sourceRepo. GET /api/docs and GET /api/kb-entries
+      both accept ?project=. web/src/features/projects/{GlobalView,
+      ProjectView}.tsx.
+  - id: test
+    status: complete
+    note: All 7 new tests pass.
+  - id: review
+    status: complete
+    note: All 106 project tests pass; npm run build succeeds. Confirmed no cross-project data leakage in both API and UI tests.
+  - id: integrate
+    status: complete
+    note: Committed to feat/consus-phase2-survey-kb-api. Closes PRD GAP-01.
+verdict: pass-with-deferred-design-pass
+finished_at: "2026-07-25T22:20:00Z"

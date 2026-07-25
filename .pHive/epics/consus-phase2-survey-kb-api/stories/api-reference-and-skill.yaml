@@ -1,0 +1,77 @@
+id: api-reference-and-skill
+epic: consus-phase2-survey-kb-api
+title: API Reference + Agent Skill Definition (REQ-28)
+status: pending
+complexity: medium
+methodology: classic
+depends_on: [minerva-survey-batching, kb-project-views]
+
+description: |
+  Implement REQ-28: document every existing /api/* route (method, path,
+  request body/params, response shape) in a standalone reference doc, plus
+  a companion Claude-Code-style SKILL.md so any compatible harness can read
+  the open-decision queue and submit verdicts without reading source. Pure
+  documentation — no new runtime endpoints (architecture.md Key Decisions #10).
+  Depends on minerva-survey-batching and kb-project-views specifically
+  because those two stories add the last new routes/params this epic
+  introduces (survey endpoints, project-scoped query params) — this story
+  documents the final surface, not a partial one.
+
+acceptance_criteria:
+  - "Given every existing /api/* route (health, docs, docs/content, items/:id/decide, kb-entries, kb-entries/:id, kb-entries/:id/versions, artifact-links), when documented, then each has its method, path, request body/params, and response shape written down in one reference doc."
+  - "Given a Claude-Code-compatible harness loads the skill definition, when it follows the skill's instructions, then it can list open decisions and submit a verdict using only the documented API — no source-reading required."
+  - "Given Consus's dual-mode distribution (standalone vs. Pantheon-plugin), when the documented surface is reviewed, then no route is marked Pantheon-only for basic queue-read/decide operation."
+
+steps:
+  - id: research
+    description: Enumerate every registered route across server/routes/*.ts and server/index.ts's /health endpoint; confirm request/response shapes against their route handlers and tests.
+    agent: researcher
+  - id: implement
+    description: Write docs/api-reference.md (full route table) and skills/consus/SKILL.md (agent-facing instructions), cross-referencing each other.
+    agent: developer
+    depends_on: [research]
+  - id: review
+    description: Review both documents for completeness against the actual registered routes (no route omitted, no documented route that doesn't exist).
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit and push to feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Code/delphi
+  key_files:
+    - path: server/index.ts
+      purpose: Registers all route modules — the enumeration starting point.
+    - path: server/routes/
+      purpose: docs.ts, kb.ts, artifact-links.ts — every route this story documents.
+
+files_to_modify:
+  - file: docs/api-reference.md
+    change: Create — full route table (method, path, params, body, response).
+  - file: skills/consus/SKILL.md
+    change: Create — agent-facing instructions for reading the queue and submitting verdicts via the documented API.
+
+code_examples: []  # Documentation story — no code pattern to follow.
+
+design_decisions:
+  - decision: Documentation only, no new endpoints.
+    rationale: architecture.md Key Decisions #10 — REQ-28 writes down the contract of routes REQ-01..27 already produce.
+
+cross_cutting:
+  - concern: documentation
+    action: "This story IS the documentation deliverable — no additional action beyond what implement/review already cover."
+
+risks:
+  - severity: low
+    description: Documentation can drift from the real routes over time.
+    mitigation: Not addressed in this story (no automated doc-generation); flagged as a natural candidate for a future CI check, out of scope here.
+
+references:
+  - path: .pHive/planning/prd.md
+    relevant_excerpt: |
+      REQ-28 acceptance: "Given every existing /api/* route ... when
+      documented, then each has its method, path, request body/params, and
+      response shape written down in one reference doc a harness author can
+      read standalone."

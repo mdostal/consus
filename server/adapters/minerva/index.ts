@@ -22,6 +22,7 @@ export interface HumanRequestRow {
   confidence: number | null;
   suggested_channel: string | null;
   status: string;
+  survey_id: number | null;
 }
 
 function itemIdFor(minervaQuestionId: string): string {
@@ -117,6 +118,19 @@ export async function answerHumanRequest(
     new Date().toISOString(),
     existing.item_id,
   );
+
+  // REQ-26: if this question belongs to a survey, flip the survey to
+  // 'answered' once every sibling question is also answered. Inlined here
+  // (rather than importing survey.ts's checkSurveyCompletion) to avoid a
+  // circular import between index.ts and survey.ts.
+  if (existing.survey_id) {
+    const siblings = db
+      .prepare("SELECT status FROM human_requests WHERE survey_id = ?")
+      .all(existing.survey_id) as Array<{ status: string }>;
+    if (siblings.every((s) => s.status === "answered")) {
+      db.prepare("UPDATE surveys SET status = 'answered' WHERE id = ?").run(existing.survey_id);
+    }
+  }
 
   const result = await transport.invoke("answerQuestion", { id: minervaQuestionId, answer });
   if (!result.ok && !result.recoverable) {

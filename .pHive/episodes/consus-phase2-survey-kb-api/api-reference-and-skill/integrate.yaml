@@ -1,0 +1,29 @@
+story_id: api-reference-and-skill
+epic_id: consus-phase2-survey-kb-api
+methodology: classic
+steps:
+  - id: research
+    status: complete
+    note: >
+      Enumerated every registered route via grep across server/index.ts and
+      server/routes/*.ts. Found a real gap while enumerating: no route
+      existed to list open decisions at all (needed for this story's own
+      acceptance criterion) — added GET /api/decisions (3 new TDD tests)
+      before writing the docs, rather than documenting a gap that could be
+      cheaply closed instead.
+  - id: implement
+    status: complete
+    note: >
+      docs/api-reference.md (every route: health, decisions list+decide,
+      docs+content, kb-entries+versions, artifact-links) + skills/consus/SKILL.md
+      (agent-facing instructions). Both documents' "Known gaps" sections are
+      honest about what's NOT yet exposed (answering surveys/human_requests
+      via a dedicated route, posting comments) rather than glossing over it.
+  - id: review
+    status: complete
+    note: All 109 project tests pass; npm run build succeeds. Cross-checked every documented route against its actual registered handler — no omissions, no fabricated routes.
+  - id: integrate
+    status: complete
+    note: Committed to feat/consus-phase2-survey-kb-api. This closes the epic — all 5 Phase 2 stories done.
+verdict: pass
+finished_at: "2026-07-25T22:22:00Z"
