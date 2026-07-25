@@ -1,0 +1,81 @@
+id: project-registry-config
+epic: consus-phase2-survey-kb-api
+title: Project Registry — config-driven multi-repo map (REQ-27 foundation)
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: []
+parallel_allowed: true
+parallel_rationale: bounded-slice
+
+description: |
+  Replace v1's hardcoded single-repo map (`{ consus: process.cwd() }` in
+  server/index.ts) with a config-driven project registry: a JSON config
+  file (name -> absolute repo path) read at server start, defaulting to
+  the current single-repo behavior when no config file is present (backward
+  compatible). This is the foundation REQ-27's multi-project KB views and
+  REQ-03's Doc Scanner build on — nothing else in this epic can be
+  meaningfully multi-project without it.
+
+acceptance_criteria:
+  - "Given no project-registry config file exists, when the server starts, then it behaves exactly as v1 did (single project 'consus' mapped to cwd) — no regression."
+  - "Given a project-registry config file listing 2+ projects (name -> path), when the server starts, then all listed projects are registered and scannable."
+  - "Given a project registry, when queried, then it exposes a list of project names for other components (Doc Scanner, KB views) to iterate over — no other component hardcodes a repo map."
+  - "Given a configured project path does not exist on disk, when the server starts, then it logs a clear warning and skips that project rather than crashing."
+
+steps:
+  - id: research
+    description: Confirm current hardcoded repo map in server/index.ts (repos = { consus: process.cwd() }) and how doc-scanner-and-index/registerDocRoutes consume it.
+    agent: researcher
+  - id: test-spec
+    description: Write failing tests for config-file loading, backward-compatible default, missing-path warning-and-skip, and the project-list accessor.
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: Implement the project registry loader to make failing tests pass; wire it into server/index.ts replacing the hardcoded map.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: Review implementation and tests for correctness and backward compatibility.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit and push to feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Code/delphi
+  tech_stack:
+    backend: node+typescript (fastify)
+  key_files:
+    - path: server/index.ts
+      purpose: Currently hardcodes `const repos = { consus: process.cwd() }` — this story's integration point.
+
+files_to_modify:
+  - file: server/config/project-registry.ts
+    change: Create — loadProjectRegistry(configPath?) -> Record<string, string>, with backward-compatible default.
+  - file: server/index.ts
+    change: Modify — replace hardcoded repos map with loadProjectRegistry() call.
+
+code_examples: []  # First config-loading component in the epic.
+
+design_decisions:
+  - decision: Config file, not a DB table — project registry is server-config, not user data.
+    rationale: architecture.md Key Decisions #9 — projects are a deployment/config concern, not something the operator adds through the UI in v1.
+
+cross_cutting:
+  - concern: documentation
+    action: "Add 'project registry' config file format to CONTEXT.md Key paths."
+
+risks:
+  - severity: low
+    description: None significant — additive config layer with a safe default.
+    mitigation: n/a
+
+references:
+  - path: .pHive/planning/prd.md
+    relevant_excerpt: |
+      REQ-27 acceptance: "Given a new project/repo is added to Consus's
+      configuration, when Consus restarts, then it appears as its own scope
+      without a code change — config-driven, not hardcoded."

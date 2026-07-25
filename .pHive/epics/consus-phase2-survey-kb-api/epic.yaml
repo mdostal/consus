@@ -1,0 +1,74 @@
+name: consus-phase2-survey-kb-api
+title: Consus Phase 2 — Survey Responses, Knowledgebase Depth, Agent-Harness/API Surface
+description: >
+  Decomposition of PRD REQ-26/REQ-27/REQ-28 — the Phase 2 priorities from
+  .pHive/planning/roadmap.md, reordered per operator correction (2026-07-25):
+  approval/pantheon-shell integration (originally proposed as Phase 2) was
+  demoted since both will be redone; this epic instead covers what's
+  actually asked for — Minerva survey batching, per-project/cross-project
+  knowledgebase views (closes PRD GAP-01), and a documented agent-harness/API
+  surface ready for the Pantheon standing up.
+target_codebase: /Users/mdostal/Code/delphi
+methodology: hybrid   # BDD for UI stories, TDD for backend, classic for the docs-only story
+version_bump: minor
+sidecar_retention: transient
+
+git_flow:
+  base_branch: main
+  branch_strategy: per-epic
+
+source_docs:
+  - .pHive/planning/prd.md
+  - .pHive/planning/architecture.md
+  - .pHive/planning/roadmap.md
+  - docs/delphi-lineage-inventory.md
+
+stories:
+  # Wave 0 — parallel, no dependencies
+  - id: project-registry-config
+    title: Project Registry — config-driven multi-repo map (REQ-27 foundation)
+    complexity: medium
+    depends_on: []
+  - id: minerva-survey-batching
+    title: Survey Manager — batch Minerva questions into one survey (REQ-26 backend)
+    complexity: high
+    depends_on: []
+
+  # Wave 1 — parallel
+  - id: survey-queue-ui
+    title: Survey Queue UI — grouped view with batch progress (REQ-26 frontend)
+    complexity: medium
+    depends_on: [minerva-survey-batching]
+  - id: kb-project-views
+    title: KB Project Views — per-project scope + cross-project view (REQ-27)
+    complexity: high
+    depends_on: [project-registry-config]
+
+  # Wave 2
+  - id: api-reference-and-skill
+    title: API Reference + Agent Skill Definition (REQ-28)
+    complexity: medium
+    depends_on: [minerva-survey-batching, kb-project-views]
+
+requirements_traceability:
+  REQ-26: [minerva-survey-batching, survey-queue-ui]
+  REQ-27: [project-registry-config, kb-project-views]
+  REQ-28: [api-reference-and-skill]
+  gaps: []   # all 3 Phase 2 requirements mapped to at least one story
+
+phase2_reprioritization_note: >
+  This epic was originally sketched (in roadmap.md's first draft) around
+  REQ-21 (real ApprovalEngine integration). Corrected same-day per operator:
+  approval and the pantheon dashboard shell will both be redone — read as
+  design lessons, not integration targets. This epic instead covers the
+  explicit ask: survey responses, knowledgebase depth, and agent-harness/API
+  readiness. See docs/delphi-lineage-inventory.md's correction note and
+  roadmap.md for the full reasoning.
+
+deferred_ceremony_note: >
+  Same ceremony deferrals as consus-v1-core-loop: decomposed directly from
+  planning docs rather than re-running /plan's research + design-discussion
+  phases from scratch; /design wireframes deferred per UI story (consistent
+  with every v1 UI story); telemetry/KG-emit calls skipped (hive.lib
+  Python-path availability from this repo's cwd not verified, all
+  fire-and-forget by design).

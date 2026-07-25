@@ -1,0 +1,99 @@
+id: kb-project-views
+epic: consus-phase2-survey-kb-api
+title: KB Project Views — per-project scope + cross-project view (REQ-27)
+status: pending
+complexity: high
+methodology: bdd
+depends_on: [project-registry-config]
+
+description: |
+  Implement REQ-27: scope the KB store and Doc Scanner by project
+  (`items.source_repo`, already a column since v1 but never used for
+  grouping), with a per-project view and a global cross-project view.
+  Closes PRD GAP-01, open since the original PRD. Backend query params +
+  frontend view, in one story since the scoping logic is thin on both sides.
+
+acceptance_criteria:
+  - "Given items/kb_entries span multiple projects (distinct source_repo values), when browsing the KB, then the operator can scope the view to one project or see all projects at once."
+  - "Given a project-scoped view, when rendered, then only that project's items appear — no cross-project leakage."
+  - "Given the global cross-project view, when rendered, then items are grouped with a project-name heading per group, not a flat undifferentiated list."
+  - "Given the Doc Scanner (REQ-03), when the project registry lists 2+ projects, then it scans all of them, not just one."
+
+steps:
+  - id: research
+    description: Confirm the project registry API from project-registry-config and the existing /api/docs, /api/kb-entries grouping logic from v1.
+    agent: researcher
+  - id: behavior-spec
+    description: Write Given/When/Then specs for project-scoped filtering, no-leakage isolation, and grouped cross-project rendering, derived from this story's acceptance criteria.
+    agent: tester
+    depends_on: [research]
+  - id: ui-design
+    description: Delegate to /design for wireframes (atomic external call; see skills/design/SKILL.md). Deferred, consistent with prior UI stories.
+    agent: ui-designer
+    delegates_to: design
+    depends_on: [research]
+  - id: implement
+    description: Implement project-scoped API query params (docs + kb-entries routes) and the ProjectView/GlobalView frontend components to satisfy the behavior specs.
+    agent: developer
+    depends_on: [behavior-spec, ui-design]
+  - id: test
+    description: Derive test cases from behavior specs and verify they pass.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Review implementation, behavior specs, and tests for correctness, specifically checking for cross-project data leakage.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Code/delphi
+  tech_stack:
+    backend: node+typescript (fastify)
+    frontend: react+vite
+    database: sqlite
+  key_files:
+    - path: server/routes/docs.ts
+      purpose: v1's GET /api/docs already groups by repo internally — this story adds a query param to scope to one project.
+    - path: server/routes/kb.ts
+      purpose: v1's GET /api/kb-entries has no project scoping at all — this story adds it.
+
+files_to_modify:
+  - file: server/routes/docs.ts
+    change: Extend — GET /api/docs?project=<name> scopes to one project; omitted param returns all (existing behavior, now explicitly the "global" case).
+  - file: server/routes/kb.ts
+    change: Extend — GET /api/kb-entries?project=<name> scopes by items.source_repo.
+  - file: web/src/features/projects/ProjectView.tsx
+    change: Create — single-project scoped view.
+  - file: web/src/features/projects/GlobalView.tsx
+    change: Create — cross-project view, grouped by project-name heading.
+
+code_examples:
+  - title: DocBrowser's grouped-rendering pattern to extend
+    file: web/src/features/docs/DocBrowser.tsx
+    snippet: |
+      # Established in v1 — GlobalView.tsx extends the same repo-grouping
+      # pattern DocBrowser already renders, one level up (project headings).
+
+design_decisions:
+  - decision: Reuse items.source_repo for project scoping rather than adding a new column.
+    rationale: architecture.md Key Decisions #9 — the column already exists and was simply never queried by; no migration needed.
+
+cross_cutting:
+  - concern: documentation
+    action: "Add 'project scope', 'global view' to CONTEXT.md; note GAP-01 as closed in prd.md's Gap Report."
+
+risks:
+  - severity: medium
+    description: "Agent-ready checklist gap: /design wireframes deferred."
+    mitigation: "Run /design for this story before /execute — flagged same as all prior UI stories."
+
+references:
+  - path: .pHive/planning/prd.md
+    relevant_excerpt: |
+      REQ-27 closes GAP-01: "the KB store today is a flat kb_entries table
+      with no per-project structure, even though items.source_repo already
+      exists as a column."
