@@ -103,6 +103,15 @@ export function runMigration(db: Database.Database): void {
       author TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS artifact_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id TEXT NOT NULL REFERENCES items(id),
+      url TEXT NOT NULL,
+      label TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_artifact_links_item_id ON artifact_links(item_id);
   `);
 
   // Guarded ALTER TABLE for columns added after a table already existed on

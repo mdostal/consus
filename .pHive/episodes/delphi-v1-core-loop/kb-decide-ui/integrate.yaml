@@ -1,0 +1,27 @@
+story_id: kb-decide-ui
+epic_id: delphi-v1-core-loop
+methodology: bdd
+steps:
+  - id: research
+    status: complete
+    note: Confirmed decide API from kb-store-schema-and-decide-api and DecisionCard's props from decision-card-renderer-ui.
+  - id: behavior-spec
+    status: complete
+    note: 3 tests — decide action via DecisionCard calls onDecide, version history browsable (not just current), audit trail visible (actor/field/old->new).
+  - id: ui-design
+    status: deferred
+    note: /design not run live this session.
+  - id: implement
+    status: complete
+    note: web/src/features/kb/KBBrowser.tsx (composes DecisionCard + VersionHistory + audit log list), web/src/features/kb/VersionHistory.tsx.
+  - id: test
+    status: complete
+    note: All 3 component tests pass.
+  - id: review
+    status: complete
+    note: All 78 project tests pass; npm run build succeeds.
+  - id: integrate
+    status: complete
+    note: Committed to feat/delphi-v1-core-loop.
+verdict: pass-with-deferred-design-pass
+finished_at: "2026-07-25T20:59:00Z"

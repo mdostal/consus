@@ -3,6 +3,7 @@ import { openDb } from "./db/connection.js";
 import { runMigration } from "./db/migrate.js";
 import { registerDocRoutes } from "./routes/docs.js";
 import { registerKbRoutes } from "./routes/kb.js";
+import { registerArtifactLinkRoutes } from "./routes/artifact-links.js";
 
 export interface BuildServerOptions {
   dbPath: string;
@@ -17,6 +18,7 @@ export function buildServer({ dbPath, repos = {} }: BuildServerOptions): Fastify
 
   registerDocRoutes(app, { db, repos });
   registerKbRoutes(app, { db });
+  registerArtifactLinkRoutes(app, { db });
 
   app.get("/health", async () => {
     const row = db.prepare("SELECT 1 AS ok").get() as { ok: number } | undefined;

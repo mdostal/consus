@@ -1,0 +1,24 @@
+story_id: artifact-link-registry
+epic_id: delphi-v1-core-loop
+methodology: tdd
+steps:
+  - id: research
+    status: complete
+    note: Confirmed items table shape from delphi-project-scaffold.
+  - id: test-spec
+    status: complete
+    note: 2 route tests (associate + list) + 2 component tests (link reachable in one click, falls back to URL as label).
+  - id: implement
+    status: complete
+    note: >
+      artifact_links table added to migrate.ts, server/routes/artifact-links.ts
+      (POST/GET), web/src/features/docs/ArtifactLink.tsx (link/embed only, no
+      re-rendering). Wired into server/index.ts.
+  - id: review
+    status: complete
+    note: All 78 project tests pass; npm run build succeeds.
+  - id: integrate
+    status: complete
+    note: Committed to feat/delphi-v1-core-loop.
+verdict: pass
+finished_at: "2026-07-25T20:59:00Z"
