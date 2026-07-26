@@ -1,0 +1,51 @@
+name: consus-phase4-close-the-loop
+title: "Consus Phase 4 — Close the Loop (REQ-16, Fire-Agents-to-Iterate)"
+description: >
+  Decomposition of PRD REQ-16 — the sole Phase 4 requirement per
+  .pHive/planning/roadmap.md ("Phase 4 — Close the loop"). Ports
+  mdostal/delphi's already-working Fire-Agents-to-Iterate feature (real
+  reference implementation read in full during planning): from a decision
+  item, dispatch an agent to redo/extend the work via a Multica
+  comment-mention; the result comes back as a NEW version, comparable in a
+  Versions view; every request logged for traceability. The roadmap's
+  adjacent "Heimdall routing point" note is explicitly out of scope here —
+  REQ-16 never calls a model directly, only posts a Multica comment.
+target_codebase: /Users/dostal/Documents/work/dostal/code/consus
+methodology: classic
+version_bump: minor
+sidecar_retention: transient
+
+git_flow:
+  base_branch: main
+  branch_strategy: per-epic
+
+source_docs:
+  - .pHive/planning/prd.md
+  - .pHive/planning/roadmap.md
+  - .pHive/epics/consus-phase4-close-the-loop/docs/design-discussion.md
+
+planning_team:
+  note: >
+    Condensed single-pass planning (same approach noted for
+    consus-phase2-survey-kb-api) — orchestrator-authored design discussion
+    informed by direct research of mdostal/delphi's real, working
+    server/index.mjs implementation (read in full) rather than a
+    from-scratch design, plus this project's own tonight-fresh confirmation
+    that comment-mentioning an agent triggers real Multica dispatch
+    (auriga/board-state-machine epic, same session).
+  matched_tags: [scoped-port, real-reference-implementation, small]
+  confidence: "medium -- single orchestrator pass, not the real planning-classification/routing skills' multi-persona dispatch."
+  gate_decisions:
+    scale_assessment: small
+    hv_gate: "not run (small scope)"
+    structured_outline: "not run (small scope)"
+
+stories:
+  - id: iterate-endpoint-and-log
+    title: "POST /api/decisions/:key/iterate + GET /api/log (REQ-16 backend)"
+    complexity: medium
+    depends_on: []
+  - id: versions-view-and-trigger
+    title: "Fire-agent trigger + Versions comparison view (REQ-16 frontend)"
+    complexity: medium
+    depends_on: [iterate-endpoint-and-log]
