@@ -50,6 +50,132 @@ describe("decision-request/v1 parser", () => {
     expect(parseDecisionPayload(JSON.stringify({ ...SAMPLE_PAYLOAD, options: [SAMPLE_PAYLOAD.options[0]] }))).toBeNull();
   });
 
+  describe("heuristic-from-markdown fallback tier (REQ-23)", () => {
+    it("extracts options from '#### Option A — title' headings and a 'recommend' line", () => {
+      const ticketBody = [
+        "# Wrap vs embed",
+        "",
+        "Some framing prose about the decision.",
+        "",
+        "#### Option A — WRAP our shell",
+        "+ no upstream dep; - we own the shell",
+        "",
+        "#### Option B — EMBED our plugins",
+        "+ single-pane; - upstream PR required",
+        "",
+        "We recommend Option A for now.",
+      ].join("\n");
+
+      const parsed = parseDecisionPayload(ticketBody);
+
+      expect(parsed?.options).toEqual([
+        { id: "A", title: "WRAP our shell", tradeoffs: "" },
+        { id: "B", title: "EMBED our plugins", tradeoffs: "" },
+      ]);
+      expect(parsed?.recommended).toBe("A");
+      expect(parsed?.title).toBe("Wrap vs embed");
+      expect(parsed?.context).toContain("Some framing prose about the decision.");
+    });
+
+    it("extracts options from 'A) TITLE: detail' lines", () => {
+      const ticketBody = [
+        "Decision: ship strategy",
+        "",
+        "A) WRAP: keep our own shell, host Multica as a tab",
+        "B) EMBED: mount our plugins inside Multica",
+        "",
+        "Recommendation: B is recommended because upstream is stable.",
+      ].join("\n");
+
+      const parsed = parseDecisionPayload(ticketBody);
+
+      expect(parsed?.options).toEqual([
+        { id: "A", title: "WRAP", tradeoffs: "keep our own shell, host Multica as a tab" },
+        { id: "B", title: "EMBED", tradeoffs: "mount our plugins inside Multica" },
+      ]);
+      expect(parsed?.recommended).toBe("B");
+    });
+
+    it("extracts options from '**A — title**' comparison-table cells", () => {
+      const ticketBody = [
+        "| Option | Notes |",
+        "| --- | --- |",
+        "| **A — Wrap** | keeps our shell |",
+        "| **B — Embed** | single pane |",
+        "",
+        "I recommend A.",
+      ].join("\n");
+
+      const parsed = parseDecisionPayload(ticketBody);
+
+      expect(parsed?.options).toEqual([
+        { id: "A", title: "Wrap", tradeoffs: "" },
+        { id: "B", title: "Embed", tradeoffs: "" },
+      ]);
+      expect(parsed?.recommended).toBe("A");
+    });
+
+    it("resolves recommended to the option letter nearest the word 'recommend', not the leftmost letter in the line", () => {
+      const ticketBody = [
+        "A) WRAP: keep our own shell",
+        "B) EMBED: mount inside Multica",
+        "",
+        "We compared A and B but recommend B.",
+      ].join("\n");
+
+      expect(parseDecisionPayload(ticketBody)?.recommended).toBe("B");
+    });
+
+    it("does not let a lowercase lettered checklist shadow the real capital-letter options", () => {
+      const ticketBody = [
+        "a) Configure timeout: 30s",
+        "b) Restart service: now",
+        "",
+        "A) WRAP: keep our own shell",
+        "B) EMBED: mount inside Multica",
+        "",
+        "We recommend A.",
+      ].join("\n");
+
+      const parsed = parseDecisionPayload(ticketBody);
+      expect(parsed?.options).toEqual([
+        { id: "A", title: "WRAP", tradeoffs: "keep our own shell" },
+        { id: "B", title: "EMBED", tradeoffs: "mount inside Multica" },
+      ]);
+    });
+
+    it("returns null when options are found but no 'recommend' line names one of them — agents must always take a position", () => {
+      const ticketBody = ["A) WRAP: keep our own shell", "B) EMBED: mount inside Multica", "", "No verdict yet."].join(
+        "\n",
+      );
+
+      expect(parseDecisionPayload(ticketBody)).toBeNull();
+    });
+
+    it("returns null when fewer than 2 heuristic options are found", () => {
+      const ticketBody = ["A) WRAP: keep our own shell", "", "I recommend A."].join("\n");
+
+      expect(parseDecisionPayload(ticketBody)).toBeNull();
+    });
+
+    it("still prefers the structured tier over the heuristic tier when a valid fenced block is present", () => {
+      const ticketBody = [
+        "```decision-request",
+        JSON.stringify(SAMPLE_PAYLOAD),
+        "```",
+        "",
+        "A) SOMETHING: irrelevant heuristic bait",
+        "B) ELSE: more bait",
+        "I recommend B.",
+      ].join("\n");
+
+      const parsed = parseDecisionPayload(ticketBody);
+
+      expect(parsed?.title).toBe(SAMPLE_PAYLOAD.title);
+      expect(parsed?.recommended).toBe("A");
+    });
+  });
+
   describe("verdictStatus", () => {
     it.each([
       [{ kind: "accepted" as const }, "done"],
