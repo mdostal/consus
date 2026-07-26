@@ -10,8 +10,52 @@
  * before REQ-07 is considered done — see architecture.md Risks.
  */
 
+import { readFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+const DEFAULT_TOKEN_CANDIDATE_PATHS = [
+  path.join(os.homedir(), ".config", "dostal", "mtok"),
+  path.join(os.homedir(), ".multica", "config.json"),
+];
+
+/**
+ * REQ-24: token resolution ported from mdostal/delphi's server/multica.mjs —
+ * MULTICA_TOKEN env, then a plaintext token file, then a JSON config file's
+ * `.token` field. Candidate paths and env are injectable so tests never
+ * touch the real filesystem or environment.
+ */
+export function resolveMulticaToken(
+  env: NodeJS.ProcessEnv = process.env,
+  candidatePaths: string[] = DEFAULT_TOKEN_CANDIDATE_PATHS,
+): string {
+  if (env.MULTICA_TOKEN && env.MULTICA_TOKEN.trim()) {
+    return env.MULTICA_TOKEN.trim();
+  }
+
+  for (const candidate of candidatePaths) {
+    try {
+      const raw = readFileSync(candidate, "utf-8");
+      if (candidate.endsWith(".json")) {
+        const parsed = JSON.parse(raw) as { token?: string };
+        if (parsed.token) return parsed.token;
+      } else if (raw.trim()) {
+        return raw.trim();
+      }
+    } catch {
+      // try the next candidate
+    }
+  }
+
+  throw new Error(
+    "Multica: no auth token found. Set MULTICA_TOKEN or provide ~/.config/dostal/mtok or ~/.multica/config.json",
+  );
+}
+
 export interface MulticaClientOptions {
   serverUrl: string;
+  workspaceId: string;
+  token?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
 }
@@ -32,11 +76,15 @@ export interface MulticaClient {
 
 export class HttpMulticaClient implements MulticaClient {
   private readonly serverUrl: string;
+  private readonly workspaceId: string;
+  private readonly token: string;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
 
-  constructor({ serverUrl, fetchImpl, timeoutMs = 30_000 }: MulticaClientOptions) {
+  constructor({ serverUrl, workspaceId, token, fetchImpl, timeoutMs = 20_000 }: MulticaClientOptions) {
     this.serverUrl = serverUrl.replace(/\/$/, "");
+    this.workspaceId = workspaceId;
+    this.token = token ?? resolveMulticaToken();
     this.fetchImpl = fetchImpl ?? fetch;
     this.timeoutMs = timeoutMs;
   }
@@ -48,7 +96,11 @@ export class HttpMulticaClient implements MulticaClient {
 
       const response = await this.fetchImpl(`${this.serverUrl}/comments`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${this.token}`,
+          "x-workspace-id": this.workspaceId,
+        },
         body: JSON.stringify({ item_id: itemId, author, body }),
         signal: controller.signal,
       });
