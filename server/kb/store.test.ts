@@ -90,6 +90,37 @@ describe("KB Store — decide API", () => {
     expect(drafts[1].content.length).toBe(longDraft.length);
   });
 
+  it("persists a valid kb_entry collection and defaults omitted collections to general", () => {
+    createKbEntry(db, {
+      id: "kb-marketing",
+      title: "Marketing playbook",
+      author: "mathew",
+      content: "marketing content",
+      collection: "marketing",
+    });
+    createKbEntry(db, { id: "kb-general", title: "General note", author: "mathew", content: "general content" });
+
+    const rows = db
+      .prepare("SELECT id, collection FROM kb_entries WHERE id IN (?, ?) ORDER BY id ASC")
+      .all("kb-general", "kb-marketing") as Array<{ id: string; collection: string }>;
+    expect(rows).toEqual([
+      { id: "kb-general", collection: "general" },
+      { id: "kb-marketing", collection: "marketing" },
+    ]);
+  });
+
+  it("rejects invalid kb_entry collections through the SQLite CHECK constraint", () => {
+    expect(() =>
+      createKbEntry(db, {
+        id: "kb-invalid",
+        title: "Invalid",
+        author: "mathew",
+        content: "invalid content",
+        collection: "invalid" as "general",
+      }),
+    ).toThrow();
+  });
+
   it("is backed by SQLite, not flat files — audit_log survives a reconnect", () => {
     insertItem(db, "item-3");
     decideItem(db, { itemId: "item-3", actor: "mathew", newStatus: "approved" });

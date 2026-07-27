@@ -54,16 +54,23 @@ export function registerKbRoutes(app: FastifyInstance, { db }: KbRoutesOptions):
     return db.prepare("SELECT * FROM kb_entries ORDER BY created_at DESC").all();
   });
 
-  app.put<{ Params: { id: string }; Body: { author: string; content: string } }>(
+  app.put<{
+    Params: { id: string };
+    Body: {
+      author: string;
+      content: string;
+      collection?: "marketing" | "boundary-decisions" | "plans" | "artifacts" | "general";
+    };
+  }>(
     "/api/kb-entries/:id",
     async (request) => {
       const { id } = request.params;
-      const { author, content } = request.body;
+      const { author, content, collection } = request.body;
       const existing = db.prepare("SELECT title FROM kb_entries WHERE id = ?").get(id) as
         | { title: string }
         | undefined;
 
-      createKbEntry(db, { id, title: existing?.title ?? id, author, content });
+      createKbEntry(db, { id, title: existing?.title ?? id, author, content, collection });
       return { ok: true };
     },
   );

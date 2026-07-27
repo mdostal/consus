@@ -68,6 +68,8 @@ export interface CreateKbEntryInput {
   content: string;
   /** Project/repo this entry belongs to (REQ-27) — nullable for backward compatibility. */
   sourceRepo?: string | null;
+  /** Collection bucket for KB grouping; defaults to general for backward compatibility. */
+  collection?: "marketing" | "boundary-decisions" | "plans" | "artifacts" | "general";
 }
 
 export interface SaveKbDraftInput {
@@ -85,14 +87,14 @@ export interface SaveKbDraftInput {
  */
 export function createKbEntry(
   db: Database.Database,
-  { id, title, author, content, sourceRepo }: CreateKbEntryInput,
+  { id, title, author, content, sourceRepo, collection = "general" }: CreateKbEntryInput,
 ): void {
   const now = new Date().toISOString();
 
   const tx = db.transaction(() => {
     db.prepare(
-      "INSERT OR IGNORE INTO kb_entries (id, title, current_version_id, created_at, source_repo) VALUES (?, ?, NULL, ?, ?)",
-    ).run(id, title, now, sourceRepo ?? null);
+      "INSERT OR IGNORE INTO kb_entries (id, title, current_version_id, created_at, source_repo, collection) VALUES (?, ?, NULL, ?, ?, ?)",
+    ).run(id, title, now, sourceRepo ?? null, collection);
 
     const result = db
       .prepare("INSERT INTO kb_versions (kb_entry_id, content, author, state, created_at) VALUES (?, ?, ?, ?, ?)")

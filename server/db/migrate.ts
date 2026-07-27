@@ -65,7 +65,8 @@ export function runMigration(db: Database.Database): void {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       current_version_id INTEGER,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      collection TEXT NOT NULL DEFAULT 'general' CHECK(collection IN ('marketing', 'boundary-decisions', 'plans', 'artifacts', 'general'))
     );
 
     CREATE TABLE IF NOT EXISTS kb_versions (
@@ -228,4 +229,12 @@ export function runMigration(db: Database.Database): void {
   addColumnIfMissing(db, "doc_index", "multica_issue_url", "TEXT");
   addColumnIfMissing(db, "doc_index", "editable_content", "TEXT");
   addColumnIfMissing(db, "doc_index", "last_modified", "TEXT");
+  addColumnIfMissing(
+    db,
+    "kb_entries",
+    "collection",
+    "TEXT NOT NULL DEFAULT 'general' CHECK(collection IN ('marketing', 'boundary-decisions', 'plans', 'artifacts', 'general'))",
+  );
+
+  db.exec("CREATE INDEX IF NOT EXISTS idx_kb_entries_collection ON kb_entries(collection)");
 }

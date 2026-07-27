@@ -152,14 +152,16 @@ Returns a specific doc's rendered content.
 ### `GET /api/kb-entries?project=<name>&q=<search>`
 Lists KB entries. Both params optional and combinable: omit `project` for every project
 (global view); omit `q` for no text filter (searches title + every version's content).
+Each entry includes `collection`, one of `marketing`, `boundary-decisions`, `plans`,
+`artifacts`, or `general`.
 
-**Response 200:** array of `{ id, title, current_version_id, created_at, source_repo }`
+**Response 200:** array of `{ id, title, current_version_id, created_at, source_repo, collection }`
 
 ### `PUT /api/kb-entries/:id`
 Creates or edits a KB entry directly (outside the comment/decide flow) — every call appends a
 new version (REQ-08/REQ-09), never overwrites history.
 
-**Request body:** `{ "author": string, "content": string }`
+**Request body:** `{ "author": string, "content": string, "collection"?: "marketing"|"boundary-decisions"|"plans"|"artifacts"|"general" }`
 
 **Response 200:** `{ "ok": true }`
 

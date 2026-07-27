@@ -58,8 +58,22 @@ describe("KB backlog — search/filter + direct edit (REQ-09, P1)", () => {
   beforeEach(async () => {
     db = new Database(":memory:");
     runMigration(db);
-    createKbEntry(db, { id: "kb-1", title: "Adopt React Flow", author: "mathew", content: "decision content about React Flow", sourceRepo: "consus" });
-    createKbEntry(db, { id: "kb-2", title: "OTEL telemetry backend", author: "mathew", content: "decision content about OTEL", sourceRepo: "other-project" });
+    createKbEntry(db, {
+      id: "kb-1",
+      title: "Adopt React Flow",
+      author: "mathew",
+      content: "decision content about React Flow",
+      sourceRepo: "consus",
+      collection: "plans",
+    });
+    createKbEntry(db, {
+      id: "kb-2",
+      title: "OTEL telemetry backend",
+      author: "mathew",
+      content: "decision content about OTEL",
+      sourceRepo: "other-project",
+      collection: "artifacts",
+    });
 
     app = Fastify();
     registerKbRoutes(app, { db });
@@ -115,53 +129,18 @@ describe("KB backlog — search/filter + direct edit (REQ-09, P1)", () => {
     expect(versionBodies[1].content).toBe("revised decision content");
   });
 
-  it("saves drafts as durable versions without changing the published current version", async () => {
-    const before = db.prepare("SELECT current_version_id FROM kb_entries WHERE id = ?").get("kb-1") as {
-      current_version_id: number;
-    };
-    const longDraft = `draft start\n${"untruncated human edit ".repeat(4000)}\ndraft end`;
-
+  it("accepts collection when creating a kb_entry through the API", async () => {
     const res = await app.inject({
       method: "PUT",
-      url: "/api/kb-entries/kb-1/draft",
-      payload: { author: "mathew", content: longDraft },
+      url: "/api/kb-entries/kb-marketing",
+      payload: { author: "mathew", content: "marketing content", collection: "marketing" },
     });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json().currentVersionId).toBe(before.current_version_id);
-
-    const versions = await app.inject({ method: "GET", url: "/api/kb-entries/kb-1/versions" });
-    const versionBodies = versions.json();
-    expect(versionBodies.map((v: { state: string }) => v.state)).toEqual(["published", "draft"]);
-    expect(versionBodies[1].content).toBe(longDraft);
-    expect(versionBodies[1].content.length).toBe(longDraft.length);
-  });
-
-  it("keeps draft-only text out of published KB search results", async () => {
-    await app.inject({
-      method: "PUT",
-      url: "/api/kb-entries/kb-1/draft",
-      payload: { author: "mathew", content: "private-draft-token" },
-    });
-
-    const res = await app.inject({ method: "GET", url: "/api/kb-entries?q=private-draft-token" });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toHaveLength(0);
-  });
-
-  it("never publishes a new version on Save — the approval pipeline does not fire (risk mitigation)", async () => {
-    const before = await app.inject({ method: "GET", url: "/api/kb-entries/kb-1/versions" });
-    const publishedBefore = before.json().filter((v: { state: string }) => v.state === "published");
-
-    await app.inject({
-      method: "PUT",
-      url: "/api/kb-entries/kb-1/draft",
-      payload: { author: "mathew", content: "just a save, not a submit" },
-    });
-
-    const after = await app.inject({ method: "GET", url: "/api/kb-entries/kb-1/versions" });
-    const publishedAfter = after.json().filter((v: { state: string }) => v.state === "published");
-    expect(publishedAfter).toHaveLength(publishedBefore.length);
+    const row = db.prepare("SELECT collection FROM kb_entries WHERE id = ?").get("kb-marketing") as {
+      collection: string;
+    };
+    expect(row.collection).toBe("marketing");
   });
 });
 

@@ -280,6 +280,37 @@ describe("runMigration", () => {
     const row = db.prepare("SELECT * FROM parked_workflows WHERE id = ?").get("pw-1") as any;
     expect(row.agent_name).toBe("researcher");
     expect(JSON.parse(row.parked_state)).toEqual({ some_key: "some_value" });
+  });
+
+  it("adds a defaulted, constrained collection column and collection index to kb_entries", () => {
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
+    const db = new Database(dbPath);
+
+    runMigration(db);
+    const columns = db.prepare("PRAGMA table_info(kb_entries)").all() as Array<{ name: string; dflt_value: string | null }>;
+    expect(columns.find((column) => column.name === "collection")?.dflt_value).toBe("'general'");
+
+    db.prepare("INSERT INTO kb_entries (id, title, created_at) VALUES (?, ?, ?)").run(
+      "kb-default",
+      "Default collection",
+      "2026-07-27T00:00:00Z",
+    );
+    const row = db.prepare("SELECT collection FROM kb_entries WHERE id = ?").get("kb-default") as {
+      collection: string;
+    };
+    expect(row.collection).toBe("general");
+
+    expect(() =>
+      db.prepare("INSERT INTO kb_entries (id, title, created_at, collection) VALUES (?, ?, ?, ?)").run(
+        "kb-invalid",
+        "Invalid collection",
+        "2026-07-27T00:00:00Z",
+        "not-a-collection",
+      ),
+    ).toThrow();
+
+    const indexes = db.prepare("PRAGMA index_list(kb_entries)").all() as Array<{ name: string }>;
+    expect(indexes.map((index) => index.name)).toContain("idx_kb_entries_collection");
 
     db.close();
   });
