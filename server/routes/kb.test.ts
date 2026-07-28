@@ -98,6 +98,34 @@ describe("KB backlog — search/filter + direct edit (REQ-09, P1)", () => {
     expect(res.json()).toHaveLength(2);
   });
 
+  it("filters kb_entries by ?collection=", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/kb-entries?collection=plans" });
+    const body = res.json();
+
+    expect(res.statusCode).toBe(200);
+    expect(body).toHaveLength(1);
+    expect(body[0]).toMatchObject({ id: "kb-1", collection: "plans" });
+  });
+
+  it("400s for an invalid ?collection= value", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/kb-entries?collection=bogus" });
+    const body = res.json();
+
+    expect(res.statusCode).toBe(400);
+    expect(body.error).toContain("collection");
+  });
+
+  it("400s when ?collection= is repeated", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/kb-entries?collection=plans&collection=artifacts",
+    });
+    const body = res.json();
+
+    expect(res.statusCode).toBe(400);
+    expect(body.error).toContain("single collection");
+  });
+
   it("scopes to a single project via ?project=, excluding every other project's entries (REQ-27)", async () => {
     const res = await app.inject({ method: "GET", url: "/api/kb-entries?project=consus" });
     const body = res.json();

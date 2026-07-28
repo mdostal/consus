@@ -1,7 +1,15 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import Database from "better-sqlite3";
 import { runMigration } from "../db/migrate.js";
-import { decideItem, getAuditLog, createKbEntry, getKbVersions, saveKbDraft, getKbDraftVersions } from "./store.js";
+import {
+  decideItem,
+  getAuditLog,
+  createKbEntry,
+  getKbEntries,
+  getKbVersions,
+  saveKbDraft,
+  getKbDraftVersions,
+} from "./store.js";
 
 function insertItem(db: Database.Database, id: string) {
   const now = new Date().toISOString();
@@ -119,6 +127,62 @@ describe("KB Store — decide API", () => {
         collection: "invalid" as "general",
       }),
     ).toThrow();
+  });
+
+  it("filters kb_entries by collection", () => {
+    createKbEntry(db, {
+      id: "kb-marketing",
+      title: "Marketing playbook",
+      author: "mathew",
+      content: "marketing content",
+      sourceRepo: "consus",
+      collection: "marketing",
+    });
+    createKbEntry(db, {
+      id: "kb-plans",
+      title: "Planning brief",
+      author: "mathew",
+      content: "planning content",
+      sourceRepo: "consus",
+      collection: "plans",
+    });
+
+    const entries = getKbEntries(db, { collection: "marketing" });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ id: "kb-marketing", collection: "marketing" });
+  });
+
+  it("combines collection with project and search filters", () => {
+    createKbEntry(db, {
+      id: "kb-marketing-consus",
+      title: "Marketing playbook",
+      author: "mathew",
+      content: "launch messaging",
+      sourceRepo: "consus",
+      collection: "marketing",
+    });
+    createKbEntry(db, {
+      id: "kb-marketing-other",
+      title: "Marketing playbook",
+      author: "mathew",
+      content: "launch messaging",
+      sourceRepo: "other-project",
+      collection: "marketing",
+    });
+    createKbEntry(db, {
+      id: "kb-plans-consus",
+      title: "Planning brief",
+      author: "mathew",
+      content: "launch messaging",
+      sourceRepo: "consus",
+      collection: "plans",
+    });
+
+    const entries = getKbEntries(db, { project: "consus", q: "launch", collection: "marketing" });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ id: "kb-marketing-consus", source_repo: "consus", collection: "marketing" });
   });
 
   it("is backed by SQLite, not flat files — audit_log survives a reconnect", () => {
