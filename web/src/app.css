@@ -1,0 +1,61 @@
+/* Consus decision surface — CADEX-adjacent dark theme for the CADEX admin decision */
+:root{
+  --c-bg:#0a0f1d; --c-panel:#0f172a; --c-line:rgba(255,255,255,.08);
+  --c-brand:#e11d2a; --c-brand-2:#f4434f; --c-ink:#e2e8f0; --c-dim:#94a3b8; --c-faint:#64748b;
+}
+body{margin:0;background:radial-gradient(1100px 520px at 82% -10%,rgba(225,29,42,.10),transparent 60%),var(--c-bg);color:var(--c-ink);font-family:Inter,system-ui,sans-serif}
+.shell{max-width:1080px;margin:0 auto;padding:0 20px 80px}
+.masthead{display:flex;align-items:center;gap:12px;padding:22px 0 8px;position:sticky;top:0;background:linear-gradient(var(--c-bg),rgba(10,15,29,.85));backdrop-filter:blur(6px);z-index:5}
+.masthead__brand{font-weight:700;font-size:20px;letter-spacing:.02em}
+.masthead__dot{color:var(--c-brand);margin:0 2px}
+.masthead__sub{font-size:12px;text-transform:uppercase;letter-spacing:.14em;color:var(--c-faint);font-weight:600}
+.state{color:var(--c-dim);padding:24px 0}
+.state--err{color:var(--c-brand-2)}
+.dv{border:1px solid var(--c-line);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.02),transparent),var(--c-panel);padding:22px 24px;margin-top:18px}
+.dv__head{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.dv__pill{align-self:flex-start;font-size:11px;text-transform:uppercase;letter-spacing:.08em;padding:2px 10px;border-radius:999px;background:rgba(225,29,42,.15);color:var(--c-brand-2);border:1px solid rgba(225,29,42,.35)}
+.dv__head h2{margin:0;font-size:26px;line-height:1.15}
+.dv__context{color:var(--c-dim);font-size:14.5px;line-height:1.6}
+.dv__context h1,.dv__context h2,.dv__context h3{color:var(--c-ink);margin:14px 0 6px}
+.dv__context code{background:rgba(255,255,255,.06);padding:1px 5px;border-radius:5px;font-size:.9em}
+.dv__context a{color:var(--c-brand-2)}
+.dv__section-title{font-size:13px;text-transform:uppercase;letter-spacing:.1em;color:var(--c-faint);margin:26px 0 12px;border-top:1px solid var(--c-line);padding-top:18px}
+.dv__gallery{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+@media(max-width:720px){.dv__gallery{grid-template-columns:1fr}}
+.pv{margin:0;border:1px solid var(--c-line);border-radius:12px;overflow:hidden;background:rgba(0,0,0,.2);display:flex;flex-direction:column}
+.pv--rec{border-color:rgba(225,29,42,.45);box-shadow:0 0 0 1px rgba(225,29,42,.25)}
+.pv__cap{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--c-line)}
+.pv__badge{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;background:var(--c-brand);color:#fff;font-weight:700;font-size:12px;flex:none}
+.pv__title{font-weight:600;font-size:13.5px}
+.pv__rec{margin-left:auto;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--c-brand-2)}
+.pv__frame{position:relative;width:100%;aspect-ratio:16/10;background:#0a0f1d;overflow:hidden}
+.pv__frame iframe{position:absolute;top:0;left:0;width:200%;height:200%;transform:scale(.5);transform-origin:top left;border:0;pointer-events:none}
+.pv__trade{margin:0;padding:10px 12px;font-size:12.5px;color:var(--c-dim);line-height:1.5}
+.pv__open{padding:0 12px 12px;font-size:12px;color:var(--c-brand-2);font-weight:600}
+.dv__hint{font-size:13px;color:var(--c-dim);line-height:1.55}
+.dv__recorded{padding:14px 16px;border-radius:10px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.4);color:#86efac;font-weight:600}
+.dv__err{color:var(--c-brand-2);font-size:13px}
+/* Make the reused AnswerControl + CommentThread legible on dark */
+.answer-control__options{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px}
+.answer-control__option{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-items:center;padding:12px 14px;border:1px solid var(--c-line);border-radius:10px;background:rgba(255,255,255,.02)}
+.answer-control__option-id,.answer-control__recommended{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;font-weight:700;grid-row:span 2}
+.answer-control__option-id{background:rgba(255,255,255,.08);color:var(--c-ink)}
+.answer-control__recommended{background:var(--c-brand);color:#fff}
+.answer-control__option-title{font-weight:600}
+.answer-control__option-tradeoffs{grid-column:2;font-size:12.5px;color:var(--c-dim)}
+.answer-control__option button{grid-column:2;justify-self:start;margin-top:6px;background:var(--c-brand);color:#fff;border:0;padding:7px 14px;border-radius:8px;font-weight:600;cursor:pointer}
+.answer-control__option label{grid-column:2;font-size:12px;color:var(--c-faint);display:flex;align-items:center;gap:6px}
+.answer-control__actions{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px;align-items:start}
+.answer-control__actions>button{grid-column:1/-1;justify-self:start;background:transparent;border:1px solid var(--c-brand);color:var(--c-brand-2);padding:9px 18px;border-radius:9px;font-weight:600;cursor:pointer}
+.answer-control__mix,.answer-control__reject{display:flex;flex-direction:column;gap:8px}
+.answer-control textarea{width:100%;min-height:60px;background:rgba(0,0,0,.25);border:1px solid var(--c-line);border-radius:9px;color:var(--c-ink);padding:9px;font:inherit;font-size:13px}
+.answer-control__mix button,.answer-control__reject button{background:rgba(255,255,255,.06);color:var(--c-ink);border:1px solid var(--c-line);padding:8px 14px;border-radius:8px;cursor:pointer}
+.answer-control__mix button:disabled,.answer-control__reject button:disabled{opacity:.4;cursor:not-allowed}
+.comment-thread__list{list-style:none;padding:0;margin:0 0 12px;display:flex;flex-direction:column;gap:10px}
+.comment-thread__item{padding:10px 12px;border:1px solid var(--c-line);border-radius:9px;background:rgba(255,255,255,.02)}
+.comment-thread__author{font-weight:600;font-size:13px}
+.comment-thread__time{font-size:11px;color:var(--c-faint);margin-left:8px}
+.comment-thread__body{margin:6px 0 0;font-size:13.5px;color:var(--c-dim)}
+.comment-thread__compose{display:flex;gap:10px;align-items:flex-end}
+.comment-thread__compose textarea{flex:1;min-height:54px;background:rgba(0,0,0,.25);border:1px solid var(--c-line);border-radius:9px;color:var(--c-ink);padding:9px;font:inherit;font-size:13px}
+.comment-thread__compose button{background:var(--c-brand);color:#fff;border:0;padding:10px 18px;border-radius:9px;font-weight:600;cursor:pointer}

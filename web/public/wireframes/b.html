@@ -1,0 +1,54 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Concept B — Control-Center Card Grid</title>
+<link rel="stylesheet" href="_base.css">
+<style>
+.cc{padding:20px 22px}
+.cc-grid{grid-template-columns:repeat(3,1fr)}
+.tile{position:relative;display:flex;flex-direction:column;gap:12px;min-height:150px;transition:.15s;cursor:pointer}
+.tile:hover{border-color:rgba(225,29,42,.4);transform:translateY(-2px)}
+.tile .th{display:flex;align-items:center;gap:11px}
+.tile h3{font-size:19px;color:var(--ink-50)}
+.tile .sub{font-size:12px;color:var(--ink-500)}
+.tile .metrics{display:flex;gap:16px;margin-top:auto}
+.tile .metrics .m .n{font-family:'Barlow Condensed';font-weight:700;font-size:22px;color:var(--ink-50)}
+.tile .metrics .m .k{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-500)}
+.tile .links{display:flex;flex-wrap:wrap;gap:6px}
+.tile .links a{font-size:11px;color:var(--ink-400);border:1px solid var(--line);border-radius:7px;padding:3px 8px}
+.tile.wide{grid-column:span 1}
+.corner{position:absolute;top:14px;right:14px;color:var(--ink-700);font-size:18px}
+</style></head><body>
+<div class="frame-title">
+  <div class="kicker">Concept B</div>
+  <h1>Control-center card grid</h1>
+  <p>One launchpad home. Every destination lives inside a grouped tile that shows a live headline stat + its 2–3 entry links. You pick an <i>area</i> first; only then do the detailed options appear.</p>
+</div>
+<div class="shell"><div class="scaffold">
+  <div class="topbar"><div class="wordmark" style="font-size:15px">CADEX<span class="brand-dot">·</span>ADMIN</div>
+    <div style="display:flex;gap:8px;align-items:center"><span class="pill on">Live</span><span class="chip">⌕ Jump to…</span><span class="icon" style="width:30px;height:30px">◐</span></div></div>
+  <div class="cc"><div class="grid cc-grid">
+    <div class="card tile"><span class="corner">$</span><div class="th"><div class="icon">$</div><div><h3>Money</h3><div class="sub">Revenue, payouts, expenses</div></div></div>
+      <div class="metrics"><div class="m"><div class="n">$18.2k</div><div class="k">Net income</div></div><div class="m"><div class="n">4</div><div class="k">Payouts due</div></div></div>
+      <div class="links"><a>Finances</a><a>Payouts</a></div></div>
+    <div class="card tile"><span class="corner">◐</span><div class="th"><div class="icon">◐</div><div><h3>Roster</h3><div class="sub">Families, coaches, intake</div></div></div>
+      <div class="metrics"><div class="m"><div class="n">48</div><div class="k">Households</div></div><div class="m"><div class="n">3</div><div class="k">New apps</div></div></div>
+      <div class="links"><a>Clients</a><a>Coaches</a><a>Applications</a></div></div>
+    <div class="card tile"><span class="corner">▦</span><div class="th"><div class="icon">▦</div><div><h3>Schedule</h3><div class="sub">Sessions, calls, logs</div></div></div>
+      <div class="metrics"><div class="m"><div class="n">12</div><div class="k">This week</div></div><div class="m"><div class="n">2</div><div class="k">Today</div></div></div>
+      <div class="links"><a>Calendar</a><a>Zoom</a><a>Session Log</a></div></div>
+    <div class="card tile"><span class="corner">▶</span><div class="th"><div class="icon">▶</div><div><h3>Studio &amp; Content</h3><div class="sub">Film, newsletter, pages</div></div></div>
+      <div class="metrics"><div class="m"><div class="n">7</div><div class="k">In film queue</div></div><div class="m"><div class="n">14</div><div class="k">Testimonials</div></div></div>
+      <div class="links"><a>Film Library</a><a>Film Queue</a><a>Newsletter</a><a>Playbook</a><a>About</a></div></div>
+    <div class="card tile"><span class="corner">◧</span><div class="th"><div class="icon">◧</div><div><h3>Site &amp; Brand</h3><div class="sub">Public-site look &amp; demo</div></div></div>
+      <div class="metrics"><div class="m"><div class="n">Stadium</div><div class="k">Active bg</div></div><div class="m"><div class="n">Off</div><div class="k">Demo mode</div></div></div>
+      <div class="links"><a>Backgrounds</a><a>Carousel</a><a>Demo Mode</a></div></div>
+    <div class="card tile"><span class="corner">⚙</span><div class="th"><div class="icon">⚙</div><div><h3>Insight &amp; System</h3><div class="sub">Analytics, tiers, settings</div></div></div>
+      <div class="metrics"><div class="m"><div class="n">+12%</div><div class="k">MoM traffic</div></div><div class="m"><div class="n">OK</div><div class="k">Audit</div></div></div>
+      <div class="links"><a>Analytics</a><a>Tier Evals</a><a>Inventory</a><a>Audit</a><a>Settings</a></div></div>
+  </div></div>
+</div></div>
+<div class="annot">
+  <div class="note"><b>Fixes</b><span>Replaces the 22-item nav wall with 6 scannable tiles — the whole admin fits on one screen with no horizontal scroll.</span></div>
+  <div class="note"><b>Fixes</b><span>Each tile front-loads the number you actually came to check, so many visits end without drilling in at all.</span></div>
+  <div class="note"><b>Fixes</b><span>Detailed options are nested one level down, per area — you only ever see the ~3 links relevant to the area you picked.</span></div>
+</div>
+</body></html>

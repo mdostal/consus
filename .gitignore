@@ -30,3 +30,5 @@ build/
 .pHive/interrupts/
 .pHive/metrics/
 .pHive/session-effort.txt
+.consus-backup-cadex/
+dev.log
