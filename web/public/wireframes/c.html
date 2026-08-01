@@ -1,0 +1,56 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Concept C — Simple / Advanced Mode Toggle</title>
+<link rel="stylesheet" href="_base.css">
+<style>
+.wrap{padding:18px 22px}
+.toggle{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.toggle button{background:transparent;color:var(--ink-400);border:0;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer}
+.toggle button.on{background:var(--brand-500);color:#fff}
+.simple-grid{grid-template-columns:repeat(3,1fr);margin-top:16px}
+.big{display:flex;flex-direction:column;gap:10px;min-height:120px}
+.big .th{display:flex;align-items:center;gap:11px}
+.big h3{font-size:18px;color:var(--ink-50)}
+.big .n{font-family:'Barlow Condensed';font-weight:700;font-size:26px;color:var(--ink-50)}
+.big.accent .n{color:var(--brand-400)}
+.big .cta{margin-top:auto;font-size:12px;color:var(--brand-400)}
+.adv-reveal{margin-top:18px;border-top:1px dashed var(--line);padding-top:14px;opacity:.55}
+.adv-reveal .label{margin-bottom:8px}
+.adv-row{display:flex;flex-wrap:wrap;gap:8px}
+.adv-row a{font-size:12px;color:var(--ink-400);border:1px solid var(--line);border-radius:8px;padding:6px 11px}
+.hint{display:flex;gap:8px;align-items:center;margin-top:6px;font-size:12px;color:var(--ink-500)}
+</style></head><body>
+<div class="frame-title">
+  <div class="kicker">Concept C</div>
+  <h1>Simple / Advanced mode toggle</h1>
+  <p>One global switch. <b>Simple</b> (the default) shows only the ~6 things touched daily. Flip to <b>Advanced</b> and the full power-surface — backgrounds, demo mode, tier evals, audit, inventory — appears. Directly answers "too much surfaced at once."</p>
+</div>
+<div class="shell"><div class="scaffold">
+  <div class="topbar"><div class="wordmark" style="font-size:15px">CADEX<span class="brand-dot">·</span>ADMIN</div>
+    <div class="toggle"><button class="on">Simple</button><button>Advanced</button></div></div>
+  <div class="wrap">
+    <div class="label">Everyday</div>
+    <div class="grid simple-grid">
+      <div class="card big accent"><div class="th"><div class="icon">▦</div><h3>Today's sessions</h3></div><div class="n">2</div><span class="cta">Open schedule →</span></div>
+      <div class="card big"><div class="th"><div class="icon">◐</div><h3>Clients</h3></div><div class="n">48</div><span class="cta">Manage families →</span></div>
+      <div class="card big accent"><div class="th"><div class="icon">$</div><h3>Finances</h3></div><div class="n">$18.2k</div><span class="cta">This-month snapshot →</span></div>
+      <div class="card big"><div class="th"><div class="icon">⧉</div><h3>Film queue</h3></div><div class="n">7</div><span class="cta">Review clips →</span></div>
+      <div class="card big"><div class="th"><div class="icon">▤</div><h3>Applications</h3></div><div class="n">3</div><span class="cta">Approve / decline →</span></div>
+      <div class="card big"><div class="th"><div class="icon">✉</div><h3>Newsletter</h3></div><div class="n">Draft</div><span class="cta">Send this week →</span></div>
+    </div>
+    <div class="hint"><span class="pill">◉</span> Everything else is one switch away — flip to <b style="color:var(--brand-400)">&nbsp;Advanced&nbsp;</b> when you need it.</div>
+    <div class="adv-reveal">
+      <div class="label">Hidden in Simple — revealed by Advanced</div>
+      <div class="adv-row">
+        <a>Payouts</a><a>Coaches</a><a>Calendar sync</a><a>Zoom</a><a>Session Log</a><a>Film Library</a>
+        <a>Testimonials</a><a>Playbook</a><a>About page</a><a>Backgrounds</a><a>Carousel</a><a>Demo Mode</a>
+        <a>Analytics</a><a>Tier Evaluations</a><a>Inventory</a><a>Audit Log</a><a>Settings</a>
+      </div>
+    </div>
+  </div>
+</div></div>
+<div class="annot">
+  <div class="note"><b>Fixes</b><span>The everyday 80% (6 cards) is calm and uncluttered; the power-user 20% is deliberately out of sight until asked for.</span></div>
+  <div class="note"><b>Fixes</b><span>Nothing is removed or buried in menus — one obvious toggle governs the whole surface, so advanced tools stay one click away.</span></div>
+  <div class="note"><b>Fixes</b><span>Lowest-effort rebuild: the existing 22 pages stay as-is; this is a filter over the current nav, not a restructure of every page.</span></div>
+</div>
+</body></html>

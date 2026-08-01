@@ -1,0 +1,94 @@
+id: versions-view-and-trigger
+epic: consus-phase4-close-the-loop
+title: "Fire-agent trigger + Versions comparison view (REQ-16 frontend)"
+status: pending
+complexity: medium
+methodology: classic
+depends_on: [iterate-endpoint-and-log]
+
+description: |
+  Frontend half of REQ-16, sitting alongside the existing
+  web/src/features/decisions/DecisionCard.tsx.
+
+  1. A "fire agent" trigger UI: from a decision item, open a small form
+     (prompt text, an agent picker, optional scope.section/scope.diagram
+     if the item has sections/diagrams to target) and POST it to
+     iterate-endpoint-and-log's new route. Show the returned log_id/
+     comment_id on success; show a clear, loud error on failure (matching
+     this repo's existing "never silence" convention -- see
+     write-comment.ts's own doc comment).
+  2. A "Versions" view/tab on the decision item: lists the item's iterate-
+     request history (via GET /api/log filtered to this issue -- backend
+     may need a query param added if /api/log doesn't already support
+     filtering by issue; check the prior story's actual implementation
+     before assuming) alongside the ORIGINAL item content, so a reviewer
+     can see what was requested and when. This is deliberately NOT a full
+     side-by-side diff UI (that's Phase 5's REQ-18, sectional review) --
+     REQ-16's own scope is "comparable in a Versions view", satisfied by a
+     list of iterate-requests + their eventual results being visible
+     together with the original, not a diff renderer.
+
+  Scale check before starting: this is UI work. Consider whether a
+  lightweight design pass (wireframe review) is warranted given this
+  repo's own conventions before implementing, or whether DecisionCard.tsx's
+  existing patterns are close enough to extend directly without one --
+  developer's call, informed by how the existing DecisionCard/KB browser
+  components were built (check their story files under
+  .pHive/epics/consus-phase2-survey-kb-api/stories/ for precedent).
+
+acceptance_criteria:
+  - "Given a decision item, when the fire-agent trigger is used with a prompt and no agent selected, then it still submits successfully (agent is optional per the backend contract) and shows the returned log_id"
+  - "Given the fire-agent trigger is used with a prompt and an agent selected, when submitted, then the request includes agentId+agentName and the UI reflects success/failure clearly, never silently"
+  - "Given the backend responds with a failure, when displayed, then the error is loud and specific (not a generic toast with no detail) -- matching this repo's 'never silence' convention"
+  - "Given a decision item with prior iterate-requests, when the Versions view is opened, then each request (prompt, scope, timestamp, agent) is listed alongside the original item content"
+  - "Given a decision item with NO prior iterate-requests, when the Versions view is opened, then it shows the original content with an empty/appropriate state, not an error"
+
+steps:
+  - id: research
+    description: Read DecisionCard.tsx and its test in full, plus the KB browser components (web/src/features/kb/) for this repo's real component/testing conventions, before designing the new UI pieces.
+    agent: researcher
+  - id: implement
+    description: Build the fire-agent trigger form and the Versions view, wired to iterate-endpoint-and-log's real routes (not mocked in the app itself -- mocked only in tests).
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Component tests for both new pieces, mirroring DecisionCard.test.tsx's existing shape (React Testing Library, per this repo's established pattern).
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm the Versions view does NOT attempt a full diff/sectional-comparison UI (explicitly Phase 5 scope) -- flag if implementation crept beyond what REQ-16 itself asks for.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit to feature branch feat/consus-phase4-close-the-loop. NOTE -- standing operator directive as of 2026-07-26 holds ALL outbound (no push, no PR) until explicitly lifted; commit locally only until then.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/dostal/Documents/work/dostal/code/consus
+  key_files:
+    - path: web/src/features/decisions/DecisionCard.tsx
+      purpose: "Existing decision item component this story's trigger/Versions UI attaches to"
+    - path: web/src/features/kb/KBBrowser.tsx
+      purpose: "Reference for this repo's real list/detail UI conventions, if useful"
+
+files_to_modify:
+  - file: web/src/features/decisions/DecisionCard.tsx
+    change: "Add the fire-agent trigger entry point"
+  - file: web/src/features/decisions/
+    change: "New component(s) for the fire-agent form and Versions view -- exact filenames at developer's discretion, following this directory's existing naming convention"
+
+design_decisions:
+  - decision: "Versions view scoped to list-of-iterate-requests + original content, not a full diff UI"
+    rationale: "design-discussion.md §3 -- REQ-18 (sectional review + non-destructive diff) is explicitly Phase 5; building it here would silently pull forward out-of-scope work"
+
+cross_cutting: []
+
+risks:
+  - severity: low
+    description: "Scope creep toward a full versioning/diff system, since delphi's own Versions tab (the reference this ports from) is much larger"
+    mitigation: "Acceptance criteria and design_decisions above are explicit about the narrower scope; review step checks for this specifically"
+
+references:
+  - path: .pHive/epics/consus-phase4-close-the-loop/docs/design-discussion.md
+    relevant_excerpt: "This epic's Versions view is therefore scoped down to exactly what REQ-16 itself requires... not a general-purpose multi-source version comparison system."
