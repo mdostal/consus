@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { summarizeChat } from "./chat-summary.js";
 
 export interface AuditLogRow {
   id: number;
@@ -8,6 +9,7 @@ export interface AuditLogRow {
   old_value: string | null;
   new_value: string | null;
   timestamp: string;
+  chat_summary: string | null;
 }
 
 export interface KbVersionRow {
@@ -28,6 +30,11 @@ export interface DecideItemInput {
  * Approve/decide an item: writes an append-only audit_log entry (actor,
  * timestamp, field, old->new) and marks the item decided so it never
  * resurfaces in the open queue (the "decided-store amnesia fix").
+ *
+ * REQ-25: the item's comment thread is summarized (summarizeChat, ported
+ * from Claud-ometer's chat-store.ts) into the same audit_log write-back
+ * entry, so the decision record carries its discussion context, not just
+ * the verdict.
  */
 export function decideItem(db: Database.Database, { itemId, actor, newStatus }: DecideItemInput): void {
   const item = db.prepare("SELECT status FROM items WHERE id = ?").get(itemId) as
@@ -38,11 +45,15 @@ export function decideItem(db: Database.Database, { itemId, actor, newStatus }: 
   }
 
   const now = new Date().toISOString();
+  const comments = db
+    .prepare("SELECT author, body FROM comments WHERE item_id = ? ORDER BY created_at ASC")
+    .all(itemId) as Array<{ author: string; body: string }>;
+  const chatSummary = summarizeChat(comments);
 
   const tx = db.transaction(() => {
     db.prepare(
-      "INSERT INTO audit_log (item_id, actor, field, old_value, new_value, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-    ).run(itemId, actor, "status", item.status, newStatus, now);
+      "INSERT INTO audit_log (item_id, actor, field, old_value, new_value, timestamp, chat_summary) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).run(itemId, actor, "status", item.status, newStatus, now, chatSummary);
 
     db.prepare("UPDATE items SET status = ?, updated_at = ?, decided_at = ? WHERE id = ?").run(
       newStatus,
