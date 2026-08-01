@@ -19,7 +19,33 @@ export interface ClassificationResult {
 interface ItemRow {
   id: string;
   type: string;
+  title: string;
   decision_payload: string | null;
+}
+
+/**
+ * REQ-22: legacy heuristic fallback for items with no decision_payload at
+ * all — ported from Claud-ometer's `review-queue.ts` `classifyDecisionType`
+ * regexes (first-match-wins; exact patterns per
+ * docs/delphi-lineage-inventory.md "Source 1"). Runs over the item title,
+ * the only free-text field Consus's `items` table carries.
+ */
+const HEURISTIC_DECISION_TYPE_PATTERNS: ReadonlyArray<[DecisionType, RegExp]> = [
+  ["cba", /\bcba\b|cost[\s-]?benefit|trade[\s-]?off|recommendation:|options considered/i],
+  ["quorum", /\bquorum\b|tie[\s-]?break|tiebreak|\bsplit \d|votes? (for|against)|agents? (are )?split/i],
+  ["choose", /\bchoose\b|1 of \d|pick (a|an|one|the)|which (option|approach|layout)|\boption \d|\bmockups?\b/i],
+  ["survey", /\bsurvey\b|multi[\s-]?select|select (features|all that|the features)|checklist|pick (any|many)/i],
+  [
+    "edit",
+    /\breport\b|amend|proofread|edit\b|\bdiff\b|redline|weekly (ops|swarm|report)|review (&|and) (amend|edit)/i,
+  ],
+];
+
+function classifyDecisionTypeHeuristic(title: string): DecisionType {
+  for (const [type, pattern] of HEURISTIC_DECISION_TYPE_PATTERNS) {
+    if (pattern.test(title)) return type;
+  }
+  return "default";
 }
 
 /**
@@ -30,29 +56,41 @@ interface ItemRow {
  * classifies as "cba" (the real spec's own field-reference table notes
  * `diagram` is set "if the doc body contains an architecture diagram,"
  * which is the CBA-with-diagram case); any other valid payload is "choose".
- * "survey"/"edit"/"doc" remain reachable only via the legacy heuristic
- * fallback path (unstructured items with no decision_payload) — the real
- * system "falls back to heuristics... for legacy docs," which this
- * classifier doesn't yet implement beyond the "default" catch-all (see
- * this story's Risks).
+ * Items with no decision_payload fall through to the REQ-22 heuristic
+ * above instead of a bare "default". "doc" remains unreachable by either
+ * path — the lineage doc's regex list never produces it.
  */
-function classifyDecisionType(payload: DecisionPayload | null): DecisionType {
-  if (!payload) return "default";
-  if (payload.diagram === true) return "cba";
-  return "choose";
+function classifyDecisionType(payload: DecisionPayload | null, title: string): DecisionType {
+  if (payload) {
+    if (payload.diagram === true) return "cba";
+    return "choose";
+  }
+  return classifyDecisionTypeHeuristic(title);
 }
 
-function heuristicTriageBucket(item: ItemRow): TriageBucket {
+/**
+ * REQ-22: v1 had no fallback for items without a decision_payload — every
+ * such item defaulted to triageBucket "research_plan". Claud-ometer's
+ * `classifyBucket` defaults instead to "agent_task" (a real bug fix, per
+ * the lineage doc), and also promotes a decision-shaped title (matched by
+ * the same heuristic regexes above — "title matches DECISION_TITLE_RE" in
+ * the lineage doc's ordering) to "open_question".
+ *
+ * Not ported: the lineage doc's curated-DECIDE-line and hardcoded
+ * KNOWN_HUMAN_IDENTIFIERS tiers (the latter explicitly REDO-flagged as a
+ * hardcoding mistake not to repeat), and its NOISE_RE/RESEARCH_RE/AGENT_RE
+ * — Source 1 notes those weren't fetched in full, only named, so there is
+ * no literal pattern to port yet. "noise"/"research_plan" stay reachable
+ * only via a human triage_overrides row until that source exists.
+ */
+function heuristicTriageBucket(item: ItemRow, decisionType: DecisionType): TriageBucket {
   if (item.type === "human_request") return "open_question";
-  // v1 heuristic default for other item types — no strong signal yet to
-  // distinguish your_action/agent_task/noise without more item metadata.
-  // Refinable once real Consus traffic exists; the override table is the
-  // safety valve in the meantime (see this story's Risks).
-  return "research_plan";
+  if (decisionType !== "default") return "open_question";
+  return "agent_task";
 }
 
 export function classifyItem(db: Database.Database, itemId: string): ClassificationResult {
-  const item = db.prepare("SELECT id, type, decision_payload FROM items WHERE id = ?").get(itemId) as
+  const item = db.prepare("SELECT id, type, title, decision_payload FROM items WHERE id = ?").get(itemId) as
     | ItemRow
     | undefined;
   if (!item) {
@@ -60,12 +98,12 @@ export function classifyItem(db: Database.Database, itemId: string): Classificat
   }
 
   const payload = item.decision_payload ? parseDecisionPayload(item.decision_payload) : null;
-  const decisionType = classifyDecisionType(payload);
+  const decisionType = classifyDecisionType(payload, item.title);
 
   const override = db.prepare("SELECT bucket FROM triage_overrides WHERE item_id = ?").get(itemId) as
     | { bucket: TriageBucket }
     | undefined;
-  const triageBucket = override?.bucket ?? heuristicTriageBucket(item);
+  const triageBucket = override?.bucket ?? heuristicTriageBucket(item, decisionType);
 
   db.prepare("UPDATE items SET decision_type = ?, triage_bucket = ? WHERE id = ?").run(
     decisionType,
