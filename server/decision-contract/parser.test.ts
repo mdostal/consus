@@ -77,6 +77,30 @@ describe("decision-request/v1 parser", () => {
       expect(parsed?.context).toContain("Some framing prose about the decision.");
     });
 
+    it("extracts options from 'Option A: title' colon-separated headings", () => {
+      const ticketBody = [
+        "# Wrap vs embed",
+        "",
+        "Some framing prose about the decision.",
+        "",
+        "Option A: WRAP our shell",
+        "+ no upstream dep; - we own the shell",
+        "",
+        "Option B: EMBED our plugins",
+        "+ single-pane; - upstream PR required",
+        "",
+        "We recommend Option A for now.",
+      ].join("\n");
+
+      const parsed = parseDecisionPayload(ticketBody);
+
+      expect(parsed?.options).toEqual([
+        { id: "A", title: "WRAP our shell", tradeoffs: "" },
+        { id: "B", title: "EMBED our plugins", tradeoffs: "" },
+      ]);
+      expect(parsed?.recommended).toBe("A");
+    });
+
     it("extracts options from 'A) TITLE: detail' lines", () => {
       const ticketBody = [
         "Decision: ship strategy",

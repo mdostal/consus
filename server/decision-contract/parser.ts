@@ -53,7 +53,7 @@ const FENCED_DECISION_REQUEST_BLOCK = /```decision-request\s*\n([\s\S]*?)\n```/;
  * ```decision-request block (tier 1), extract options from free-form
  * markdown prose before giving up (tier 3 — none). Three option shapes are
  * tried in order, first one to yield 2+ options wins:
- *   - `#### Option A — title` headings
+ *   - `#### Option A — title` / `Option A: title` headings
  *   - `A) TITLE: detail` lines
  *   - `**A — title**` comparison-table cells
  * `recommended` is resolved from the first line matching /recommend/i that
@@ -67,7 +67,7 @@ const FENCED_DECISION_REQUEST_BLOCK = /```decision-request\s*\n([\s\S]*?)\n```/;
 // ("a) Configure timeout: 30s") elsewhere in the ticket body as decision options.
 // [Oo]ption (not the `i` flag) so "option"/"Option" both match without
 // making the captured letter group case-insensitive too.
-const OPTION_HEADING = /^#{0,6}\s*[Oo]ption\s+([A-Z])\s*[—–-]\s*(.+)$/gm;
+const OPTION_HEADING = /^#{0,6}\s*[Oo]ption\s+([A-Z])\s*[—–:-]\s*(.+)$/gm;
 const OPTION_LETTER_LINE = /^([A-Z])\)\s*([^:\n]+):\s*(.+)$/gm;
 const OPTION_TABLE_CELL = /\*\*([A-Z])\s*[—–-]\s*([^*\n]+)\*\*/g;
 
