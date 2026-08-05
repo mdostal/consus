@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import type { MinervaTransport } from "./transport.js";
+import { parseDecisionPayload, serializeDecisionPayload, type DecisionPayload } from "../../decision-contract/parser.js";
 
 export interface Question {
   id: string;
@@ -10,6 +11,12 @@ export interface Question {
   /** Escalation-classifier output, when Minerva provides it. */
   confidence?: number;
   suggestedChannel?: string;
+  /**
+   * Real dostal:decision-request/v1 payload (AC1), when Minerva sends the
+   * full structured contract instead of a bare yes/no Question. Takes
+   * precedence over the synthesized 2-option fallback below.
+   */
+  decisionPayload?: DecisionPayload;
 }
 
 export interface HumanRequestRow {
@@ -43,20 +50,27 @@ export function ingestQuestion(db: Database.Database, question: Question): void 
 
   // Real decision-request/v1 shape (corrected against the documented spec
   // in mdostal/delphi's docs/decision-request-format.md): options A-Z with
-  // tradeoffs, a required `recommended` letter. A Minerva yes/no Question
-  // maps onto the minimal 2-option case; "recommended" defaults to "A"
-  // (Yes) absent a stronger signal from Minerva's classifier — the real
-  // spec requires every payload to take a position.
-  const decisionPayload = JSON.stringify({
-    version: "dostal:decision-request/v1",
-    title: question.text,
-    context: question.reason ?? "",
-    options: [
-      { id: "A", title: "Yes", tradeoffs: "" },
-      { id: "B", title: "No", tradeoffs: "" },
-    ],
-    recommended: "A",
-  });
+  // tradeoffs, a required `recommended` letter. When Minerva sends the full
+  // payload (AC1) it's stored verbatim (re-validated so a malformed payload
+  // never lands silently); otherwise a Minerva yes/no Question maps onto
+  // the minimal 2-option case, "recommended" defaulting to "A" (Yes) absent
+  // a stronger signal from Minerva's classifier — the real spec requires
+  // every payload to take a position.
+  const suppliedPayload = question.decisionPayload
+    ? parseDecisionPayload(JSON.stringify(question.decisionPayload))
+    : null;
+  const decisionPayload = suppliedPayload
+    ? serializeDecisionPayload(suppliedPayload)
+    : JSON.stringify({
+        version: "dostal:decision-request/v1",
+        title: question.text,
+        context: question.reason ?? "",
+        options: [
+          { id: "A", title: "Yes", tradeoffs: "" },
+          { id: "B", title: "No", tradeoffs: "" },
+        ],
+        recommended: "A",
+      });
 
   const tx = db.transaction(() => {
     db.prepare(

@@ -23,13 +23,17 @@ export function buildServer({ dbPath, repos = {} }: BuildServerOptions): Fastify
   registerArtifactLinkRoutes(app, { db });
   registerDecisionRoutes(app, { db });
 
-  app.get("/health", async () => {
+  const healthHandler = async () => {
     const row = db.prepare("SELECT 1 AS ok").get() as { ok: number } | undefined;
     return {
       status: "ok",
       sqlite: row?.ok === 1 ? "connected" : "unreachable",
     };
-  });
+  };
+  app.get("/health", healthHandler);
+  // /healthz alias — the probe path convention several Pantheon load
+  // balancers/orchestrators default to.
+  app.get("/healthz", healthHandler);
 
   app.addHook("onClose", async () => {
     db.close();

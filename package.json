@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Consus — the Pantheon's rendered doc/decision surface",
+  "engines": {
+    "node": ">=22 <25"
+  },
   "scripts": {
     "dev:web": "vite",
     "dev:server": "tsx watch server/index.ts",
@@ -12,6 +15,7 @@
     "build:server": "tsc -p server/tsconfig.json",
     "build": "npm run build:web && npm run build:server",
     "start": "node dist-server/index.js",
+    "rebuild:native": "npm rebuild better-sqlite3",
     "test": "vitest run",
     "test:watch": "vitest"
   },

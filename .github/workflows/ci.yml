@@ -24,17 +24,25 @@ jobs:
           echo "Detected stack: $(tail -n1 "$GITHUB_OUTPUT")"
 
       # ---- Node ----
+      # Pinned to 24, matching Consus's runtime node (engines field in
+      # package.json). Node 25 is deliberately excluded: better-sqlite3's
+      # native build breaks there (simdjson), which is what left the 52
+      # better-sqlite3-backed DB tests unable to run in CI.
       - name: Setup Node
         if: steps.detect.outputs.stack == 'node'
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
 
       - name: Node install / build / test
         if: steps.detect.outputs.stack == 'node'
         run: |
           set -e
           if [ -f package-lock.json ]; then npm ci || npm install; else npm install; fi
+          # Defensive rebuild: guarantees any native module (better-sqlite3)
+          # matches this runner's actual Node ABI even if a cached/prebuilt
+          # binary in the lockfile install was built for a different one.
+          npm run rebuild:native --if-present
           npm run build --if-present
           if node -e "const s=(require('./package.json').scripts)||{};process.exit(s.test?0:1)"; then
             npm test

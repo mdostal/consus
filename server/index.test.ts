@@ -25,4 +25,17 @@ describe("GET /health", () => {
 
     await app.close();
   });
+
+  it("/healthz alias returns the same body as /health", async () => {
+    const app = buildServer({ dbPath });
+
+    const response = await app.inject({ method: "GET", url: "/healthz" });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.status).toBe("ok");
+    expect(body.sqlite).toBe("connected");
+
+    await app.close();
+  });
 });
