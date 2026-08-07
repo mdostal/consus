@@ -1,0 +1,67 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Concept D — Tabbed Workspace (Workbench)</title>
+<link rel="stylesheet" href="_base.css">
+<style>
+.tabs{display:flex;gap:4px;padding:0 22px;border-bottom:1px solid var(--line);background:rgba(10,15,29,.5)}
+.tabs a{padding:12px 16px;font-family:'Barlow Condensed';font-weight:600;font-size:15px;color:var(--ink-400);border-bottom:2px solid transparent}
+.tabs a.on{color:var(--ink-50);border-bottom-color:var(--brand-500)}
+.work{display:grid;grid-template-columns:190px 1fr;min-height:470px}
+.subnav{border-right:1px solid var(--line);padding:14px 10px}
+.subnav .label{padding:4px 10px}
+.subnav a{display:block;padding:7px 10px;border-radius:8px;font-size:13px;color:var(--ink-300)}
+.subnav a.on{background:rgba(225,29,42,.15);color:var(--brand-400)}
+.canvas{padding:16px 18px}
+.master-detail{display:grid;grid-template-columns:280px 1fr;gap:14px;margin-top:12px}
+.md-list .row{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:8px;font-size:13px}
+.md-list .row.on{border-color:rgba(225,29,42,.4);background:rgba(225,29,42,.08)}
+.detail h3{font-size:18px;color:var(--ink-50);margin-bottom:8px}
+.field{display:flex;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line);font-size:13px}
+.field .k{color:var(--ink-500)}
+.gallery{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+.gallery .g{aspect-ratio:16/10;border-radius:8px;border:1px solid var(--line);background:linear-gradient(135deg,rgba(225,29,42,.18),rgba(15,23,42,.6));display:grid;place-items:end start;padding:6px;font-size:10px;color:var(--ink-300)}
+.gallery .g.on{outline:2px solid var(--brand-500)}
+</style></head><body>
+<div class="frame-title">
+  <div class="kicker">Concept D</div>
+  <h1>Tabbed workspace (workbench)</h1>
+  <p>Five top-level workspaces. Inside each, a contextual sub-nav drives a working canvas (master–detail). The "9-card backgrounds wall" becomes a compact gallery inside the Studio workspace — clutter contained by context.</p>
+</div>
+<div class="shell"><div class="scaffold">
+  <div class="topbar" style="border-bottom:0;padding-bottom:8px"><div class="wordmark" style="font-size:15px">CADEX<span class="brand-dot">·</span>ADMIN</div><span class="pill on">Live</span></div>
+  <div class="tabs"><a>Operations</a><a>Money</a><a>Roster</a><a class="on">Studio</a><a>Settings</a></div>
+  <div class="work">
+    <nav class="subnav">
+      <div class="label">Studio</div>
+      <a class="on">Backgrounds</a><a>Carousel</a><a>Film Library</a><a>Film Queue</a><a>Newsletter</a><a>Testimonials</a><a>Playbook</a><a>About page</a><a>Demo Mode</a>
+    </nav>
+    <div class="canvas">
+      <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="font-size:20px;color:var(--ink-50)">Backgrounds</h2><span class="btn">+ Upload</span></div>
+      <p class="muted" style="margin:2px 0 0">Public-site background — changes go live in seconds.</p>
+      <div class="gallery">
+        <div class="g on">Stadium Night ✓</div><div class="g">Field Dawn</div><div class="g">Locker</div><div class="g">Turf Close</div>
+        <div class="g">Bleachers</div><div class="g">Night Lights</div><div class="g">Chalkboard</div><div class="g">+ 3 more</div>
+      </div>
+      <div class="master-detail">
+        <div class="md-list">
+          <div class="label" style="margin-bottom:6px">Assets</div>
+          <div class="row on"><span>Stadium Night</span><span class="pill on">active</span></div>
+          <div class="row"><span>Field Dawn</span><span class="dim">image</span></div>
+          <div class="row"><span>Turf (video)</span><span class="dim">video</span></div>
+        </div>
+        <div class="detail card">
+          <h3>Stadium Night</h3>
+          <div class="field"><span class="k">Type</span><span>Image · 1920×1080</span></div>
+          <div class="field"><span class="k">Status</span><span class="brand-dot">Active on cadexlegacy.com</span></div>
+          <div class="field"><span class="k">Overlay</span><span>Dim 40%</span></div>
+          <div style="margin-top:12px;display:flex;gap:8px"><span class="btn">Set active</span><span class="btn ghost">Preview site</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div>
+<div class="annot">
+  <div class="note"><b>Fixes</b><span>22 flat destinations become 5 workspaces × a short contextual sub-nav — you carry less in your head and never leave the area you're working in.</span></div>
+  <div class="note"><b>Fixes</b><span>The backgrounds "9+ full-card wall" collapses into a compact thumbnail gallery + master–detail editor — dense pages get a real working canvas.</span></div>
+  <div class="note"><b>Fixes</b><span>Scales cleanly: new admin features slot into an existing workspace's sub-nav instead of adding yet another top-level tab.</span></div>
+</div>
+</body></html>

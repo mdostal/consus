@@ -1,0 +1,101 @@
+id: iterate-endpoint-and-log
+epic: consus-phase4-close-the-loop
+title: "POST /api/decisions/:key/iterate + GET /api/log (REQ-16 backend)"
+status: pending
+complexity: medium
+methodology: classic
+depends_on: []
+
+description: |
+  Implement REQ-16's backend surface, porting mdostal/delphi's real,
+  working `/api/decisions/:key/iterate` endpoint (server/index.mjs, read in
+  full during planning -- see this epic's design-discussion.md §2 for the
+  full reference).
+
+  POST /api/decisions/:key/iterate {prompt, agentId?, agentName?, scope?:
+  {section?, diagram?}, setInProgress?: boolean}:
+  1. Validate prompt is present and non-empty (400 if not).
+  2. Fetch the target issue via the existing Multica client.
+  3. Compose a markdown comment body: a header naming the item, an
+     `[@agentName](mention://agent/<agentId>)` mention line (only when both
+     agentId and agentName are provided -- omit entirely otherwise, no
+     dispatch without an explicit target), the prompt verbatim, optional
+     scope.section/scope.diagram context lines, and an explicit "deliver
+     as a NEW version, do not overwrite the original" instruction line,
+     plus a requester/timestamp/log-id footer.
+  4. Post that comment via the EXISTING writeCommentAndCache()
+     (server/adapters/multica/write-comment.ts) -- do not build a second
+     Multica-write path. If setInProgress is true, also PUT the issue's
+     status via the existing client.
+  5. Append one JSONL entry (log_id, timestamp, actor, issue identifier +
+     id, title, verdict: "iterate", prompt, scope, agent, comment id,
+     status set + previous status) to a local decision log file.
+  6. Respond {ok: true, log_id, comment_id}.
+
+  GET /api/log?limit=N: read the JSONL log file back, most-recent-first,
+  capped by limit (default 100, max 1000, matching delphi's own bounds).
+
+acceptance_criteria:
+  - "Given a POST with a valid prompt and no agentId/agentName, when handled, then a comment is posted via writeCommentAndCache with no mention line, and a log entry is written with agent: null"
+  - "Given a POST with prompt + agentId + agentName, when handled, then the posted comment body contains the exact [@agentName](mention://agent/<agentId>) mention line, matching the format Multica's own dispatch-on-mention mechanism requires (confirmed live tonight on a sibling project, not assumed)"
+  - "Given a POST with an empty or missing prompt, when handled, then it responds 400 and posts nothing -- no comment, no log entry"
+  - "Given writeCommentAndCache returns {ok: false}, when handled, then the endpoint responds with a clear failure and writes NO log entry -- never a false-success log for a comment that wasn't actually posted"
+  - "Given scope.section or scope.diagram is provided, when the comment body is composed, then it includes the corresponding context line(s), omitted entirely when not provided"
+  - "Given setInProgress: true, when handled, then the issue's status is PUT via the existing client after the comment succeeds, and the log entry's status_set/previous_status reflect the real before/after"
+  - "Given GET /api/log, when called, then entries return most-recent-first, capped by limit (default 100, max 1000)"
+
+steps:
+  - id: research
+    description: Re-read mdostal/delphi's server/index.mjs iterate + log endpoints in full (already done during epic planning, re-confirm nothing's missed) and this repo's existing write-comment.ts/client.ts/decisions.ts to confirm the exact functions/types to reuse.
+    agent: researcher
+  - id: test-spec
+    description: Write failing tests for every acceptance criterion above, mocking the Multica client the same way decisions.test.ts/write-comment's own tests already do.
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: Add the two routes to server/routes/decisions.ts (or a new server/routes/iterate.ts if that keeps the file size reasonable -- your call, follow this repo's existing route-file-per-concern convention if there is one).
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: Confirm no second Multica-write path was introduced (writeCommentAndCache reused, not duplicated), confirm the false-success-on-failure acceptance criterion has a real test proving it, confirm the mention-line format exactly matches what real Multica dispatch requires.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit and push to feature branch feat/consus-phase4-close-the-loop (per epic.yaml git_flow). NOTE -- standing operator directive as of 2026-07-26 holds ALL outbound (no push, no PR) until explicitly lifted; commit locally only until then, even though this step's default says push.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/dostal/Documents/work/dostal/code/consus
+  key_files:
+    - path: server/adapters/multica/write-comment.ts
+      purpose: "writeCommentAndCache() -- the existing, reused Multica-write path. Do not duplicate."
+    - path: server/adapters/multica/client.ts
+      purpose: "MulticaClient / HttpMulticaClient -- issue fetch + status PUT, already built (REQ-24)."
+    - path: server/routes/decisions.ts
+      purpose: "Existing GET /api/decisions route this story's new routes sit alongside."
+
+files_to_modify:
+  - file: server/routes/decisions.ts
+    change: "Add POST /:key/iterate and GET /api/log routes (or a new sibling route file -- developer's call)"
+  - file: server/routes/decisions.test.ts
+    change: "Add tests for both new routes per the acceptance criteria above"
+
+design_decisions:
+  - decision: "Port delphi's real implementation, don't redesign from scratch"
+    rationale: "design-discussion.md §2 -- delphi's Fire-Agents-to-Iterate is a live, working, already-proven feature; Consus's REQ-16 is a scoped port, not a novel design"
+  - decision: "Reuse writeCommentAndCache(), do not build a second Multica-write path"
+    rationale: "REQ-07's own discipline (already built in v1): one write path, fail loudly, never a silent drop or false success"
+
+cross_cutting: []
+
+risks:
+  - severity: medium
+    description: "Untrusted free-text prompt content lands in a real Multica comment mentioning a real agent, which can trigger real dispatch"
+    mitigation: "design-discussion.md §5 -- this is delphi's own already-proven production pattern, not a new trust boundary; Multica's own agent-dispatch permissions are the real enforcement boundary, not something this story reimplements. The mention line only ever names agents that already exist in the workspace (agentId/agentName come from the caller's own agent-picker UI, not free text)."
+
+references:
+  - path: .pHive/planning/prd.md
+    relevant_excerpt: "REQ-16: Fire-Agents-to-Iterate. From any item... dispatch an agent to redo/extend the work; results return as a NEW version... Posts an iterate-request comment via Multica dispatch; logged for traceability."
+  - path: .pHive/epics/consus-phase4-close-the-loop/docs/design-discussion.md
+    relevant_excerpt: "Composes a markdown comment... the mention line is what actually triggers Multica's own dispatch to that agent. This is directly, freshly confirmed tonight."

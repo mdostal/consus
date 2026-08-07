@@ -1,0 +1,83 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Concept A — Sectioned Sidebar + Summary Home</title>
+<link rel="stylesheet" href="_base.css">
+<style>
+.layout{display:grid;grid-template-columns:220px 1fr;min-height:560px}
+.side{border-right:1px solid var(--line);background:rgba(10,15,29,.55);padding:14px 10px}
+.side .group{margin-top:14px}
+.side .group>.ghd{display:flex;align-items:center;justify-content:space-between;font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-500);padding:6px 10px}
+.side a.nav{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;color:var(--ink-200);font-size:13px}
+.side a.nav .i{width:15px;text-align:center;opacity:.8}
+.side a.nav.active{background:rgba(225,29,42,.15);color:var(--brand-400)}
+.side a.nav:hover{background:rgba(255,255,255,.04)}
+.side .collapsed a.nav{display:none}
+.side .collapsed>.ghd .caret{transform:rotate(-90deg)}
+.main{padding:18px 20px}
+.kpis{grid-template-columns:repeat(4,1fr)}
+.kpi{display:flex;gap:11px;align-items:center}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+.two{grid-template-columns:1.4fr 1fr;margin-top:14px}
+.list-row{display:flex;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line);font-size:13px}
+.advanced summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;color:var(--ink-400);font-size:13px;padding:10px 0}
+.advanced summary::-webkit-details-marker{display:none}
+.advanced[open] .adv-grid{display:grid}
+.adv-grid{display:none;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:6px}
+.adv-grid a{padding:10px;border:1px dashed var(--line);border-radius:9px;font-size:12px;color:var(--ink-400)}
+</style></head><body>
+<div class="frame-title">
+  <div class="kicker">Concept A</div>
+  <h1>Sectioned sidebar + summary home</h1>
+  <p>A persistent left nav with the 22 destinations folded into 5 labeled, collapsible groups. You land on a summary home, not a wall of tabs. Rarely-touched panels sit behind an "Advanced" disclosure.</p>
+</div>
+<div class="shell"><div class="scaffold"><div class="layout">
+  <aside class="side">
+    <div class="wordmark" style="padding:6px 10px;font-size:15px">CADEX<span class="brand-dot">·</span>ADMIN</div>
+    <a class="nav active" href="#"><span class="i">◆</span> Home</a>
+    <div class="group"><div class="ghd">Money <span class="caret">▾</span></div>
+      <a class="nav" href="#"><span class="i">$</span> Finances</a><a class="nav" href="#"><span class="i">◈</span> Payouts</a></div>
+    <div class="group"><div class="ghd">Roster <span class="caret">▾</span></div>
+      <a class="nav" href="#"><span class="i">◐</span> Clients</a><a class="nav" href="#"><span class="i">◑</span> Coaches</a><a class="nav" href="#"><span class="i">▤</span> Applications</a></div>
+    <div class="group"><div class="ghd">Schedule <span class="caret">▾</span></div>
+      <a class="nav" href="#"><span class="i">▦</span> Calendar</a><a class="nav" href="#"><span class="i">▶</span> Zoom</a><a class="nav" href="#"><span class="i">✎</span> Session Log</a></div>
+    <div class="group collapsed"><div class="ghd">Studio &amp; Content <span class="caret">▾</span></div>
+      <a class="nav" href="#"><span class="i">▤</span> Film Library</a><a class="nav" href="#"><span class="i">⧉</span> Film Queue</a><a class="nav" href="#"><span class="i">✉</span> Newsletter</a><a class="nav" href="#"><span class="i">❝</span> Testimonials</a></div>
+    <div class="group collapsed"><div class="ghd">Site &amp; Brand <span class="caret">▾</span></div>
+      <a class="nav" href="#"><span class="i">◧</span> Backgrounds</a><a class="nav" href="#"><span class="i">▧</span> Carousel</a><a class="nav" href="#"><span class="i">◉</span> Demo Mode</a></div>
+    <div class="group collapsed"><div class="ghd">System <span class="caret">▾</span></div>
+      <a class="nav" href="#"><span class="i">⚙</span> Settings</a><a class="nav" href="#"><span class="i">▣</span> Inventory</a><a class="nav" href="#"><span class="i">≣</span> Audit Log</a></div>
+  </aside>
+  <main class="main">
+    <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="font-size:22px;color:var(--ink-50)">Good morning, Coach</h2><span class="pill on">Live · cadexlegacy.com</span></div>
+    <p class="muted" style="margin:2px 0 14px">Snapshot across coaches, households, and sessions.</p>
+    <div class="grid kpis">
+      <div class="card kpi"><div class="icon">◐</div><div><div class="label">Households</div><div class="stat">48</div></div></div>
+      <div class="card kpi"><div class="icon">★</div><div><div class="label">Active members</div><div class="stat">31</div></div></div>
+      <div class="card kpi"><div class="icon">▦</div><div><div class="label">Sessions / wk</div><div class="stat">12</div></div></div>
+      <div class="card kpi"><div class="icon">$</div><div><div class="label">Net income</div><div class="stat" style="color:var(--brand-400)">$18.2k</div></div></div>
+    </div>
+    <div class="actions"><span class="btn">+ Log a session</span><span class="btn ghost">Review applications (3)</span><span class="btn ghost">Send newsletter</span></div>
+    <div class="grid two">
+      <div class="card"><div class="label" style="margin-bottom:8px">Recent activity</div>
+        <div class="list-row"><span>Payout marked paid — Coach Rivera</span><span class="dim">2m</span></div>
+        <div class="list-row"><span>New application — Bishop household</span><span class="dim">1h</span></div>
+        <div class="list-row"><span>Background changed → "Stadium Night"</span><span class="dim">3h</span></div>
+      </div>
+      <div class="card"><div class="label" style="margin-bottom:8px">Membership mix</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><span class="chip active">Field 14</span><span class="chip">Film 9</span><span class="chip">CADEX 8</span><span class="chip">Unsub 17</span></div>
+        <p class="dim" style="margin-top:10px">Tap a plan to filter households.</p></div>
+    </div>
+    <details class="advanced" style="margin-top:14px">
+      <summary>▸ Advanced &amp; occasional tools</summary>
+      <div class="adv-grid">
+        <a href="#">Analytics</a><a href="#">Tier Evaluations</a><a href="#">Playbook</a><a href="#">About page</a>
+        <a href="#">Inventory</a><a href="#">Audit Log</a><a href="#">Demo Mode</a><a href="#">Newsletter archive</a>
+      </div>
+    </details>
+  </main>
+</div></div></div>
+<div class="annot">
+  <div class="note"><b>Fixes</b><span>The flat 22-tab horizontal scroller collapses into 5 named, collapsible groups — you never scan 22 labels at once.</span></div>
+  <div class="note"><b>Fixes</b><span>A summary Home gives orientation + one-click "everyday" actions instead of dumping you into a random first tab.</span></div>
+  <div class="note"><b>Fixes</b><span>Rarely-used panels (Audit, Inventory, Tier Evals, Demo Mode) hide under one "Advanced" disclosure — present but out of the way.</span></div>
+</div>
+</body></html>

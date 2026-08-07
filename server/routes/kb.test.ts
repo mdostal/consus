@@ -40,6 +40,27 @@ describe("POST /api/items/:id/decide", () => {
     expect(body.auditLog).toHaveLength(1);
   });
 
+  it("summarizes the comment thread into the write-back audit_log entry (REQ-25)", async () => {
+    const now = new Date().toISOString();
+    db.prepare(
+      "INSERT INTO comments (item_id, author, body, created_at) VALUES (?, ?, ?, ?)",
+    ).run("item-1", "alice", "does this need a follow-up?", now);
+    db.prepare(
+      "INSERT INTO comments (item_id, author, body, created_at) VALUES (?, ?, ?, ?)",
+    ).run("item-1", "bob", "no, ship it", now);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/items/item-1/decide",
+      payload: { actor: "mathew", newStatus: "approved" },
+    });
+
+    const body = res.json();
+    expect(body.auditLog[0].chat_summary).toContain("2 messages");
+    expect(body.auditLog[0].chat_summary).toContain("alice: does this need a follow-up?");
+    expect(body.auditLog[0].chat_summary).toContain("bob: no, ship it");
+  });
+
   it("404s for an unknown item", async () => {
     const res = await app.inject({
       method: "POST",

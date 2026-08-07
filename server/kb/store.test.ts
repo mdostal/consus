@@ -35,6 +35,34 @@ describe("KB Store — decide API", () => {
     expect(log[0].timestamp).toBeTruthy();
   });
 
+  it("leaves chat_summary null when the item has no comment thread", () => {
+    insertItem(db, "item-no-comments");
+
+    decideItem(db, { itemId: "item-no-comments", actor: "mathew", newStatus: "approved" });
+
+    const log = getAuditLog(db, "item-no-comments");
+    expect(log[0].chat_summary).toBeNull();
+  });
+
+  it("summarizes the item's comment thread into the audit_log write-back entry (REQ-25)", () => {
+    insertItem(db, "item-with-comments");
+    const now = new Date().toISOString();
+    db.prepare(
+      "INSERT INTO comments (item_id, author, body, created_at) VALUES (?, ?, ?, ?)",
+    ).run("item-with-comments", "alice", "what's the timeline here?", now);
+    db.prepare(
+      "INSERT INTO comments (item_id, author, body, created_at) VALUES (?, ?, ?, ?)",
+    ).run("item-with-comments", "bob", "next sprint, agreed", now);
+
+    decideItem(db, { itemId: "item-with-comments", actor: "mathew", newStatus: "approved" });
+
+    const log = getAuditLog(db, "item-with-comments");
+    expect(log).toHaveLength(1);
+    expect(log[0].chat_summary).toContain("2 messages");
+    expect(log[0].chat_summary).toContain("alice: what's the timeline here?");
+    expect(log[0].chat_summary).toContain("bob: next sprint, agreed");
+  });
+
   it("marks the item decided so it never resurfaces (decided-store amnesia fix)", () => {
     insertItem(db, "item-2");
 

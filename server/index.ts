@@ -5,6 +5,7 @@ import { registerDocRoutes } from "./routes/docs.js";
 import { registerKbRoutes } from "./routes/kb.js";
 import { registerArtifactLinkRoutes } from "./routes/artifact-links.js";
 import { registerDecisionRoutes } from "./routes/decisions.js";
+import { registerInteractionRoutes } from "./routes/interactions.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
 
 export interface BuildServerOptions {
@@ -22,6 +23,7 @@ export function buildServer({ dbPath, repos = {} }: BuildServerOptions): Fastify
   registerKbRoutes(app, { db });
   registerArtifactLinkRoutes(app, { db });
   registerDecisionRoutes(app, { db });
+  registerInteractionRoutes(app, { db });
 
   app.get("/health", async () => {
     const row = db.prepare("SELECT 1 AS ok").get() as { ok: number } | undefined;
