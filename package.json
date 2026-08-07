@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Consus — the Pantheon's rendered doc/decision surface",
   "engines": {
-    "node": ">=22 <25"
+    "node": "^24.0.0"
   },
   "scripts": {
     "dev:web": "vite",
@@ -16,6 +16,7 @@
     "build": "npm run build:web && npm run build:server",
     "start": "node dist-server/index.js",
     "rebuild:native": "npm rebuild better-sqlite3",
+    "pretest": "node scripts/check-native-abi.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -40,5 +41,11 @@
     "typescript": "^5.6.3",
     "vite": "^5.4.10",
     "vitest": "^2.1.4"
+  },
+  "allowScripts": {
+    "better-sqlite3@11.10.0": true,
+    "esbuild@0.28.1": true,
+    "esbuild@0.21.5": true,
+    "fsevents@2.3.3": true
   }
 }
