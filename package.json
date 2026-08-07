@@ -15,6 +15,7 @@
     "build:server": "tsc -p server/tsconfig.json",
     "build": "npm run build:web && npm run build:server",
     "start": "node dist-server/index.js",
+    "rebuild:native": "npm rebuild better-sqlite3",
     "pretest": "node scripts/check-native-abi.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
