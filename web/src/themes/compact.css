@@ -1,0 +1,50 @@
+/* Compact Theme Variation */
+.theme-compact {
+  /* Reduce vertical padding by 60% vs baseline */
+  /* If balanced is e.g., 20px, compact is 8px */
+  --consus-space-base: 8px;
+  --consus-space-large: 12px;
+  --consus-space-small: 4px;
+  
+  /* Use 13px base font size (vs 16px in Balanced) */
+  --consus-font-size-base: 13px;
+  --consus-font-size-large: 15px;
+  --consus-font-size-small: 11px;
+}
+
+/* Apply base font size */
+.theme-compact {
+  font-size: var(--consus-font-size-base);
+}
+
+/* Reduce vertical space for decision cards and lists (~40% less space) */
+.theme-compact .decision-card {
+  padding: var(--consus-space-base);
+  margin-bottom: var(--consus-space-base);
+}
+
+.theme-compact .decision-card__question {
+  font-size: var(--consus-font-size-large);
+  margin-bottom: var(--consus-space-small);
+}
+
+.theme-compact .decision-list__item {
+  padding: var(--consus-space-small) 0;
+  margin-bottom: var(--consus-space-small);
+}
+
+.theme-compact .decision-card__recommendation {
+  font-size: var(--consus-font-size-small);
+  margin-bottom: var(--consus-space-small);
+}
+
+/* Ensure metadata/description/attachments are visible with minimal scrolling */
+.theme-compact .decision-card__source {
+  margin-top: var(--consus-space-small);
+  padding-top: var(--consus-space-small);
+}
+
+.theme-compact .decision-card__pill {
+  font-size: var(--consus-font-size-small);
+  padding: 2px 6px;
+}
