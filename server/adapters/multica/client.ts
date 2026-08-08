@@ -70,11 +70,86 @@ export type MulticaWriteResult =
   | { ok: true; multicaCommentId: string }
   | { ok: false; error: string };
 
+/**
+ * A Multica issue, normalized from the API's snake_case wire shape. Only
+ * the fields the classifier + ingest path actually need are carried —
+ * see classifyDecisionType/heuristicTriageBucket in decision-contract.
+ */
+export interface MulticaIssue {
+  id: string;
+  identifier: string | null;
+  title: string;
+  description: string | null;
+  status: string;
+  priority: string | null;
+  labels: string[];
+  updatedAt: string | null;
+  createdAt: string | null;
+}
+
+export interface ListIssuesInput {
+  status?: string;
+  /** total issues to collect across pages (Claud-ometer's DELPHI_REVIEW_LIMIT default). */
+  limit?: number;
+}
+
+export type MulticaListResult =
+  | { ok: true; issues: MulticaIssue[] }
+  | { ok: false; error: string };
+
 export interface MulticaClient {
   writeComment(input: WriteCommentInput): Promise<MulticaWriteResult>;
+  listIssues(input?: ListIssuesInput): Promise<MulticaListResult>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function normalizeIssue(raw: unknown): MulticaIssue | null {
+  if (!isRecord(raw)) return null;
+  const id = asString(raw.id);
+  const title = asString(raw.title);
+  const status = asString(raw.status);
+  if (!id || !title || !status) return null;
+  const labels = Array.isArray(raw.labels)
+    ? raw.labels.map((l) => (isRecord(l) ? asString(l.name) : asString(l))).filter((l): l is string => Boolean(l))
+    : [];
+  return {
+    id,
+    identifier: asString(raw.identifier),
+    title,
+    description: asString(raw.description),
+    status,
+    priority: asString(raw.priority),
+    labels,
+    updatedAt: asString(raw.updated_at),
+    createdAt: asString(raw.created_at),
+  };
+}
+
+/** Unwrap the API's `{ issues: [...] }` / `{ data: [...] }` envelope, or a bare array. */
+function unwrapIssues(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (!isRecord(value)) return [];
+  const candidate = value.issues ?? value.data ?? value.items;
+  return Array.isArray(candidate) ? candidate : [];
 }
 
 export class HttpMulticaClient implements MulticaClient {
+  /** Multica's /issues endpoint caps a single page at 100 rows (mirrors the
+   *  real API's page cap per Claud-ometer's readViaApi). */
+  private static readonly PAGE_SIZE = 100;
+  /** Claud-ometer's DELPHI_REVIEW_LIMIT default — the batch-fetch cap this
+   *  story's acceptance criteria (~200 issues) preserves. */
+  private static readonly DEFAULT_LIMIT = 200;
+  /** Hard stop so a broken offset/pagination response can't loop forever. */
+  private static readonly MAX_PAGES = 25;
+
   private readonly serverUrl: string;
   private readonly workspaceId: string;
   private readonly token: string;
@@ -112,6 +187,61 @@ export class HttpMulticaClient implements MulticaClient {
 
       const data = (await response.json()) as { id: string };
       return { ok: true, multicaCommentId: data.id };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: message };
+    }
+  }
+
+  /**
+   * REQ (this story): batch-fetch issues, paginating in PAGE_SIZE chunks up
+   * to `limit` (default 200, Claud-ometer's DELPHI_REVIEW_LIMIT), so the
+   * ingest adapter can process a full batch without a single oversized
+   * request risking a timeout. Stops early on a short (last) page.
+   */
+  async listIssues({ status, limit = HttpMulticaClient.DEFAULT_LIMIT }: ListIssuesInput = {}): Promise<
+    MulticaListResult
+  > {
+    const collected: MulticaIssue[] = [];
+    let offset = 0;
+
+    try {
+      for (let page = 0; page < HttpMulticaClient.MAX_PAGES && collected.length < limit; page += 1) {
+        const pageLimit = Math.min(HttpMulticaClient.PAGE_SIZE, limit - collected.length);
+        const url = new URL(`${this.serverUrl}/issues`);
+        url.searchParams.set("limit", String(pageLimit));
+        url.searchParams.set("offset", String(offset));
+        if (status) url.searchParams.set("status", status);
+
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+        let response;
+        try {
+          response = await this.fetchImpl(url.toString(), {
+            method: "GET",
+            headers: {
+              authorization: `Bearer ${this.token}`,
+              "x-workspace-id": this.workspaceId,
+            },
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timer);
+        }
+
+        if (!response.ok) {
+          return { ok: false, error: `Multica returned HTTP ${response.status}` };
+        }
+
+        const raw = unwrapIssues(await response.json());
+        const batch = raw.map(normalizeIssue).filter((i): i is MulticaIssue => i !== null);
+        collected.push(...batch);
+
+        if (raw.length < pageLimit) break; // reached the last page
+        offset += pageLimit;
+      }
+
+      return { ok: true, issues: collected.slice(0, limit) };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return { ok: false, error: message };

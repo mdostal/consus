@@ -113,6 +113,134 @@ describe("HttpMulticaClient", () => {
       vi.useRealTimers();
     }
   });
+
+  describe("listIssues", () => {
+    function issuePage(count: number, offset: number) {
+      return Array.from({ length: count }, (_, i) => ({
+        id: `issue-${offset + i}`,
+        identifier: `MUL-${offset + i}`,
+        title: `Issue ${offset + i}`,
+        description: null,
+        status: "in_review",
+        priority: "none",
+        labels: [{ name: "decision" }],
+        updated_at: "2026-08-01T00:00:00Z",
+        created_at: "2026-08-01T00:00:00Z",
+      }));
+    }
+
+    it("normalizes a single page of issues from the API's snake_case shape", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ issues: issuePage(3, 0) }),
+      });
+      const client = new HttpMulticaClient({
+        serverUrl: "https://api.example.com",
+        workspaceId: "ws-1",
+        token: "tok-1",
+        fetchImpl: fetchMock as unknown as typeof fetch,
+      });
+
+      const result = await client.listIssues();
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.issues).toHaveLength(3);
+        expect(result.issues[0]).toMatchObject({
+          id: "issue-0",
+          identifier: "MUL-0",
+          title: "Issue 0",
+          labels: ["decision"],
+        });
+      }
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("https://api.example.com/issues?"),
+        expect.objectContaining({
+          method: "GET",
+          headers: expect.objectContaining({ authorization: "Bearer tok-1", "x-workspace-id": "ws-1" }),
+        }),
+      );
+    });
+
+    it("preserves the ~200-issue batch-fetch behavior by paginating in 100-row pages", async () => {
+      const fetchMock = vi.fn().mockImplementation((url: string) => {
+        const offset = Number(new URL(url).searchParams.get("offset"));
+        return Promise.resolve({ ok: true, json: async () => ({ issues: issuePage(100, offset) }) });
+      });
+      const client = new HttpMulticaClient({
+        serverUrl: "https://api.example.com",
+        workspaceId: "ws-1",
+        token: "tok-1",
+        fetchImpl: fetchMock as unknown as typeof fetch,
+      });
+
+      const result = await client.listIssues();
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.issues).toHaveLength(200);
+        expect(result.issues[0].id).toBe("issue-0");
+        expect(result.issues[199].id).toBe("issue-199");
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("stops paginating once a short page signals the last page", async () => {
+      const fetchMock = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ issues: issuePage(40, 0) }),
+      });
+      const client = new HttpMulticaClient({
+        serverUrl: "https://api.example.com",
+        workspaceId: "ws-1",
+        token: "tok-1",
+        fetchImpl: fetchMock as unknown as typeof fetch,
+      });
+
+      const result = await client.listIssues();
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.issues).toHaveLength(40);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("respects a caller-supplied limit smaller than a full page", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ issues: issuePage(10, 0) }),
+      });
+      const client = new HttpMulticaClient({
+        serverUrl: "https://api.example.com",
+        workspaceId: "ws-1",
+        token: "tok-1",
+        fetchImpl: fetchMock as unknown as typeof fetch,
+      });
+
+      const result = await client.listIssues({ limit: 5 });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.issues).toHaveLength(5);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("limit=5"),
+        expect.anything(),
+      );
+    });
+
+    it("surfaces a clear failure when a page request fails rather than returning a partial silent result", async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 503 });
+      const client = new HttpMulticaClient({
+        serverUrl: "https://api.example.com",
+        workspaceId: "ws-1",
+        token: "tok-1",
+        fetchImpl: fetchMock as unknown as typeof fetch,
+      });
+
+      const result = await client.listIssues();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toContain("503");
+    });
+  });
 });
 
 describe("resolveMulticaToken", () => {
