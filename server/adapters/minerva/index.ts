@@ -28,6 +28,7 @@ export interface HumanRequestRow {
   reason: string | null;
   confidence: number | null;
   suggested_channel: string | null;
+  answer: string | null;
   status: string;
   survey_id: number | null;
 }
@@ -123,8 +124,9 @@ export async function answerHumanRequest(
     throw new Error(`human_request not found for Minerva question: ${minervaQuestionId}`);
   }
 
-  db.prepare("UPDATE human_requests SET status = ? WHERE minerva_question_id = ?").run(
+  db.prepare("UPDATE human_requests SET status = ?, answer = ? WHERE minerva_question_id = ?").run(
     "answered",
+    answer,
     minervaQuestionId,
   );
   db.prepare("UPDATE items SET status = ?, updated_at = ? WHERE id = ?").run(
