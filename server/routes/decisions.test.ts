@@ -62,6 +62,9 @@ function fakeClient(result: MulticaListResult, overrides: Partial<MulticaClient>
     async updateIssueStatus(_issueId: string, status: string) {
       return { ok: true, status };
     },
+    async unblockIssue(_issueId: string) {
+      return { ok: true, status: "todo" };
+    },
     ...overrides,
   };
 }
@@ -397,6 +400,139 @@ describe("POST /api/decisions/:key/iterate + GET /api/log", () => {
     const limitedRes = await app.inject({ method: "GET", url: "/api/log?limit=2" });
     expect(limitedRes.json().map((entry: { log_id: string }) => entry.log_id)).toEqual(["log-1004", "log-1003"]);
     expect(readFileSync(logPath, "utf-8").split("\n").filter(Boolean)).toHaveLength(1005);
+  });
+});
+
+
+describe("POST /api/decisions/:key/approve", () => {
+  let db: Database.Database;
+  let app: FastifyInstance;
+
+  const issue = makeIssue({
+    id: "issue-approve",
+    identifier: "PAN-2",
+    title: "Approve the new flow",
+    status: "blocked",
+  });
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    runMigration(db);
+  });
+
+  afterEach(async () => {
+    if (app) await app.close();
+    db.close();
+  });
+
+  async function buildApp(client: MulticaClient) {
+    app = Fastify();
+    registerDecisionRoutes(app, { db, client });
+    await app.ready();
+  }
+
+  function getItem(id: string) {
+    return db.prepare("SELECT * FROM items WHERE id = ?").get(id) as { status: string; decided_at: string | null } | undefined;
+  }
+
+  it("writes a comment, unblocks the issue, and marks it decided in SQLite", async () => {
+    const writeComment = vi.fn().mockResolvedValue({ ok: true, multicaCommentId: "comment-1" });
+    const unblockIssue = vi.fn().mockResolvedValue({ ok: true, status: "todo" });
+    
+    await buildApp(
+      fakeClient(
+        { ok: true, issues: [] },
+        {
+          writeComment,
+          unblockIssue,
+          async getIssue() {
+            return { ok: true, issue };
+          },
+        },
+      )
+    );
+
+    // Insert the item first
+    insertItem(db, "multica:issue-approve", PAYLOAD);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/decisions/multica:issue-approve/approve",
+      payload: { actor: "test-user", details: "Looks good" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ ok: true, comment_id: "comment-1" });
+
+    // Verify Multica calls
+    expect(writeComment).toHaveBeenCalledWith({
+      itemId: "issue-approve",
+      author: "test-user",
+      body: "Decision approved: Looks good",
+    });
+    expect(unblockIssue).toHaveBeenCalledWith("issue-approve");
+
+    // Verify SQLite
+    const localItem = getItem("multica:issue-approve");
+    expect(localItem?.status).toBe("approved");
+    expect(localItem?.decided_at).not.toBeNull();
+  });
+
+  it("returns 502 and does not update SQLite if Multica comment write fails", async () => {
+    const writeComment = vi.fn().mockResolvedValue({ ok: false, error: "HTTP 500" });
+    const unblockIssue = vi.fn().mockResolvedValue({ ok: true, status: "todo" });
+
+    await buildApp(
+      fakeClient(
+        { ok: true, issues: [] },
+        { writeComment, unblockIssue, async getIssue() { return { ok: true, issue }; } }
+      )
+    );
+
+    insertItem(db, "multica:issue-approve", PAYLOAD);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/decisions/multica:issue-approve/approve",
+      payload: { actor: "test-user" },
+    });
+
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error).toContain("comment write failed");
+    expect(unblockIssue).not.toHaveBeenCalled();
+
+    // SQLite should be untouched
+    const localItem = getItem("multica:issue-approve");
+    expect(localItem?.status).toBe("open");
+    expect(localItem?.decided_at).toBeNull();
+  });
+
+  it("returns 502 and does not update SQLite if Multica unblock fails", async () => {
+    const writeComment = vi.fn().mockResolvedValue({ ok: true, multicaCommentId: "c-1" });
+    const unblockIssue = vi.fn().mockResolvedValue({ ok: false, error: "HTTP 403" });
+
+    await buildApp(
+      fakeClient(
+        { ok: true, issues: [] },
+        { writeComment, unblockIssue, async getIssue() { return { ok: true, issue }; } }
+      )
+    );
+
+    insertItem(db, "multica:issue-approve", PAYLOAD);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/decisions/multica:issue-approve/approve",
+      payload: { actor: "test-user" },
+    });
+
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error).toContain("unblock failed");
+
+    // SQLite should be untouched
+    const localItem = getItem("multica:issue-approve");
+    expect(localItem?.status).toBe("open");
+    expect(localItem?.decided_at).toBeNull();
   });
 });
 

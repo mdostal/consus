@@ -23,6 +23,9 @@ const UNCONFIGURED_MULTICA_CLIENT: MulticaClient = {
   async updateIssueStatus() {
     return { ok: false, error: "Multica client not configured" };
   },
+  async unblockIssue() {
+    return { ok: false, error: "Multica client not configured" };
+  },
 };
 
 export interface BuildServerOptions {

@@ -6,6 +6,7 @@ import path from "node:path";
 import { ingestMulticaIssue, syncMulticaQueue } from "../adapters/multica/ingest.js";
 import type { MulticaClient } from "../adapters/multica/client.js";
 import { writeCommentAndCache } from "../adapters/multica/write-comment.js";
+import { decideItem } from "../kb/store.js";
 
 export interface DecisionRoutesOptions {
   db: Database.Database;
@@ -33,6 +34,11 @@ interface IterateRequestBody {
   };
   setInProgress?: unknown;
   actor?: unknown;
+}
+
+interface ApproveRequestBody {
+  actor?: string;
+  details?: string;
 }
 
 interface DecisionLogEntry {
@@ -244,6 +250,51 @@ export function registerDecisionRoutes(
     await appendDecisionLog(decisionLogPath, entry);
 
     return { ok: true, log_id: logId, comment_id: commentResult.commentId };
+  });
+
+  app.post<{ Params: { key: string }; Body: ApproveRequestBody }>("/api/decisions/:key/approve", async (request, reply) => {
+    const multicaIssueId = request.params.key.replace(/^multica:/, "");
+    const body = request.body ?? {};
+    const actor = body.actor ?? "consus";
+    
+    // 1. Fetch issue to verify it exists and is accessible
+    const issueResult = await client.getIssue(multicaIssueId);
+    if (!issueResult.ok) {
+      reply.code(502);
+      return { error: `Multica issue fetch failed: ${issueResult.error}` };
+    }
+
+    // 2. Write audited comment
+    const detailsPart = body.details ? `: ${body.details}` : "";
+    const commentBody = `Decision approved${detailsPart}`;
+    const commentResult = await writeCommentAndCache(db, client, {
+      itemId: multicaIssueId,
+      cacheItemId: request.params.key,
+      author: actor,
+      body: commentBody,
+    });
+    
+    if (!commentResult.ok) {
+      reply.code(502);
+      return { error: `Multica comment write failed: ${commentResult.error}` };
+    }
+
+    // 3. Unblock issue (marks status as 'todo')
+    const unblockResult = await client.unblockIssue(multicaIssueId);
+    if (!unblockResult.ok) {
+      reply.code(502);
+      return { error: `Multica unblock failed: ${unblockResult.error}` };
+    }
+
+    // 4. SQLite update (marks as decided)
+    try {
+      decideItem(db, { itemId: request.params.key, actor, newStatus: "approved" });
+    } catch (err) {
+      reply.code(500);
+      return { error: `Database update failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+
+    return { ok: true, comment_id: commentResult.commentId };
   });
 
   app.get<{ Querystring: { limit?: string } }>("/api/log", async (request) => {
