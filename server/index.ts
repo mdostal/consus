@@ -5,8 +5,10 @@ import { registerDocRoutes } from "./routes/docs.js";
 import { registerKbRoutes } from "./routes/kb.js";
 import { registerArtifactLinkRoutes } from "./routes/artifact-links.js";
 import { registerDecisionRoutes } from "./routes/decisions.js";
+import { registerAttachmentRoutes } from "./routes/attachments.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
 import { HttpMulticaClient, type MulticaClient } from "./adapters/multica/client.js";
+import { createStorageAdapter, type StorageAdapter } from "./storage/index.js";
 
 /** Used when no MulticaClient is configured — GET /api/decisions surfaces a
  *  clear 503 instead of the server failing to boot or silently skipping sync. */
@@ -36,6 +38,7 @@ export interface BuildServerOptions {
   client?: MulticaClient;
   /** JSONL audit file for POST /api/decisions/:key/iterate + GET /api/log */
   decisionLogPath?: string;
+  storageAdapter?: StorageAdapter;
 }
 
 export function buildServer({
@@ -43,15 +46,19 @@ export function buildServer({
   repos = {},
   client = UNCONFIGURED_MULTICA_CLIENT,
   decisionLogPath,
+  storageAdapter,
 }: BuildServerOptions): FastifyInstance {
   const app = Fastify({ logger: false });
   const db = openDb(dbPath);
   runMigration(db);
+  
+  const finalStorageAdapter = storageAdapter || createStorageAdapter({ type: 'filesystem', baseDir: '.pHive/attachments' });
 
   registerDocRoutes(app, { db, repos });
   registerKbRoutes(app, { db });
   registerArtifactLinkRoutes(app, { db });
   registerDecisionRoutes(app, { db, client, decisionLogPath });
+  registerAttachmentRoutes(app, { db, storageAdapter: finalStorageAdapter });
 
   const healthHandler = async () => {
     const row = db.prepare("SELECT 1 AS ok").get() as { ok: number } | undefined;
