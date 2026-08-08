@@ -110,6 +110,7 @@ export interface MulticaClient {
   listIssues(input?: ListIssuesInput): Promise<MulticaListResult>;
   getIssue(key: string): Promise<MulticaGetIssueResult>;
   updateIssueStatus(issueId: string, status: string): Promise<MulticaStatusUpdateResult>;
+  unblockIssue(issueId: string): Promise<MulticaStatusUpdateResult>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -296,6 +297,10 @@ export class HttpMulticaClient implements MulticaClient {
       const message = err instanceof Error ? err.message : String(err);
       return { ok: false, error: message };
     }
+  }
+
+  async unblockIssue(issueId: string): Promise<MulticaStatusUpdateResult> {
+    return this.updateIssueStatus(issueId, "todo");
   }
 
   private async fetchJson(url: string, init: RequestInit): Promise<Response> {
