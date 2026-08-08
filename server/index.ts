@@ -6,14 +6,28 @@ import { registerKbRoutes } from "./routes/kb.js";
 import { registerArtifactLinkRoutes } from "./routes/artifact-links.js";
 import { registerDecisionRoutes } from "./routes/decisions.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
+import { HttpMulticaClient, type MulticaClient } from "./adapters/multica/client.js";
+
+/** Used when no MulticaClient is configured — GET /api/decisions surfaces a
+ *  clear 503 instead of the server failing to boot or silently skipping sync. */
+const UNCONFIGURED_MULTICA_CLIENT: MulticaClient = {
+  async writeComment() {
+    return { ok: false, error: "Multica client not configured" };
+  },
+  async listIssues() {
+    return { ok: false, error: "Multica client not configured" };
+  },
+};
 
 export interface BuildServerOptions {
   dbPath: string;
   /** repo name -> absolute path on disk, scanned for generated docs */
   repos?: Record<string, string>;
+  /** live Multica adapter for GET /api/decisions; falls back to a stub that always 503s */
+  client?: MulticaClient;
 }
 
-export function buildServer({ dbPath, repos = {} }: BuildServerOptions): FastifyInstance {
+export function buildServer({ dbPath, repos = {}, client = UNCONFIGURED_MULTICA_CLIENT }: BuildServerOptions): FastifyInstance {
   const app = Fastify({ logger: false });
   const db = openDb(dbPath);
   runMigration(db);
@@ -21,7 +35,7 @@ export function buildServer({ dbPath, repos = {} }: BuildServerOptions): Fastify
   registerDocRoutes(app, { db, repos });
   registerKbRoutes(app, { db });
   registerArtifactLinkRoutes(app, { db });
-  registerDecisionRoutes(app, { db });
+  registerDecisionRoutes(app, { db, client });
 
   const healthHandler = async () => {
     const row = db.prepare("SELECT 1 AS ok").get() as { ok: number } | undefined;
@@ -42,13 +56,34 @@ export function buildServer({ dbPath, repos = {} }: BuildServerOptions): Fastify
   return app;
 }
 
+function buildMulticaClientFromEnv(env: NodeJS.ProcessEnv): MulticaClient {
+  const serverUrl = env.MULTICA_SERVER_URL;
+  const workspaceId = env.MULTICA_WORKSPACE_ID;
+  if (!serverUrl || !workspaceId) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      "[multica] MULTICA_SERVER_URL / MULTICA_WORKSPACE_ID not set — GET /api/decisions will 503 until configured",
+    );
+    return UNCONFIGURED_MULTICA_CLIENT;
+  }
+  try {
+    return new HttpMulticaClient({ serverUrl, workspaceId, token: env.MULTICA_TOKEN });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // eslint-disable-next-line no-console
+    console.warn(`[multica] failed to construct client (${message}) — GET /api/decisions will 503 until fixed`);
+    return UNCONFIGURED_MULTICA_CLIENT;
+  }
+}
+
 const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
   const port = Number(process.env.PORT ?? 8722);
   const dbPath = process.env.CONSUS_DB_PATH ?? ".pHive/consus.sqlite";
   const projectsConfigPath = process.env.CONSUS_PROJECTS_CONFIG ?? ".pHive/consus-projects.json";
   const repos = loadProjectRegistry(projectsConfigPath, process.cwd());
-  const app = buildServer({ dbPath, repos });
+  const client = buildMulticaClientFromEnv(process.env);
+  const app = buildServer({ dbPath, repos, client });
   app.listen({ port, host: "0.0.0.0" }).then(() => {
     // eslint-disable-next-line no-console
     console.log(`Consus server listening on :${port} (db: ${dbPath})`);

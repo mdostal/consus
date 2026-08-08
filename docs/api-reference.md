@@ -21,9 +21,16 @@ Confirms the server and SQLite connection are up.
 ## Decisions (the queue an agent harness reads)
 
 ### `GET /api/decisions`
-Lists every open, undecided item carrying a `decision_payload` (`dostal:decision-request/v1`
-shape — see `server/decision-contract/parser.ts`). Excludes already-decided items (the
-decided-store amnesia fix — REQ-08) so a harness never re-surfaces something already resolved.
+On every call, first syncs the live Multica feed (batch-fetches ~200 issues via the configured
+`MulticaClient`, ingests + classifies each one — `server/adapters/multica/ingest.ts` /
+`server/decision-contract/classifier.ts`), then lists every open, undecided decision: either a
+locally-authored item carrying a `decision_payload` (`dostal:decision-request/v1` shape — see
+`server/decision-contract/parser.ts`), or a classified Multica issue (`id` prefixed
+`multica:...`). Excludes already-decided items (the decided-store amnesia fix — REQ-08) so a
+harness never re-surfaces something already resolved.
+
+`?all=1` drops the decided-item exclusion, returning both open and decided decisions (audit/
+history views).
 
 **Response 200:** array of
 ```json
@@ -37,9 +44,28 @@ decided-store amnesia fix — REQ-08) so a harness never re-surfaces something a
     "title": "...", "context": "...",
     "options": [{ "id": "A", "title": "...", "tradeoffs": "..." }],
     "recommended": "A"
-  }
+  },
+  "decision_type": null,
+  "triage_bucket": null
 }
 ```
+A Multica-sourced issue has no `decision_payload` (`null`) but carries the classifier's
+`decision_type` / `triage_bucket` instead:
+```json
+{
+  "id": "multica:9f2c...",
+  "type": "multica_issue",
+  "title": "Choose the layout",
+  "status": "in_review",
+  "decision_payload": null,
+  "decision_type": "choose",
+  "triage_bucket": "open_question"
+}
+```
+
+**Response 503:** `{ "error": "Multica fetch failed: <reason>" }` — the live Multica fetch
+failed (timeout, HTTP error, or no `MulticaClient` configured via `MULTICA_SERVER_URL` /
+`MULTICA_WORKSPACE_ID`). Signals a transient downstream dependency issue; clients can retry.
 
 ### `POST /api/items/:id/decide`
 Submits a verdict on any item (not just human_requests — any item with a `decision_payload`,
