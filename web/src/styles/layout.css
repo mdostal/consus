@@ -1,0 +1,72 @@
+.consus-layout {
+  display: grid;
+  grid-template-columns: 250px 1fr 400px;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.consus-layout-left {
+  background-color: #f4f4f4;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  height: 100vh;
+}
+
+.consus-layout-center {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden; /* The TicketList inside it will scroll */
+}
+
+.consus-layout-right {
+  background-color: #fafafa;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden; /* The IssuePanel inside it will scroll */
+  border-left: 1px solid #ddd;
+}
+
+.ticket-list {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1rem;
+}
+
+.issue-panel {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1rem;
+}
+
+.ticket-list-item {
+  padding: 10px;
+  border-bottom: 1px solid #eee;
+}
+
+.issue-panel-content {
+  line-height: 1.5;
+}
+
+@media (max-width: 767px) {
+  .consus-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+    overflow: visible;
+  }
+  .consus-layout-left,
+  .consus-layout-center,
+  .consus-layout-right {
+    height: auto;
+    overflow: visible;
+    border-left: none;
+  }
+  .ticket-list,
+  .issue-panel {
+    overflow-y: visible;
+    overscroll-behavior: auto;
+  }
+}
