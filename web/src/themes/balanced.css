@@ -1,0 +1,81 @@
+/* Balanced design variation - Recommended Default */
+
+.theme-balanced {
+  /* Typography */
+  --font-family-base: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-size-base: 16px;
+  --line-height-base: 1.5;
+  
+  --font-size-h1: 2rem;
+  --font-weight-h1: 700;
+  
+  --font-size-h2: 1.5rem;
+  --font-weight-h2: 600;
+  
+  --font-size-h3: 1.25rem;
+  --font-weight-h3: 600;
+  
+  --font-size-small: 0.875rem;
+  
+  /* Spacing Scale (16px / 24px core) */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-xxl: 48px;
+
+  /* Colors - aligning with consus existing palette but defining structured names */
+  --bg-primary: #f5f0e8;
+  --bg-secondary: #efe8dc;
+  --text-primary: #241d14;
+  --text-secondary: #5a4f40;
+  --border-color: #e3d8c6;
+  --accent-color: #b96e3a;
+}
+
+@media (prefers-color-scheme: dark) {
+  .theme-balanced {
+    --bg-primary: #14110e;
+    --bg-secondary: #1b1713;
+    --text-primary: #f3ece2;
+    --text-secondary: #c7bbaa;
+    --border-color: #332a20;
+    --accent-color: #d68a55;
+  }
+}
+
+/* Apply base styles when theme is active */
+.theme-balanced {
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
+}
+
+.theme-balanced h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-h1);
+  margin-bottom: var(--spacing-lg);
+  color: var(--text-primary);
+}
+
+.theme-balanced h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-h2);
+  margin-bottom: var(--spacing-md);
+  margin-top: var(--spacing-xl);
+  color: var(--text-primary);
+}
+
+.theme-balanced h3 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-h3);
+  margin-bottom: var(--spacing-sm);
+  color: var(--text-primary);
+}
+
+.theme-balanced p {
+  margin-bottom: var(--spacing-md);
+}
