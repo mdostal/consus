@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{TITLE}}</title>
+    <style>
+      /* Palette matches Consus's own theme tokens (web/src/theme/tokens.css)
+         so editable artifacts stay visually consistent with the app. */
+      :root {
+        --consus-bg: #f5f0e8;
+        --consus-bg-subtle: #efe8dc;
+        --consus-ink: #241d14;
+        --consus-ink-muted: #5a4f40;
+        --consus-accent: #b96e3a;
+        --consus-good: #3f7a3a;
+        --consus-warn: #9c7420;
+        --consus-line: #e3d8c6;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --consus-bg: #14110e;
+          --consus-bg-subtle: #1b1713;
+          --consus-ink: #f3ece2;
+          --consus-ink-muted: #c7bbaa;
+          --consus-accent: #d68a55;
+          --consus-good: #79b072;
+          --consus-warn: #d8a24a;
+          --consus-line: #332a20;
+        }
+      }
+
+      body {
+        margin: 0;
+        background: var(--consus-bg);
+        color: var(--consus-ink);
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+
+      .consus-artifact {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem 4rem;
+      }
+
+      .consus-toolbar {
+        position: sticky;
+        top: 0;
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        padding: 0.75rem 0;
+        background: var(--consus-bg);
+        border-bottom: 1px solid var(--consus-line);
+        margin-bottom: 1.5rem;
+      }
+
+      .consus-toolbar button {
+        border: 1px solid var(--consus-line);
+        background: var(--consus-bg-subtle);
+        color: var(--consus-ink);
+        border-radius: 6px;
+        padding: 0.35rem 0.7rem;
+        cursor: pointer;
+        font-size: 0.9rem;
+      }
+
+      .consus-toolbar button:hover {
+        border-color: var(--consus-accent);
+      }
+
+      .consus-toolbar .consus-save {
+        margin-left: auto;
+        background: var(--consus-accent);
+        color: var(--consus-bg);
+        border-color: var(--consus-accent);
+      }
+
+      .consus-save-status {
+        color: var(--consus-good);
+        font-size: 0.85rem;
+      }
+
+      .consus-draft-banner {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        margin-bottom: 1.5rem;
+        background: var(--consus-bg-subtle);
+        border: 1px solid var(--consus-warn);
+        border-radius: 8px;
+      }
+
+      .consus-draft-banner button {
+        border: 1px solid var(--consus-line);
+        background: var(--consus-bg);
+        color: var(--consus-ink);
+        border-radius: 6px;
+        padding: 0.3rem 0.6rem;
+        cursor: pointer;
+      }
+
+      [data-editable] {
+        outline: none;
+        line-height: 1.6;
+      }
+
+      [data-editable]:focus {
+        box-shadow: 0 0 0 2px var(--consus-accent);
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="consus-artifact" data-doc-id="{{DOC_ID}}">
+      <div class="consus-toolbar" role="toolbar" aria-label="Formatting">
+        <button type="button" data-command="bold" aria-label="Bold"><strong>B</strong></button>
+        <button type="button" data-command="italic" aria-label="Italic"><em>I</em></button>
+        <button type="button" data-command="link" aria-label="Insert link">Link</button>
+        <button type="button" data-action="save" class="consus-save">Save</button>
+        <span class="consus-save-status" data-save-status hidden>Draft saved</span>
+      </div>
+
+      <div class="consus-draft-banner" data-draft-banner hidden>
+        <span>A saved draft was found for this document.</span>
+        <button type="button" data-action="restore-draft">Restore draft</button>
+        <button type="button" data-action="discard-draft">Discard</button>
+      </div>
+
+      <main data-editable="body">
+        <h1>{{TITLE}}</h1>
+        <p>{{CONTENT}}</p>
+      </main>
+    </div>
+
+    <script type="module">
+      import { initEditor } from "../lib/editor.js";
+
+      const container = document.querySelector("[data-doc-id]");
+      const docId = container.dataset.docId;
+      let fileHandle = null;
+
+      async function writeMarkdown(markdown) {
+        if (!fileHandle && "showSaveFilePicker" in window) {
+          fileHandle = await window.showSaveFilePicker({
+            suggestedName: `${docId}.md`,
+            types: [{ description: "Markdown", accept: { "text/markdown": [".md"] } }],
+          });
+        }
+
+        if (fileHandle) {
+          const writable = await fileHandle.createWritable();
+          await writable.write(markdown);
+          await writable.close();
+          return;
+        }
+
+        const blob = new Blob([markdown], { type: "text/markdown" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `${docId}.md`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      }
+
+      function flashStatus() {
+        const status = document.querySelector("[data-save-status]");
+        if (!status) return;
+        status.hidden = false;
+        clearTimeout(status._hideTimer);
+        status._hideTimer = setTimeout(() => {
+          status.hidden = true;
+        }, 1500);
+      }
+
+      initEditor(container, {
+        docId,
+        writeFile: writeMarkdown,
+        onSave: flashStatus,
+        onSaveToMarkdown: flashStatus,
+      });
+    </script>
+  </body>
+</html>
