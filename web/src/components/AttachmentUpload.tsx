@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { useFileUpload } from '../hooks/useFileUpload';
 import { validateFile } from '../utils/fileValidation';
 import { UploadProgress } from './UploadProgress';
+import { SkeletonLoader } from './SkeletonLoader';
 
 export interface AttachmentUploadProps {
   onUploadSuccess?: (attachment: any) => void;
@@ -88,6 +89,16 @@ export function AttachmentUpload({ onUploadSuccess }: AttachmentUploadProps) {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       onClick={() => fileInputRef.current?.click()}
+      className="interactive transition-colors"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          fileInputRef.current?.click();
+        }
+      }}
+      role="button"
+      aria-label="Upload attachment by dragging or clicking"
     >
       <input
         type="file"
@@ -101,12 +112,18 @@ export function AttachmentUpload({ onUploadSuccess }: AttachmentUploadProps) {
       </p>
 
       {validationError && (
-        <div style={{ color: 'red', marginTop: '10px' }}>
+        <div style={{ color: 'red', marginTop: '10px' }} role="alert">
           {validationError}
         </div>
       )}
 
-      {currentFile && (isUploading || progress === 100 || uploadError) && (
+      {currentFile && isUploading && progress === 0 && !uploadError && (
+        <div style={{ marginTop: '10px' }} onClick={(e) => e.stopPropagation()}>
+          <SkeletonLoader height="32px" />
+        </div>
+      )}
+
+      {currentFile && (isUploading && progress > 0 || progress === 100 || uploadError) && (
         <div onClick={(e) => e.stopPropagation()} style={{ cursor: 'default' }}>
           <UploadProgress
             progress={progress}

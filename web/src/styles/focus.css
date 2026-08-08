@@ -1,0 +1,30 @@
+/* Enhanced focus indicators for keyboard navigation */
+:root {
+  --focus-color: var(--consus-accent, #b96e3a);
+  --focus-outline-width: 2px;
+  --focus-outline-offset: 2px;
+}
+
+/* Base focus styles for interactive elements */
+.interactive:focus-visible,
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible {
+  outline: var(--focus-outline-width) solid var(--focus-color);
+  outline-offset: var(--focus-outline-offset);
+  border-radius: 4px; /* Default border radius, override as needed */
+}
+
+/* Remove default outline only when focus-visible is supported to avoid accessibility issues */
+.interactive:focus:not(:focus-visible),
+a:focus:not(:focus-visible),
+button:focus:not(:focus-visible),
+input:focus:not(:focus-visible),
+select:focus:not(:focus-visible),
+textarea:focus:not(:focus-visible),
+[tabindex]:not([tabindex="-1"]):focus:not(:focus-visible) {
+  outline: none;
+}
