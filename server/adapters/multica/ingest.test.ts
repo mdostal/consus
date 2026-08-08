@@ -138,6 +138,12 @@ describe("syncMulticaQueue", () => {
       async listIssues() {
         return { ok: true, issues };
       },
+      async getIssue() {
+        return { ok: true, issue: makeIssue() };
+      },
+      async updateIssueStatus(_issueId: string, status: string) {
+        return { ok: true, status };
+      },
     };
   }
 
@@ -160,6 +166,12 @@ describe("syncMulticaQueue", () => {
       },
       async listIssues() {
         return { ok: false, error: "Multica returned HTTP 500" };
+      },
+      async getIssue() {
+        return { ok: true, issue: makeIssue() };
+      },
+      async updateIssueStatus(_issueId: string, status: string) {
+        return { ok: true, status };
       },
     };
 

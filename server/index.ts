@@ -17,6 +17,12 @@ const UNCONFIGURED_MULTICA_CLIENT: MulticaClient = {
   async listIssues() {
     return { ok: false, error: "Multica client not configured" };
   },
+  async getIssue() {
+    return { ok: false, error: "Multica client not configured" };
+  },
+  async updateIssueStatus() {
+    return { ok: false, error: "Multica client not configured" };
+  },
 };
 
 export interface BuildServerOptions {
@@ -25,9 +31,16 @@ export interface BuildServerOptions {
   repos?: Record<string, string>;
   /** live Multica adapter for GET /api/decisions; falls back to a stub that always 503s */
   client?: MulticaClient;
+  /** JSONL audit file for POST /api/decisions/:key/iterate + GET /api/log */
+  decisionLogPath?: string;
 }
 
-export function buildServer({ dbPath, repos = {}, client = UNCONFIGURED_MULTICA_CLIENT }: BuildServerOptions): FastifyInstance {
+export function buildServer({
+  dbPath,
+  repos = {},
+  client = UNCONFIGURED_MULTICA_CLIENT,
+  decisionLogPath,
+}: BuildServerOptions): FastifyInstance {
   const app = Fastify({ logger: false });
   const db = openDb(dbPath);
   runMigration(db);
@@ -35,7 +48,7 @@ export function buildServer({ dbPath, repos = {}, client = UNCONFIGURED_MULTICA_
   registerDocRoutes(app, { db, repos });
   registerKbRoutes(app, { db });
   registerArtifactLinkRoutes(app, { db });
-  registerDecisionRoutes(app, { db, client });
+  registerDecisionRoutes(app, { db, client, decisionLogPath });
 
   const healthHandler = async () => {
     const row = db.prepare("SELECT 1 AS ok").get() as { ok: number } | undefined;

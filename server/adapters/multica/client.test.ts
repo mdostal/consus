@@ -241,6 +241,85 @@ describe("HttpMulticaClient", () => {
       if (!result.ok) expect(result.error).toContain("503");
     });
   });
+
+  it("fetches a single issue by key and normalizes the API envelope", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        issue: {
+          id: "issue-1",
+          identifier: "PAN-1",
+          title: "Iterate this",
+          description: null,
+          status: "todo",
+          priority: "medium",
+          labels: [],
+          updated_at: null,
+          created_at: null,
+        },
+      }),
+    });
+    const client = new HttpMulticaClient({
+      serverUrl: "https://api.example.com",
+      workspaceId: "ws-1",
+      token: "tok-1",
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    const result = await client.getIssue("PAN-1");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.issue).toMatchObject({ id: "issue-1", identifier: "PAN-1" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.com/issues/PAN-1",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({ authorization: "Bearer tok-1", "x-workspace-id": "ws-1" }),
+      }),
+    );
+  });
+
+  it("updates issue status with a PUT and reports the returned status", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        issue: {
+          id: "issue-1",
+          identifier: "PAN-1",
+          title: "Iterate this",
+          description: null,
+          status: "in_progress",
+          priority: "medium",
+          labels: [],
+          updated_at: null,
+          created_at: null,
+        },
+      }),
+    });
+    const client = new HttpMulticaClient({
+      serverUrl: "https://api.example.com",
+      workspaceId: "ws-1",
+      token: "tok-1",
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    const result = await client.updateIssueStatus("issue-1", "in_progress");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.status).toBe("in_progress");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.com/issues/issue-1",
+      expect.objectContaining({
+        method: "PUT",
+        headers: expect.objectContaining({
+          "content-type": "application/json",
+          authorization: "Bearer tok-1",
+          "x-workspace-id": "ws-1",
+        }),
+        body: JSON.stringify({ status: "in_progress" }),
+      }),
+    );
+  });
 });
 
 describe("resolveMulticaToken", () => {

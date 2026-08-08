@@ -172,6 +172,25 @@ const EMPTY_CLIENT: MulticaClient = {
   async listIssues() {
     return { ok: true, issues: [] };
   },
+  async getIssue() {
+    return {
+      ok: true,
+      issue: {
+        id: "issue-1",
+        identifier: "MUL-1",
+        title: "Unused",
+        description: null,
+        status: "open",
+        priority: null,
+        labels: [],
+        updatedAt: null,
+        createdAt: null,
+      },
+    };
+  },
+  async updateIssueStatus(_issueId: string, status: string) {
+    return { ok: true, status };
+  },
 };
 
 describe("GET /api/decisions after migration", () => {
