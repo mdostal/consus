@@ -1,0 +1,57 @@
+/* web/src/themes/spacious.css */
+.theme-spacious {
+  --consus-font-size: 18px;
+  --consus-line-height: 1.8;
+  --consus-space-md: 24px;
+  --consus-space-lg: 32px;
+  --consus-touch-target: 48px;
+}
+
+.theme-spacious {
+  font-size: var(--consus-font-size);
+  line-height: var(--consus-line-height);
+}
+
+.theme-spacious .decision-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--consus-space-lg);
+  padding: var(--consus-space-md);
+}
+
+.theme-spacious .decision-list__item {
+  margin-bottom: var(--consus-space-lg);
+}
+
+.theme-spacious .decision-card {
+  padding: var(--consus-space-lg);
+  gap: var(--consus-space-md);
+  display: flex;
+  flex-direction: column;
+}
+
+.theme-spacious .decision-card__question {
+  font-size: calc(var(--consus-font-size) * 1.25);
+  margin-bottom: var(--consus-space-md);
+}
+
+.theme-spacious button, 
+.theme-spacious select, 
+.theme-spacious input,
+.theme-spacious .decision-card__pill,
+.theme-spacious summary {
+  min-height: var(--consus-touch-target);
+  padding: 8px var(--consus-space-md);
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--consus-font-size);
+}
+
+.theme-spacious .decision-card__recommendation {
+  margin-top: var(--consus-space-md);
+  margin-bottom: var(--consus-space-md);
+}
+
+.theme-spacious .decision-card__answer-slot {
+  margin-top: var(--consus-space-lg);
+}
