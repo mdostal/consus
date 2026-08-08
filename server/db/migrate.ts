@@ -120,6 +120,19 @@ export function runMigration(db: Database.Database): void {
       status TEXT NOT NULL DEFAULT 'open',
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS attachments (
+      id TEXT PRIMARY KEY,
+      item_id TEXT NOT NULL REFERENCES items(id),
+      file_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      uploaded_by TEXT,
+      created_at TEXT NOT NULL,
+      deleted_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_attachments_item_id ON attachments(item_id);
   `);
 
   // Guarded ALTER TABLE for columns added after a table already existed on
@@ -131,4 +144,5 @@ export function runMigration(db: Database.Database): void {
   addColumnIfMissing(db, "items", "triage_bucket", "TEXT");
   addColumnIfMissing(db, "human_requests", "survey_id", "INTEGER REFERENCES surveys(id)");
   addColumnIfMissing(db, "kb_entries", "source_repo", "TEXT");
+  addColumnIfMissing(db, "attachments", "deleted_at", "TEXT");
 }
