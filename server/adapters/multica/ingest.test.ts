@@ -62,6 +62,21 @@ describe("Multica issue ingest", () => {
     expect(result.triageBucket).toBe("agent_task");
   });
 
+  it("preserves the full source description body for discussion and refile write-backs", () => {
+    const marker = "Architect loads full repo graph Edit any answer";
+    const fullDescription = `${"context ".repeat(500)}${marker}`;
+    const { itemId } = ingestMulticaIssue(
+      db,
+      makeIssue({ id: "issue-long-body", title: "PAN-6965 ideation", description: fullDescription }),
+    );
+
+    const row = db.prepare("SELECT source_body FROM items WHERE id = ?").get(itemId) as {
+      source_body: string | null;
+    };
+    expect(row.source_body).toBe(fullDescription);
+    expect(row.source_body).toContain(marker);
+  });
+
   it("re-ingesting the same issue updates title/status but preserves an existing decided_at", () => {
     const { itemId } = ingestMulticaIssue(db, makeIssue({ id: "issue-decided", title: "Choose the layout" }));
     decideItem(db, { itemId, actor: "mathew", newStatus: "done" });

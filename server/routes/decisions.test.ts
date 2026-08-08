@@ -439,6 +439,22 @@ describe("GET /api/decisions — live Multica sync", () => {
     });
   });
 
+  it("returns the full source body from live Multica issues without truncating discussion context", async () => {
+    const marker = "Architect loads full repo graph Edit any answer";
+    const sourceBody = `${"long ideation context ".repeat(350)}${marker}`;
+    const client = fakeClient({
+      ok: true,
+      issues: [makeIssue({ id: "mul-source", title: "PAN-6965 ideation", description: sourceBody })],
+    });
+    await buildApp(client);
+
+    const res = await app.inject({ method: "GET", url: "/api/decisions" });
+    const body = res.json();
+
+    expect(body[0].source_body).toBe(sourceBody);
+    expect(body[0].source_body).toContain(marker);
+  });
+
   it("excludes an already-decided Multica issue from the default (open-only) queue", async () => {
     // First sync ingests + decides the issue locally.
     await buildApp(fakeClient({ ok: true, issues: [makeIssue({ id: "mul-decided", title: "Pick one option" })] }));

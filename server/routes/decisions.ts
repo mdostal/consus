@@ -18,6 +18,7 @@ interface ItemRow {
   type: string;
   title: string;
   status: string;
+  source_body: string | null;
   decision_payload: string | null;
   decision_type: string | null;
   triage_bucket: string | null;
@@ -159,8 +160,8 @@ export function registerDecisionRoutes(
     const includeDecided = request.query.all === "1";
     const isDecisionItem = "(decision_payload IS NOT NULL OR id LIKE 'multica:%')";
     const sql = includeDecided
-      ? `SELECT id, type, title, status, decision_payload, decision_type, triage_bucket FROM items WHERE ${isDecisionItem} ORDER BY created_at ASC`
-      : `SELECT id, type, title, status, decision_payload, decision_type, triage_bucket FROM items WHERE ${isDecisionItem} AND decided_at IS NULL ORDER BY created_at ASC`;
+      ? `SELECT id, type, title, status, source_body, decision_payload, decision_type, triage_bucket FROM items WHERE ${isDecisionItem} ORDER BY created_at ASC`
+      : `SELECT id, type, title, status, source_body, decision_payload, decision_type, triage_bucket FROM items WHERE ${isDecisionItem} AND decided_at IS NULL ORDER BY created_at ASC`;
     const rows = db.prepare(sql).all() as ItemRow[];
 
     return rows.map((row) => ({

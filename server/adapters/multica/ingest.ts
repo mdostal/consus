@@ -35,14 +35,15 @@ export function ingestMulticaIssue(db: Database.Database, issue: MulticaIssue): 
   const now = new Date().toISOString();
 
   db.prepare(
-    `INSERT INTO items (id, type, title, status, source_ref, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO items (id, type, title, status, source_ref, source_body, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        title = excluded.title,
        status = excluded.status,
        source_ref = excluded.source_ref,
+       source_body = excluded.source_body,
        updated_at = excluded.updated_at`,
-  ).run(itemId, "multica_issue", issue.title, issue.status, issue.identifier, now, now);
+  ).run(itemId, "multica_issue", issue.title, issue.status, issue.identifier, issue.description, now, now);
 
   const { decisionType, triageBucket } = classifyItem(db, itemId);
   return { itemId, decisionType, triageBucket };

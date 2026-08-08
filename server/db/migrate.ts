@@ -27,6 +27,7 @@ export function runMigration(db: Database.Database): void {
       status TEXT NOT NULL,
       source_repo TEXT,
       source_ref TEXT,
+      source_body TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       decided_at TEXT
@@ -81,6 +82,7 @@ export function runMigration(db: Database.Database): void {
       reason TEXT,
       confidence REAL,
       suggested_channel TEXT,
+      answer TEXT,
       status TEXT NOT NULL
     );
 
@@ -129,6 +131,8 @@ export function runMigration(db: Database.Database): void {
   addColumnIfMissing(db, "items", "decision_payload", "TEXT");
   addColumnIfMissing(db, "items", "decision_type", "TEXT");
   addColumnIfMissing(db, "items", "triage_bucket", "TEXT");
+  addColumnIfMissing(db, "items", "source_body", "TEXT");
+  addColumnIfMissing(db, "human_requests", "answer", "TEXT");
   addColumnIfMissing(db, "human_requests", "survey_id", "INTEGER REFERENCES surveys(id)");
   addColumnIfMissing(db, "kb_entries", "source_repo", "TEXT");
 }
