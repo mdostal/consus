@@ -11,6 +11,34 @@ function insertItem(db: Database.Database, id: string) {
   ).run(id, "doc_ref", "Test item", "open", now, now);
 }
 
+function fakeClient(writeComment: MulticaClient["writeComment"]): MulticaClient {
+  return {
+    writeComment,
+    async listIssues() {
+      return { ok: true, issues: [] };
+    },
+    async getIssue() {
+      return {
+        ok: true,
+        issue: {
+          id: "item-1",
+          identifier: "MUL-1",
+          title: "Test item",
+          description: null,
+          status: "open",
+          priority: null,
+          labels: [],
+          updatedAt: null,
+          createdAt: null,
+        },
+      };
+    },
+    async updateIssueStatus(_issueId: string, status: string) {
+      return { ok: true, status };
+    },
+  };
+}
+
 describe("writeCommentAndCache", () => {
   let db: Database.Database;
 
@@ -21,15 +49,14 @@ describe("writeCommentAndCache", () => {
   });
 
   it("writes to Multica first, then caches locally with the returned multica_comment_id", async () => {
-    const client: MulticaClient = {
-      async writeComment() {
-        return { ok: true, multicaCommentId: "mc-1" };
-      },
-    };
+    const client = fakeClient(async () => ({ ok: true, multicaCommentId: "mc-1" }));
 
     const result = await writeCommentAndCache(db, client, { itemId: "item-1", author: "mathew", body: "hi" });
 
     expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.commentId).toBe("mc-1");
+    }
     const row = db.prepare("SELECT * FROM comments WHERE item_id = ?").get("item-1") as {
       multica_comment_id: string;
       body: string;
@@ -39,11 +66,7 @@ describe("writeCommentAndCache", () => {
   });
 
   it("surfaces a clear failure and does NOT write locally when Multica is unreachable", async () => {
-    const client: MulticaClient = {
-      async writeComment() {
-        return { ok: false, error: "ECONNREFUSED" };
-      },
-    };
+    const client = fakeClient(async () => ({ ok: false, error: "ECONNREFUSED" }));
 
     const result = await writeCommentAndCache(db, client, { itemId: "item-1", author: "mathew", body: "hi" });
 

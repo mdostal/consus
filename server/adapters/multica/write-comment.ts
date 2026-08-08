@@ -1,7 +1,8 @@
 import type Database from "better-sqlite3";
 import type { MulticaClient, WriteCommentInput } from "./client.js";
 
-export type WriteCommentAndCacheResult = { ok: true } | { ok: false; error: string };
+export type WriteCommentAndCacheInput = WriteCommentInput & { cacheItemId?: string };
+export type WriteCommentAndCacheResult = { ok: true; commentId: string } | { ok: false; error: string };
 
 /**
  * REQ-07: comment writes go through Multica, not a Consus-private store.
@@ -13,16 +14,17 @@ export type WriteCommentAndCacheResult = { ok: true } | { ok: false; error: stri
 export async function writeCommentAndCache(
   db: Database.Database,
   client: MulticaClient,
-  input: WriteCommentInput,
+  input: WriteCommentAndCacheInput,
 ): Promise<WriteCommentAndCacheResult> {
-  const result = await client.writeComment(input);
+  const { cacheItemId, ...remoteInput } = input;
+  const result = await client.writeComment(remoteInput);
   if (!result.ok) {
     return { ok: false, error: result.error };
   }
 
   db.prepare(
     "INSERT INTO comments (item_id, author, body, created_at, multica_comment_id) VALUES (?, ?, ?, ?, ?)",
-  ).run(input.itemId, input.author, input.body, new Date().toISOString(), result.multicaCommentId);
+  ).run(cacheItemId ?? input.itemId, input.author, input.body, new Date().toISOString(), result.multicaCommentId);
 
-  return { ok: true };
+  return { ok: true, commentId: result.multicaCommentId };
 }

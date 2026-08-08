@@ -97,9 +97,19 @@ export type MulticaListResult =
   | { ok: true; issues: MulticaIssue[] }
   | { ok: false; error: string };
 
+export type MulticaGetIssueResult =
+  | { ok: true; issue: MulticaIssue }
+  | { ok: false; error: string };
+
+export type MulticaStatusUpdateResult =
+  | { ok: true; status: string }
+  | { ok: false; error: string };
+
 export interface MulticaClient {
   writeComment(input: WriteCommentInput): Promise<MulticaWriteResult>;
   listIssues(input?: ListIssuesInput): Promise<MulticaListResult>;
+  getIssue(key: string): Promise<MulticaGetIssueResult>;
+  updateIssueStatus(issueId: string, status: string): Promise<MulticaStatusUpdateResult>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -245,6 +255,64 @@ export class HttpMulticaClient implements MulticaClient {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return { ok: false, error: message };
+    }
+  }
+
+  async getIssue(key: string): Promise<MulticaGetIssueResult> {
+    try {
+      const response = await this.fetchJson(`${this.serverUrl}/issues/${encodeURIComponent(key)}`, { method: "GET" });
+      if (!response.ok) {
+        return { ok: false, error: `Multica returned HTTP ${response.status}` };
+      }
+
+      const raw = await response.json();
+      const issue = normalizeIssue(isRecord(raw) && "issue" in raw ? raw.issue : raw);
+      if (!issue) {
+        return { ok: false, error: "Multica returned an invalid issue payload" };
+      }
+
+      return { ok: true, issue };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: message };
+    }
+  }
+
+  async updateIssueStatus(issueId: string, status: string): Promise<MulticaStatusUpdateResult> {
+    try {
+      const response = await this.fetchJson(`${this.serverUrl}/issues/${encodeURIComponent(issueId)}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!response.ok) {
+        return { ok: false, error: `Multica returned HTTP ${response.status}` };
+      }
+
+      const raw = await response.json();
+      const issue = normalizeIssue(isRecord(raw) && "issue" in raw ? raw.issue : raw);
+      return { ok: true, status: issue?.status ?? status };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: message };
+    }
+  }
+
+  private async fetchJson(url: string, init: RequestInit): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      return await this.fetchImpl(url, {
+        ...init,
+        headers: {
+          ...init.headers,
+          authorization: `Bearer ${this.token}`,
+          "x-workspace-id": this.workspaceId,
+        },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
     }
   }
 }
