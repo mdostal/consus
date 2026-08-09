@@ -114,4 +114,38 @@ describe("KB backlog — search/filter + direct edit (REQ-09, P1)", () => {
     expect(versionBodies).toHaveLength(2);
     expect(versionBodies[1].content).toBe("revised decision content");
   });
+
+  it("saves drafts as durable versions without changing the published current version", async () => {
+    const before = db.prepare("SELECT current_version_id FROM kb_entries WHERE id = ?").get("kb-1") as {
+      current_version_id: number;
+    };
+    const longDraft = `draft start\n${"untruncated human edit ".repeat(4000)}\ndraft end`;
+
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/kb-entries/kb-1/draft",
+      payload: { author: "mathew", content: longDraft },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().currentVersionId).toBe(before.current_version_id);
+
+    const versions = await app.inject({ method: "GET", url: "/api/kb-entries/kb-1/versions" });
+    const versionBodies = versions.json();
+    expect(versionBodies.map((v: { state: string }) => v.state)).toEqual(["published", "draft"]);
+    expect(versionBodies[1].content).toBe(longDraft);
+    expect(versionBodies[1].content.length).toBe(longDraft.length);
+  });
+
+  it("keeps draft-only text out of published KB search results", async () => {
+    await app.inject({
+      method: "PUT",
+      url: "/api/kb-entries/kb-1/draft",
+      payload: { author: "mathew", content: "private-draft-token" },
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/kb-entries?q=private-draft-token" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toHaveLength(0);
+  });
 });

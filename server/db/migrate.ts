@@ -68,6 +68,7 @@ export function runMigration(db: Database.Database): void {
       kb_entry_id TEXT NOT NULL REFERENCES kb_entries(id),
       content TEXT NOT NULL,
       author TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'published',
       created_at TEXT NOT NULL
     );
 
@@ -148,5 +149,6 @@ export function runMigration(db: Database.Database): void {
   addColumnIfMissing(db, "human_requests", "answer", "TEXT");
   addColumnIfMissing(db, "human_requests", "survey_id", "INTEGER REFERENCES surveys(id)");
   addColumnIfMissing(db, "kb_entries", "source_repo", "TEXT");
+  addColumnIfMissing(db, "kb_versions", "state", "TEXT NOT NULL DEFAULT 'published'");
   addColumnIfMissing(db, "attachments", "deleted_at", "TEXT");
 }
