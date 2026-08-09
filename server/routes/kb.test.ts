@@ -148,4 +148,112 @@ describe("KB backlog — search/filter + direct edit (REQ-09, P1)", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toHaveLength(0);
   });
+
+  it("never publishes a new version on Save — the approval pipeline does not fire (risk mitigation)", async () => {
+    const before = await app.inject({ method: "GET", url: "/api/kb-entries/kb-1/versions" });
+    const publishedBefore = before.json().filter((v: { state: string }) => v.state === "published");
+
+    await app.inject({
+      method: "PUT",
+      url: "/api/kb-entries/kb-1/draft",
+      payload: { author: "mathew", content: "just a save, not a submit" },
+    });
+
+    const after = await app.inject({ method: "GET", url: "/api/kb-entries/kb-1/versions" });
+    const publishedAfter = after.json().filter((v: { state: string }) => v.state === "published");
+    expect(publishedAfter).toHaveLength(publishedBefore.length);
+  });
+});
+
+describe("POST /api/kb-entries/:id/submit", () => {
+  let db: Database.Database;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    runMigration(db);
+    createKbEntry(db, { id: "kb-1", title: "Adopt React Flow", author: "mathew", content: "published v1" });
+
+    app = Fastify();
+    registerKbRoutes(app, { db });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+  });
+
+  it("finalizes the doc and explicitly triggers the approve->phase-split->KB pipeline", async () => {
+    await app.inject({
+      method: "PUT",
+      url: "/api/kb-entries/kb-1/draft",
+      payload: { author: "mathew", content: "ready to submit" },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/kb-entries/kb-1/submit",
+      payload: { actor: "mathew" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.phases).toEqual({ approve: true, phaseSplit: true, kb: true });
+
+    const entry = db.prepare("SELECT current_version_id FROM kb_entries WHERE id = ?").get("kb-1") as {
+      current_version_id: number;
+    };
+    expect(entry.current_version_id).toBe(body.publishedVersionId);
+
+    const versions = await app.inject({ method: "GET", url: "/api/kb-entries/kb-1/versions" });
+    const published = versions.json().find((v: { id: number }) => v.id === body.publishedVersionId);
+    expect(published.content).toBe("ready to submit");
+    expect(published.state).toBe("published");
+  });
+
+  it("submits an explicit versionId instead of the latest draft", async () => {
+    const draft1 = await app.inject({
+      method: "PUT",
+      url: "/api/kb-entries/kb-1/draft",
+      payload: { author: "mathew", content: "first draft" },
+    });
+    await app.inject({
+      method: "PUT",
+      url: "/api/kb-entries/kb-1/draft",
+      payload: { author: "mathew", content: "second draft" },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/kb-entries/kb-1/submit",
+      payload: { actor: "mathew", versionId: draft1.json().draft.id },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const versions = await app.inject({ method: "GET", url: "/api/kb-entries/kb-1/versions" });
+    const published = versions.json().find((v: { id: number }) => v.id === res.json().publishedVersionId);
+    expect(published.content).toBe("first draft");
+  });
+
+  it("404s when the entry has no draft to submit", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/kb-entries/kb-1/submit",
+      payload: { actor: "mathew" },
+    });
+
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("404s for an unknown kb_entry", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/kb-entries/does-not-exist/submit",
+      payload: { actor: "mathew", versionId: 1 },
+    });
+
+    expect(res.statusCode).toBe(404);
+  });
 });
