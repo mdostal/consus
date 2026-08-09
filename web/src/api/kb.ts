@@ -18,6 +18,15 @@ export async function fetchKbDrafts(id: string): Promise<KbVersion[]> {
   return response.json();
 }
 
+export async function fetchKbVersions(id: string): Promise<KbVersion[]> {
+  const url = `${API_BASE_URL}/api/kb-entries/${id}/versions`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to load versions: HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
 export async function saveKbDraft(id: string, author: string, content: string): Promise<void> {
   const url = `${API_BASE_URL}/api/kb-entries/${id}/draft`;
   const response = await fetch(url, {
