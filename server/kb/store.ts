@@ -15,6 +15,7 @@ export interface KbVersionRow {
   kb_entry_id: string;
   content: string;
   author: string;
+  state: "published" | "draft";
   created_at: string;
 }
 
@@ -69,6 +70,15 @@ export interface CreateKbEntryInput {
   sourceRepo?: string | null;
 }
 
+export interface SaveKbDraftInput {
+  id: string;
+  title?: string;
+  author: string;
+  content: string;
+  /** Project/repo this entry belongs to (REQ-27) — nullable for backward compatibility. */
+  sourceRepo?: string | null;
+}
+
 /**
  * Create (or add a new version to) a kb_entry. Every call appends a new
  * kb_versions row and repoints current_version_id — history is never lost.
@@ -85,16 +95,46 @@ export function createKbEntry(
     ).run(id, title, now, sourceRepo ?? null);
 
     const result = db
-      .prepare("INSERT INTO kb_versions (kb_entry_id, content, author, created_at) VALUES (?, ?, ?, ?)")
-      .run(id, content, author, now);
+      .prepare("INSERT INTO kb_versions (kb_entry_id, content, author, state, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(id, content, author, "published", now);
 
     db.prepare("UPDATE kb_entries SET current_version_id = ? WHERE id = ?").run(result.lastInsertRowid, id);
   });
   tx();
 }
 
+/**
+ * Persist a human draft as an append-only kb_versions row without changing
+ * current_version_id. Published/agent versions remain the visible KB state.
+ */
+export function saveKbDraft(
+  db: Database.Database,
+  { id, title, author, content, sourceRepo }: SaveKbDraftInput,
+): KbVersionRow {
+  const now = new Date().toISOString();
+
+  const tx = db.transaction(() => {
+    db.prepare(
+      "INSERT OR IGNORE INTO kb_entries (id, title, current_version_id, created_at, source_repo) VALUES (?, ?, NULL, ?, ?)",
+    ).run(id, title ?? id, now, sourceRepo ?? null);
+
+    const result = db
+      .prepare("INSERT INTO kb_versions (kb_entry_id, content, author, state, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(id, content, author, "draft", now);
+
+    return db.prepare("SELECT * FROM kb_versions WHERE id = ?").get(result.lastInsertRowid) as KbVersionRow;
+  });
+  return tx();
+}
+
 export function getKbVersions(db: Database.Database, kbEntryId: string): KbVersionRow[] {
   return db
     .prepare("SELECT * FROM kb_versions WHERE kb_entry_id = ? ORDER BY id ASC")
+    .all(kbEntryId) as KbVersionRow[];
+}
+
+export function getKbDraftVersions(db: Database.Database, kbEntryId: string): KbVersionRow[] {
+  return db
+    .prepare("SELECT * FROM kb_versions WHERE kb_entry_id = ? AND state = 'draft' ORDER BY id ASC")
     .all(kbEntryId) as KbVersionRow[];
 }

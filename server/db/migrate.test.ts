@@ -65,4 +65,47 @@ describe("runMigration", () => {
 
     db.close();
   });
+
+  it("adds draft state to existing kb_versions rows without rewriting content", () => {
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
+    const db = new Database(dbPath);
+
+    db.exec(`
+      CREATE TABLE kb_entries (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        current_version_id INTEGER,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE kb_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kb_entry_id TEXT NOT NULL REFERENCES kb_entries(id),
+        content TEXT NOT NULL,
+        author TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+    `);
+    db.prepare("INSERT INTO kb_entries (id, title, current_version_id, created_at) VALUES (?, ?, NULL, ?)").run(
+      "kb-1",
+      "Existing",
+      "2026-08-09T00:00:00Z",
+    );
+    db.prepare("INSERT INTO kb_versions (kb_entry_id, content, author, created_at) VALUES (?, ?, ?, ?)").run(
+      "kb-1",
+      "existing content",
+      "agent",
+      "2026-08-09T00:00:00Z",
+    );
+
+    runMigration(db);
+
+    const row = db.prepare("SELECT content, state FROM kb_versions WHERE kb_entry_id = ?").get("kb-1") as {
+      content: string;
+      state: string;
+    };
+    expect(row).toEqual({ content: "existing content", state: "published" });
+
+    db.close();
+  });
 });
