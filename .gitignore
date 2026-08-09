@@ -30,3 +30,5 @@ build/
 .pHive/interrupts/
 .pHive/metrics/
 .pHive/session-effort.txt
+!.pHive/epics/consus-editable-artifact-doc/
+!.pHive/epics/consus-editable-artifact-doc/**

@@ -1,0 +1,43 @@
+id: save-submit-actions
+epic: consus-editable-artifact-doc
+title: API endpoints for Save vs Submit with pipeline isolation
+status: pending
+complexity: medium
+methodology: classic
+depends_on:
+  - draft-storage-model
+
+description: |
+  Implement the backend logic and API endpoints to differentiate between a "Save" action
+  and a "Submit" action. Save must persist the draft without firing the approval pipeline,
+  while Submit must explicitly trigger the approve->phase-split->KB pipeline.
+
+acceptance_criteria:
+  - "Given a draft doc, when the Save endpoint is called, then the draft is updated in the DB but the approval pipeline does not fire."
+  - "Given a draft doc, when the Submit endpoint is called, then the doc is finalized and the approval->phase-split pipeline is explicitly triggered."
+
+metric:
+  applies: false
+  justification: This story implements internal API routing and pipeline triggering logic without a direct user-facing metric.
+
+steps:
+  - id: step-1
+    description: Create or modify API controllers for handling Save and Submit separately.
+    agent: developer
+  - id: step-2
+    description: Wire the Submit endpoint to the existing approval and KB pipeline.
+    agent: developer
+
+context:
+  codebase: /Users/dostal/.minerva/runs/ebe53473-a505-4e6b-9b66-966239295ab8/workspace
+  tech_stack: {}
+  key_files: []
+
+design_decisions:
+  - decision: Completely decouple the save and submit API routes.
+    rationale: Prevents accidental pipeline triggers by ensuring the client must explicitly call a distinct submit endpoint.
+
+risks:
+  - severity: high
+    description: Accidentally triggering the KB pipeline on a draft save.
+    mitigation: Implement strict assertions in unit tests ensuring the pipeline dispatch is completely mocked out or absent in the Save path.

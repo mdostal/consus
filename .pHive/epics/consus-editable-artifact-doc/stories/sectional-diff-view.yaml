@@ -1,0 +1,44 @@
+id: sectional-diff-view
+epic: consus-editable-artifact-doc
+title: Sectional diff view for human vs agent edits
+status: pending
+complexity: high
+methodology: classic
+depends_on:
+  - editable-sections-ui
+
+description: |
+  Build the interface and logic for comparing human draft edits against the agent-generated
+  version on a per-section basis. The user must be able to review the diff and choose to
+  accept the agent's changes or send them back, while protecting the sanctity of human input.
+
+acceptance_criteria:
+  - "Given a section with both human and agent edits, when viewed in diff mode, then a clear comparison is shown."
+  - "Given a diff view, when interacting, then the user can explicitly 'accept' the changes or 'send back' the section."
+  - "Given a subsequent agent pass, when generated, then prior human edits are never automatically overwritten."
+
+metric:
+  applies: false
+  justification: This implements complex UI interaction logic where standard product analytics are not part of the current scope.
+
+steps:
+  - id: step-1
+    description: Implement diffing utility for text comparison (human vs agent).
+    agent: developer
+  - id: step-2
+    description: Build the UI components for the sectional diff view with accept/reject controls.
+    agent: developer
+
+context:
+  codebase: /Users/dostal/.minerva/runs/ebe53473-a505-4e6b-9b66-966239295ab8/workspace
+  tech_stack: {}
+  key_files: []
+
+design_decisions:
+  - decision: Calculate diffs on the client side per section to keep backend lean.
+    rationale: Text diffing of small sections is cheap and improves UI responsiveness.
+
+risks:
+  - severity: high
+    description: Complex state management if a user accepts some changes but rejects others simultaneously.
+    mitigation: Keep state isolated per-section and enforce explicit saves for accepted diffs.

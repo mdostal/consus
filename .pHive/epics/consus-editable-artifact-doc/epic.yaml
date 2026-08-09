@@ -1,0 +1,31 @@
+name: consus-editable-artifact-doc
+title: Consus Editable Artifact Docs
+description: Make Consus artifact/decision docs editable in place with a clear Save-vs-Submit distinction, durable drafts, and sectional diffing against agent generation.
+target_codebase: /Users/dostal/.minerva/runs/ebe53473-a505-4e6b-9b66-966239295ab8/workspace
+methodology: classic
+version_bump: minor
+stories:
+  - id: draft-storage-model
+    title: Core draft storage and version history models
+    complexity: medium
+    depends_on: []
+  - id: save-submit-actions
+    title: API endpoints for Save vs Submit with pipeline isolation
+    complexity: medium
+    depends_on:
+      - draft-storage-model
+  - id: editable-sections-ui
+    title: UI for in-place editable document sections
+    complexity: medium
+    depends_on:
+      - save-submit-actions
+  - id: sectional-diff-view
+    title: Sectional diff view for human vs agent edits
+    complexity: high
+    depends_on:
+      - editable-sections-ui
+  - id: e2e-tests
+    title: End-to-end testing for save, submit, and diff workflows
+    complexity: medium
+    depends_on:
+      - sectional-diff-view

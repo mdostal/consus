@@ -1,0 +1,43 @@
+id: draft-storage-model
+epic: consus-editable-artifact-doc
+title: Core draft storage and version history models
+status: pending
+complexity: medium
+methodology: classic
+depends_on: []
+
+description: |
+  Create or update the database schemas and data models to support durable "draft"
+  states for artifact docs. This must ensure that human inputs are saved as living docs
+  without overwriting agent passes, and establish a version history structure for each document.
+
+acceptance_criteria:
+  - "Given an existing artifact doc, when a draft is saved, then a new draft version is persisted to the living-doc store without affecting the main published version."
+  - "Given a doc with multiple edits, when querying version history, then all versions are returned in chronological order."
+  - "Given a draft update, when saved, then the text is never truncated and human input is durably stored."
+
+metric:
+  applies: false
+  justification: This is a backend schema update, so a falsifiable product metric does not apply.
+
+steps:
+  - id: step-1
+    description: Analyze existing artifact data models and propose schema additions for drafts and versions.
+    agent: researcher
+  - id: step-2
+    description: Implement schema updates and backend storage logic.
+    agent: developer
+
+context:
+  codebase: /Users/dostal/.minerva/runs/ebe53473-a505-4e6b-9b66-966239295ab8/workspace
+  tech_stack: {}
+  key_files: []
+
+design_decisions:
+  - decision: Separate draft state from submitted state in the database layer.
+    rationale: Ensures that intermediate saves don't accidentally leak to the knowledge base or trigger unintended pipelines.
+
+risks:
+  - severity: medium
+    description: Data loss of human edits if draft saving is interrupted or schema truncates long text.
+    mitigation: Use text fields with no length limits and ensure robust transaction handling for saves.

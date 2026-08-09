@@ -1,0 +1,44 @@
+id: e2e-tests
+epic: consus-editable-artifact-doc
+title: End-to-end testing for save, submit, and diff workflows
+status: pending
+complexity: medium
+methodology: tdd
+depends_on:
+  - sectional-diff-view
+
+description: |
+  Implement comprehensive automated tests (integration/e2e) to validate the core requirements:
+  save-draft does not fire the pipeline, submit fires it exactly once, and diff/accept round-trips
+  function correctly without data truncation.
+
+acceptance_criteria:
+  - "Given the test suite, when running the save-draft test, then it verifies the draft is saved and pipeline mock is not invoked."
+  - "Given the test suite, when running the submit test, then it verifies the pipeline mock is invoked exactly once."
+  - "Given the test suite, when running the diff round-trip test, then it verifies human input is retained and diff actions apply cleanly."
+
+metric:
+  applies: false
+  justification: Testing infrastructure directly contributes to reliability but does not yield a customer-facing product metric.
+
+steps:
+  - id: step-1
+    description: Write integration tests for the Save and Submit backend routes.
+    agent: tester
+  - id: step-2
+    description: Write e2e or UI component tests for the sectional diff functionality.
+    agent: tester
+
+context:
+  codebase: /Users/dostal/.minerva/runs/ebe53473-a505-4e6b-9b66-966239295ab8/workspace
+  tech_stack: {}
+  key_files: []
+
+design_decisions:
+  - decision: Focus tests on the critical boundaries (pipeline triggering and data truncation).
+    rationale: These are the core business rules that absolutely cannot regress.
+
+risks:
+  - severity: low
+    description: Flaky UI tests for diffing interactions.
+    mitigation: Prefer API-level integration tests for state transitions and strictly isolated component tests for the diff UI.

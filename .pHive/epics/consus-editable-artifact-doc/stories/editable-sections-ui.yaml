@@ -1,0 +1,44 @@
+id: editable-sections-ui
+epic: consus-editable-artifact-doc
+title: UI for in-place editable document sections
+status: pending
+complexity: medium
+methodology: classic
+depends_on:
+  - save-submit-actions
+
+description: |
+  Update the Consus frontend to render artifact documents in distinct, editable sections.
+  Include explicit buttons for "Save" (persisting durable drafts that survive reload) and
+  "Submit" (finalizing the document).
+
+acceptance_criteria:
+  - "Given a rendered artifact doc, when viewed, then it is broken down into editable sections."
+  - "Given an edited section, when the page is reloaded, then the durable draft edits are preserved and displayed."
+  - "Given the UI, when the user is ready, then separate Save and Submit buttons are clearly available."
+
+metric:
+  applies: false
+  justification: While UI-focused, this is feature-gating and foundational structure where standard usage metrics are sufficient rather than custom ones.
+
+steps:
+  - id: step-1
+    description: Design and implement the sectional layout for the artifact documents.
+    agent: developer
+  - id: step-2
+    description: Connect the UI to the Save and Submit backend APIs.
+    agent: developer
+
+context:
+  codebase: /Users/dostal/.minerva/runs/ebe53473-a505-4e6b-9b66-966239295ab8/workspace
+  tech_stack: {}
+  key_files: []
+
+design_decisions:
+  - decision: Auto-fetch draft state on initial load.
+    rationale: Fulfills the requirement that draft edits are durable and survive page reloads.
+
+risks:
+  - severity: low
+    description: UI clutter if sections are too numerous.
+    mitigation: Use clear styling and possibly collapse/expand mechanics for sections if needed.
