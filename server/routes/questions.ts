@@ -66,6 +66,10 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, client }: Que
     try {
       db.prepare("INSERT OR IGNORE INTO items (id, type, title, status, created_at, updated_at) VALUES (?, 'question', ?, 'open', ?, ?)").run(b.item_id, b.item_title || b.item_id, now, now);
       const r = db.prepare("INSERT INTO human_requests (item_id, minerva_question_id, text, channel, reason, confidence, suggested_channel, status, created_at) VALUES (?,?,?,?,?,?,?,'pending',?)").run(b.item_id, mqid, b.text, b.channel || "consus", b.reason ?? null, b.confidence ?? null, b.suggested_channel ?? null, now);
+      // Link a parked_workflow so answering can RESUME the parked run (question_id -> human_request.id).
+      try {
+        db.prepare("INSERT INTO parked_workflows (id, agent_name, workflow_type, parked_state, status, question_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)").run(`pw-${r.lastInsertRowid}`, b.channel || "minerva", "planning", String(b.item_id), "parked", String(r.lastInsertRowid), now, now);
+      } catch { /* parked_workflows link is best-effort */ }
       return { id: r.lastInsertRowid, minerva_question_id: mqid, parked: true };
     } catch (e) { reply.code(500); return { error: (e as Error).message }; }
   });
