@@ -145,6 +145,17 @@ export function runMigration(db: Database.Database): void {
       cached_at TEXT NOT NULL,
       UNIQUE(repo_id, diagram_type)
     );
+
+    CREATE TABLE IF NOT EXISTS parked_workflows (
+      id TEXT PRIMARY KEY,
+      agent_name TEXT NOT NULL,
+      workflow_type TEXT NOT NULL,
+      parked_state TEXT NOT NULL,
+      question_id TEXT REFERENCES human_requests(id),
+      status TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      resumed_at TEXT
+    );
   `);
 
   // Guarded ALTER TABLE for columns added after a table already existed on
