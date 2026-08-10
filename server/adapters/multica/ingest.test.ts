@@ -22,6 +22,7 @@ function makeIssue(overrides: Partial<MulticaIssue> = {}): MulticaIssue {
     labels: [],
     updatedAt: null,
     createdAt: null,
+    parentId: null,
     ...overrides,
   };
 }
