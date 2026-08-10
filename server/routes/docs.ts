@@ -154,6 +154,90 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos, client }: D
     return { edit_id: editId, committed: commit_to_disk };
   });
 
+
+  app.get<{ Params: { id: string } }>("/api/docs/:id", async (request, reply) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: "invalid doc id" });
+
+    const doc = getDocById(db, id);
+    if (!doc) return reply.code(404).send({ error: "doc not found" });
+
+    const repoPath = repos[doc.repo];
+    if (!repoPath) return reply.code(404).send({ error: `unknown repo: ${doc.repo}` });
+
+    const edit = db
+      .prepare("SELECT content FROM doc_edits WHERE repo = ? AND file_path = ? ORDER BY created_at DESC LIMIT 1")
+      .get(doc.repo, doc.file_path) as { content: string } | undefined;
+
+    let content, format, source;
+    if (edit) {
+      format = doc.file_path.endsWith(".html") ? "html" : "md";
+      content = edit.content;
+      source = "edit";
+    } else {
+      const res = readDocContent(repoPath, doc.file_path);
+      content = res.content;
+      format = res.format;
+      source = "disk";
+    }
+
+    return {
+      id: doc.id,
+      repo: doc.repo,
+      path: doc.file_path,
+      format,
+      content,
+      source,
+      fired_at: doc.fired_at,
+      multica_issue_id: doc.multica_issue_id,
+      multica_issue_url: doc.multica_issue_url,
+      epic: doc.epic,
+      last_scanned_at: doc.last_scanned_at,
+    };
+  });
+
+  app.put<{
+    Params: { id: string };
+    Body: { content: string; commit_to_disk?: boolean; edited_by?: string };
+  }>("/api/docs/:id", async (request, reply) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return reply.code(400).send({ error: "invalid doc id" });
+
+    const doc = getDocById(db, id);
+    if (!doc) return reply.code(404).send({ error: "doc not found" });
+
+    const repo = doc.repo;
+    const path = doc.file_path;
+    const { content, commit_to_disk = false, edited_by = "consus" } = request.body;
+
+    const repoPath = repos[repo];
+    if (!repoPath) return reply.code(400).send({ error: `unknown repo: ${repo}` });
+    if (!isEditablePath(repoPath, path)) return reply.code(400).send({ error: "only .pHive/epics docs are editable" });
+
+    const existing = db
+      .prepare(
+        "SELECT id FROM doc_edits WHERE repo = ? AND file_path = ? AND content = ? ORDER BY created_at DESC LIMIT 1"
+      )
+      .get(repo, path, content) as { id: string } | undefined;
+
+    if (existing) {
+      return { edit_id: existing.id, committed: false, deduped: true };
+    }
+
+    const editId = `e-${randomUUID()}`;
+    db.prepare(
+      "INSERT INTO doc_edits (id, repo, file_path, content, edited_by, committed_to_disk) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run(editId, repo, path, content, edited_by, commit_to_disk ? 1 : 0);
+
+    if (commit_to_disk) {
+      const fullPath = join(repoPath, path);
+      await mkdir(dirname(fullPath), { recursive: true });
+      await writeFile(fullPath, content, "utf-8");
+    }
+
+    return { edit_id: editId, committed: commit_to_disk };
+  });
+
   app.post<{ Params: { id: string } }>("/api/docs/:id/fire", async (request, reply) => {
     if (!client) {
       return reply.code(503).send({ error: "Multica client not configured" });
