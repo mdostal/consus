@@ -38,7 +38,6 @@ function insertQuestion(
     status?: string;
     createdAt: string;
     answer?: string | null;
-    agentName?: string;
   },
 ): number {
   db.prepare("INSERT INTO items (id, type, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(
@@ -51,8 +50,8 @@ function insertQuestion(
   );
   const result = db
     .prepare(
-      `INSERT INTO human_requests (item_id, minerva_question_id, text, channel, reason, answer, status, agent_name, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO human_requests (item_id, minerva_question_id, text, channel, reason, answer, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       input.itemId,
@@ -62,7 +61,6 @@ function insertQuestion(
       null,
       input.answer ?? null,
       input.status ?? "pending",
-      input.agentName ?? "auriga",
       input.createdAt,
     );
   return Number(result.lastInsertRowid);
@@ -128,7 +126,7 @@ describe("question routes", () => {
     });
     db.prepare(
       "INSERT INTO parked_workflows (id, agent_name, workflow_type, parked_state, question_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    ).run("workflow-1", "auriga", "build", JSON.stringify({ step: "blocked" }), "q-1", "parked", "2026-08-10T01:00:00.000Z");
+    ).run("workflow-1", "auriga", "build", JSON.stringify({ step: "blocked" }), String(questionId), "parked", "2026-08-10T01:00:00.000Z");
 
     const res = await app.inject({
       method: "POST",
@@ -206,7 +204,7 @@ describe("question routes", () => {
     });
     db.prepare(
       "INSERT INTO parked_workflows (id, agent_name, workflow_type, parked_state, question_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    ).run("workflow-rollback", "auriga", "build", "{}", "q-rollback", "parked", "2026-08-10T01:00:00.000Z");
+    ).run("workflow-rollback", "auriga", "build", "{}", String(questionId), "parked", "2026-08-10T01:00:00.000Z");
 
     const res = await app.inject({
       method: "POST",

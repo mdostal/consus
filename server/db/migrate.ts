@@ -90,8 +90,12 @@ export function runMigration(db: Database.Database): void {
       suggested_channel TEXT,
       answer TEXT,
       status TEXT NOT NULL,
+<<<<<<< HEAD
       agent_name TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
+=======
+      created_at TEXT
+>>>>>>> origin/feat/PAN-8233
     );
 
     CREATE INDEX IF NOT EXISTS idx_human_requests_minerva_id ON human_requests(minerva_question_id);
@@ -158,10 +162,16 @@ export function runMigration(db: Database.Database): void {
       agent_name TEXT NOT NULL,
       workflow_type TEXT NOT NULL,
       parked_state TEXT NOT NULL,
+<<<<<<< HEAD
       status TEXT NOT NULL,
       question_id TEXT NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+=======
+      question_id TEXT REFERENCES human_requests(id),
+      status TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+>>>>>>> origin/feat/PAN-8233
       resumed_at TEXT
     );
 
@@ -216,9 +226,13 @@ export function runMigration(db: Database.Database): void {
   addColumnIfMissing(db, "human_requests", "answer", "TEXT");
   addColumnIfMissing(db, "human_requests", "survey_id", "INTEGER REFERENCES surveys(id)");
   addColumnIfMissing(db, "human_requests", "created_at", "TEXT");
+<<<<<<< HEAD
   addColumnIfMissing(db, "human_requests", "agent_name", "TEXT");
   db.exec("CREATE INDEX IF NOT EXISTS idx_human_requests_status_created_at ON human_requests(status, created_at)");
   addColumnIfMissing(db, "parked_workflows", "resumed_at", "TEXT");
+=======
+  db.exec("CREATE INDEX IF NOT EXISTS idx_human_requests_status_created_at ON human_requests(status, created_at)");
+>>>>>>> origin/feat/PAN-8233
   addColumnIfMissing(db, "kb_entries", "source_repo", "TEXT");
   addColumnIfMissing(db, "kb_versions", "state", "TEXT NOT NULL DEFAULT 'published'");
   addColumnIfMissing(db, "attachments", "deleted_at", "TEXT");
