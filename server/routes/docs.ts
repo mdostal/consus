@@ -1,8 +1,21 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
-import { basename } from "node:path";
+import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { basename, dirname, join, relative } from "node:path";
 import { queryDocIndex, readDocContent, type DocIndexRow } from "../adapters/doc-scanner/index.js";
 import type { MulticaClient } from "../adapters/multica/client.js";
+
+const EDITABLE_PATH_PREFIX = join(".pHive", "epics") + "/";
+
+/** Rejects paths outside `.pHive/epics/` (also blocks `..` traversal) once resolved against repoPath. */
+function isEditablePath(repoPath: string, path: string): boolean {
+  if (!path.startsWith(EDITABLE_PATH_PREFIX)) {
+    return false;
+  }
+  const rel = relative(join(repoPath, EDITABLE_PATH_PREFIX), join(repoPath, path));
+  return rel !== "" && !rel.startsWith("..");
+}
 
 export interface DocRoutesOptions {
   db: Database.Database;
@@ -91,8 +104,54 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos, client }: D
     if (!repoPath) {
       return reply.code(404).send({ error: `unknown repo: ${repo}` });
     }
+
+    const edit = db
+      .prepare("SELECT content FROM doc_edits WHERE repo = ? AND file_path = ? ORDER BY created_at DESC LIMIT 1")
+      .get(repo, path) as { content: string } | undefined;
+
+    if (edit) {
+      return { repo, path, format: path.endsWith(".html") ? "html" : "md", content: edit.content, source: "edit" };
+    }
+
     const { content, format } = readDocContent(repoPath, path);
-    return { repo, path, format, content };
+    return { repo, path, format, content, source: "disk" };
+  });
+
+  app.put<{
+    Body: { repo: string; path: string; content: string; commit_to_disk?: boolean; edited_by?: string };
+  }>("/api/docs/content", async (request, reply) => {
+    const { repo, path, content, commit_to_disk = false, edited_by = "consus" } = request.body;
+
+    const repoPath = repos[repo];
+    if (!repoPath) {
+      return reply.code(400).send({ error: `unknown repo: ${repo}` });
+    }
+    if (!isEditablePath(repoPath, path)) {
+      return reply.code(400).send({ error: "only .pHive/epics docs are editable" });
+    }
+
+    const existing = db
+      .prepare(
+        "SELECT id FROM doc_edits WHERE repo = ? AND file_path = ? AND content = ? ORDER BY created_at DESC LIMIT 1",
+      )
+      .get(repo, path, content) as { id: string } | undefined;
+
+    if (existing) {
+      return { edit_id: existing.id, committed: false, deduped: true };
+    }
+
+    const editId = `e-${randomUUID()}`;
+    db.prepare(
+      "INSERT INTO doc_edits (id, repo, file_path, content, edited_by, committed_to_disk) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(editId, repo, path, content, edited_by, commit_to_disk ? 1 : 0);
+
+    if (commit_to_disk) {
+      const fullPath = join(repoPath, path);
+      await mkdir(dirname(fullPath), { recursive: true });
+      await writeFile(fullPath, content, "utf-8");
+    }
+
+    return { edit_id: editId, committed: commit_to_disk };
   });
 
   app.post<{ Params: { id: string } }>("/api/docs/:id/fire", async (request, reply) => {

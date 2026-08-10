@@ -1,0 +1,65 @@
+name: consus-v1-core-fa982783
+title: Consus v1 Core - Question-Park and Doc-Fire Flows
+target_codebase: /Users/dostal/.minerva/runs/694b980e-c5b7-4053-8d56-b2c22495f702/workspace
+methodology: tdd
+version_bump: minor
+sidecar_retention: transient
+
+git_flow:
+  base_branch: main
+  branch_strategy: per-epic
+
+description: |
+  Implement the two foundational flows for Consus v1:
+  1. Minerva question-park → Consus answer → resume (async clarification loop)
+  2. Editable docs → fire ticket (doc-drives-build loop)
+
+  Both flows leverage existing Multica integration and hive plugin ticket mechanism.
+
+planning_team:
+  matched_tags: []
+  roster: [orchestrator]
+  per_tag_reasoning: {}
+  confidence: 0.9
+  gate_decisions: {}
+
+stories:
+  - id: cv1-01-schema-migration
+    title: Add SQLite schema for parked questions, doc edits, and fired tickets
+    complexity: low
+    depends_on: []
+
+  - id: cv1-02-questions-api
+    title: Implement questions API (create, list, answer)
+    complexity: medium
+    depends_on: [cv1-01-schema-migration]
+
+  - id: cv1-03-doc-edit-api
+    title: Implement doc editing API (save to SQLite, optionally commit to disk)
+    complexity: medium
+    depends_on: [cv1-01-schema-migration]
+
+  - id: cv1-04-fire-ticket-api
+    title: Implement fire ticket API (create Multica issue from doc edit)
+    complexity: medium
+    depends_on: [cv1-03-doc-edit-api]
+
+  - id: cv1-05-questions-ui
+    title: Build question inbox UI (list and answer parked questions)
+    complexity: medium
+    depends_on: [cv1-02-questions-api]
+
+  - id: cv1-06-doc-editor-ui
+    title: Build doc editor UI (edit, save, fire)
+    complexity: medium
+    depends_on: [cv1-03-doc-edit-api, cv1-04-fire-ticket-api]
+
+  - id: cv1-07-fire-history-ui
+    title: Build fire history view (audit log of fired tickets)
+    complexity: low
+    depends_on: [cv1-04-fire-ticket-api]
+
+  - id: cv1-08-e2e-integration
+    title: E2E tests for question-park and doc-fire flows
+    complexity: medium
+    depends_on: [cv1-05-questions-ui, cv1-06-doc-editor-ui, cv1-07-fire-history-ui]
