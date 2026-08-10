@@ -12,6 +12,13 @@ function tableNames(db: Database.Database): string[] {
     .map((row) => (row as { name: string }).name);
 }
 
+function tableColumns(db: Database.Database, tableName: string) {
+  return db
+    .prepare(`PRAGMA table_info(${tableName})`)
+    .all()
+    .map((row) => row as { name: string; type: string; notnull: number; dflt_value: string | null; pk: number });
+}
+
 describe("runMigration", () => {
   let dbPath: string;
 
@@ -62,6 +69,93 @@ describe("runMigration", () => {
 
     const row = db.prepare("SELECT id FROM items WHERE id = ?").get("item-1");
     expect(row).toBeDefined();
+
+    db.close();
+  });
+
+  it("creates the v1 core schema tables with expected columns", () => {
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
+    const db = new Database(dbPath);
+
+    runMigration(db);
+
+    expect(tableColumns(db, "parked_questions")).toEqual([
+      expect.objectContaining({ name: "id", type: "TEXT", pk: 1 }),
+      expect.objectContaining({ name: "agent_id", type: "TEXT", notnull: 1 }),
+      expect.objectContaining({ name: "agent_name", type: "TEXT", notnull: 1 }),
+      expect.objectContaining({ name: "context", type: "TEXT" }),
+      expect.objectContaining({ name: "question", type: "TEXT", notnull: 1 }),
+      expect.objectContaining({ name: "parked_workflow_id", type: "TEXT" }),
+      expect.objectContaining({ name: "callback_url", type: "TEXT" }),
+      expect.objectContaining({ name: "multica_issue_id", type: "TEXT" }),
+      expect.objectContaining({ name: "resolved", type: "INTEGER", dflt_value: "0" }),
+      expect.objectContaining({ name: "answer", type: "TEXT" }),
+      expect.objectContaining({ name: "answered_by", type: "TEXT" }),
+      expect.objectContaining({ name: "answered_at", type: "TEXT" }),
+      expect.objectContaining({ name: "created_at", type: "TEXT", dflt_value: "CURRENT_TIMESTAMP" }),
+    ]);
+    expect(tableColumns(db, "doc_edits")).toEqual([
+      expect.objectContaining({ name: "id", type: "TEXT", pk: 1 }),
+      expect.objectContaining({ name: "repo", type: "TEXT", notnull: 1 }),
+      expect.objectContaining({ name: "file_path", type: "TEXT", notnull: 1 }),
+      expect.objectContaining({ name: "content", type: "TEXT", notnull: 1 }),
+      expect.objectContaining({ name: "edited_by", type: "TEXT", notnull: 1 }),
+      expect.objectContaining({ name: "committed_to_disk", type: "INTEGER", dflt_value: "0" }),
+      expect.objectContaining({ name: "created_at", type: "TEXT", dflt_value: "CURRENT_TIMESTAMP" }),
+    ]);
+    expect(tableColumns(db, "fired_tickets")).toEqual([
+      expect.objectContaining({ name: "id", type: "TEXT", pk: 1 }),
+      expect.objectContaining({ name: "edit_id", type: "TEXT", notnull: 1 }),
+      expect.objectContaining({ name: "multica_issue_id", type: "TEXT", notnull: 1 }),
+      expect.objectContaining({ name: "target_repo", type: "TEXT", notnull: 1 }),
+      expect.objectContaining({ name: "fired_by", type: "TEXT", notnull: 1 }),
+      expect.objectContaining({ name: "fired_at", type: "TEXT", dflt_value: "CURRENT_TIMESTAMP" }),
+    ]);
+
+    db.close();
+  });
+
+  it("can insert and query v1 core schema rows", () => {
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
+    const db = new Database(dbPath);
+
+    runMigration(db);
+    db.prepare(
+      "INSERT INTO parked_questions (id, agent_id, agent_name, context, question) VALUES (?, ?, ?, ?, ?)",
+    ).run("question-1", "agent-1", "Auriga", "while editing docs", "What repo should receive this?");
+    db.prepare(
+      "INSERT INTO doc_edits (id, repo, file_path, content, edited_by) VALUES (?, ?, ?, ?, ?)",
+    ).run("edit-1", "mdostal/consus", "docs/example.md", "# Draft", "auriga");
+    db.prepare(
+      "INSERT INTO fired_tickets (id, edit_id, multica_issue_id, target_repo, fired_by) VALUES (?, ?, ?, ?, ?)",
+    ).run("ticket-1", "edit-1", "PAN-9000", "mdostal/consus", "auriga");
+
+    expect(db.prepare("SELECT resolved FROM parked_questions WHERE id = ?").get("question-1")).toEqual({
+      resolved: 0,
+    });
+    expect(db.prepare("SELECT committed_to_disk FROM doc_edits WHERE id = ?").get("edit-1")).toEqual({
+      committed_to_disk: 0,
+    });
+    expect(db.prepare("SELECT edit_id FROM fired_tickets WHERE id = ?").get("ticket-1")).toEqual({
+      edit_id: "edit-1",
+    });
+
+    db.close();
+  });
+
+  it("enforces fired_tickets edit_id references", () => {
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
+    const db = new Database(dbPath);
+
+    runMigration(db);
+
+    expect(() =>
+      db
+        .prepare(
+          "INSERT INTO fired_tickets (id, edit_id, multica_issue_id, target_repo, fired_by) VALUES (?, ?, ?, ?, ?)",
+        )
+        .run("ticket-1", "missing-edit", "PAN-9000", "mdostal/consus", "auriga"),
+    ).toThrow(/FOREIGN KEY constraint failed/);
 
     db.close();
   });
