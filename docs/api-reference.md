@@ -81,6 +81,52 @@ or without one). Writes an append-only `audit_log` entry and marks the item deci
 > `web/src/features/decisions/answer-shapes/types.ts`) resolves to a single `newStatus` string
 > before calling this endpoint; the server itself is verdict-shape-agnostic.
 
+## Questions (parked workflow blockers)
+
+### `POST /api/questions`
+Parks a blocking agent question. Creates a local `parked_questions` row, creates a Multica
+issue labeled `hive:question`, stores the returned Multica issue ID, and returns both IDs.
+
+**Request body:**
+```json
+{
+  "agent_id": "agent-uuid",
+  "agent_name": "Minerva",
+  "question": "Which repo should receive this implementation?",
+  "context": "optional background",
+  "parked_workflow_id": "optional workflow id",
+  "callback_url": "optional best-effort resume callback"
+}
+```
+
+**Response 201:** `{ "question_id": "question-...", "multica_issue_id": "..." }`
+
+**Response 400:** `{ "error": "agent_id, agent_name, and question are required" }`
+
+**Response 503:** `{ "error": "Multica issue create failed: <reason>" }`
+
+### `GET /api/questions`
+Lists only unresolved parked questions (`resolved = 0`), oldest first.
+
+**Response 200:** array of `parked_questions` rows.
+
+### `POST /api/questions/:id/answer`
+Submits the human answer for an unresolved parked question. Writes the answer as a Multica
+comment, caches that comment locally, marks the question resolved, and returns the Multica
+comment ID. If `callback_url` was supplied when the question was parked, Consus also attempts
+a best-effort POST after the durable local/Multica updates complete.
+
+**Request body:** `{ "answer": string, "actor"?: string }`
+
+**Response 200:** `{ "ok": true, "comment_id": "..." }`
+
+**Response 400:** `{ "error": "answer is required" }`
+
+**Response 404:** `{ "error": "question not found" }` — returned when the question ID is missing
+or the question is already resolved.
+
+**Response 503:** `{ "error": "Multica comment write failed: <reason>" }`
+
 ## Docs (generated briefs/PRDs/architecture/specs)
 
 ### `GET /api/docs?project=<name>`

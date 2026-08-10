@@ -6,6 +6,7 @@ import { registerDocRoutes } from "./routes/docs.js";
 import { registerKbRoutes } from "./routes/kb.js";
 import { registerArtifactLinkRoutes } from "./routes/artifact-links.js";
 import { registerDecisionRoutes } from "./routes/decisions.js";
+import { registerQuestionRoutes } from "./routes/questions.js";
 import { registerAttachmentRoutes } from "./routes/attachments.js";
 import { registerDiagramRoutes } from "./routes/diagrams.js";
 import { registerEpicRoutes } from "./routes/epics.js";
@@ -100,6 +101,7 @@ export function buildServer({
   registerKbRoutes(app, { db });
   registerArtifactLinkRoutes(app, { db });
   registerDecisionRoutes(app, { db, client, decisionLogPath });
+  registerQuestionRoutes(app, { db, client });
   registerAttachmentRoutes(app, { db, storageAdapter: finalStorageAdapter });
   registerDiagramRoutes(app, { db, client, repos });
   registerEpicRoutes(app, { db, client, repos });
