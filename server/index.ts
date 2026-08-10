@@ -10,11 +10,7 @@ import { registerQuestionRoutes } from "./routes/questions.js";
 import { registerAttachmentRoutes } from "./routes/attachments.js";
 import { registerDiagramRoutes } from "./routes/diagrams.js";
 import { registerEpicRoutes } from "./routes/epics.js";
-<<<<<<< HEAD
 import { registerWorkflowRoutes } from "./routes/workflows.js";
-=======
-import { registerQuestionRoutes } from "./routes/questions.js";
->>>>>>> origin/feat/PAN-8233
 import { loadProjectRegistry } from "./config/project-registry.js";
 import { HttpMulticaClient, type MulticaClient } from "./adapters/multica/client.js";
 import { createStorageAdapter, type StorageAdapter } from "./storage/index.js";

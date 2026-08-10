@@ -1,14 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
-<<<<<<< HEAD
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
-=======
-import { basename, dirname, join } from "node:path";
-import { mkdir, writeFile } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
->>>>>>> origin/feat/1a1679a9-6785-4b14-b4c1-068fb6eb3df8
 import { queryDocIndex, readDocContent, type DocIndexRow } from "../adapters/doc-scanner/index.js";
 import type { MulticaClient } from "../adapters/multica/client.js";
 
@@ -122,24 +116,14 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos, client }: D
     }
 
     const edit = db
-<<<<<<< HEAD
       .prepare("SELECT content FROM doc_edits WHERE repo = ? AND file_path = ? ORDER BY created_at DESC LIMIT 1")
       .get(repo, path) as { content: string } | undefined;
 
     if (edit) {
       return { repo, path, format: path.endsWith(".html") ? "html" : "md", content: edit.content, source: "edit" };
-=======
-      .prepare("SELECT content FROM doc_edits WHERE repo=? AND file_path=? ORDER BY created_at DESC LIMIT 1")
-      .get(repo, path) as { content: string } | undefined;
-
-    if (edit) {
-      return { repo, path, format: "markdown", content: edit.content, source: "edit" };
->>>>>>> origin/feat/1a1679a9-6785-4b14-b4c1-068fb6eb3df8
     }
-
     const { content, format } = readDocContent(repoPath, path);
     return { repo, path, format, content, source: "disk" };
-<<<<<<< HEAD
   });
 
   app.put<{
@@ -261,8 +245,6 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos, client }: D
     }
 
     return { edit_id: editId, committed: commit_to_disk };
-=======
->>>>>>> origin/feat/1a1679a9-6785-4b14-b4c1-068fb6eb3df8
   });
 
   app.put<{ Body: { repo: string; path: string; content: string; commit_to_disk?: boolean; edited_by?: string } }>(
