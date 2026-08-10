@@ -14,6 +14,9 @@ import { registerWorkflowRoutes } from "./routes/workflows.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
 import { HttpMulticaClient, type MulticaClient } from "./adapters/multica/client.js";
 import { createStorageAdapter, type StorageAdapter } from "./storage/index.js";
+import fastifyStatic from "@fastify/static";
+import { fileURLToPath } from "node:url";
+import { dirname as _pdir, join as _pjoin } from "node:path";
 
 export type ConsusMode = "standalone" | "plugin";
 
@@ -132,6 +135,14 @@ export function buildServer({
       await pluginContext?.lifecycle?.onStop?.();
     }
     db.close();
+  });
+
+  // Serve built web UI (dist-web) with SPA fallback (non-/api -> index.html)
+  const _webDir = _pjoin(_pdir(fileURLToPath(import.meta.url)), "../dist-web");
+  app.register(fastifyStatic, { root: _webDir, prefix: "/" });
+  app.setNotFoundHandler((req, reply) => {
+    if (req.url.startsWith("/api")) { reply.code(404).send({ error: "Not Found", url: req.url }); return; }
+    reply.sendFile("index.html");
   });
 
   return app;
