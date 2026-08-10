@@ -105,7 +105,10 @@ export type MulticaStatusUpdateResult =
   | { ok: true; status: string }
   | { ok: false; error: string };
 
+export type MulticaListCommentsResult = { ok: true; comments: { id: string; author: string; body: string; created_at: string }[] } | { ok: false; error: string };
 export interface MulticaClient {
+  getIssueComments(issueId: string): Promise<MulticaListCommentsResult>;
+  getIssueChildren(issueId: string): Promise<MulticaListResult>;
   writeComment(input: WriteCommentInput): Promise<MulticaWriteResult>;
   listIssues(input?: ListIssuesInput): Promise<MulticaListResult>;
   getIssue(key: string): Promise<MulticaGetIssueResult>;
@@ -173,6 +176,29 @@ export class HttpMulticaClient implements MulticaClient {
     this.token = token ?? resolveMulticaToken();
     this.fetchImpl = fetchImpl ?? fetch;
     this.timeoutMs = timeoutMs;
+  }
+
+  async getIssueComments(issueId: string): Promise<MulticaListCommentsResult> {
+    try {
+      const response = await this.fetchJson(`${this.serverUrl}/issues/${encodeURIComponent(issueId)}/comments`, { method: "GET" });
+      if (!response.ok) return { ok: false, error: `HTTP ${response.status}` };
+      const raw = await response.json();
+      return { ok: true, comments: Array.isArray(raw) ? raw : ((raw as any).comments || (raw as any).data || (raw as any).items || []) };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  }
+
+  async getIssueChildren(issueId: string): Promise<MulticaListResult> {
+    try {
+      const response = await this.fetchJson(`${this.serverUrl}/issues/${encodeURIComponent(issueId)}/children`, { method: "GET" });
+      if (!response.ok) return { ok: false, error: `HTTP ${response.status}` };
+      const raw = unwrapIssues(await response.json());
+      const issues = raw.map(normalizeIssue).filter((i): i is MulticaIssue => i !== null);
+      return { ok: true, issues };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
   }
 
   async writeComment({ itemId, author, body }: WriteCommentInput): Promise<MulticaWriteResult> {

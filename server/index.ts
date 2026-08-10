@@ -6,6 +6,7 @@ import { registerKbRoutes } from "./routes/kb.js";
 import { registerArtifactLinkRoutes } from "./routes/artifact-links.js";
 import { registerDecisionRoutes } from "./routes/decisions.js";
 import { registerAttachmentRoutes } from "./routes/attachments.js";
+import { epicsRoutes } from "./routes/epics.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
 import { HttpMulticaClient, type MulticaClient } from "./adapters/multica/client.js";
 import { createStorageAdapter, type StorageAdapter } from "./storage/index.js";
@@ -26,6 +27,12 @@ const UNCONFIGURED_MULTICA_CLIENT: MulticaClient = {
     return { ok: false, error: "Multica client not configured" };
   },
   async unblockIssue() {
+    return { ok: false, error: "Multica client not configured" };
+  },
+  async getIssueComments() {
+    return { ok: false, error: "Multica client not configured" };
+  },
+  async getIssueChildren() {
     return { ok: false, error: "Multica client not configured" };
   },
 };
@@ -59,6 +66,7 @@ export function buildServer({
   registerArtifactLinkRoutes(app, { db });
   registerDecisionRoutes(app, { db, client, decisionLogPath });
   registerAttachmentRoutes(app, { db, storageAdapter: finalStorageAdapter });
+  app.register(epicsRoutes, { prefix: "/api/epics", client, repos });
 
   const healthHandler = async () => {
     const row = db.prepare("SELECT 1 AS ok").get() as { ok: number } | undefined;

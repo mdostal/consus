@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { runMigration } from "../../db/migrate.js";
 import { scanRepo } from "../../adapters/doc-scanner/index.js";
-import { composeLivingDoc } from "./compose.js";
+import { composeLivingDoc, composeEpicDocs } from "./compose.js";
 
 describe("composeLivingDoc", () => {
   let repoDir: string;
@@ -66,5 +66,35 @@ describe("composeLivingDoc", () => {
     // fields (e.g. no `assignee`, `column`, `sprint`) — only references.
     expect(view).not.toHaveProperty("assignee");
     expect(view).not.toHaveProperty("column");
+  });
+});
+
+
+describe("composeEpicDocs", () => {
+  let repoDir: string;
+  beforeEach(() => {
+    repoDir = mkdtempSync(join(tmpdir(), "consus-repo2-"));
+    mkdirSync(join(repoDir, ".pHive", "epics", "epic-1", "docs"), { recursive: true });
+    writeFileSync(join(repoDir, ".pHive", "epics", "epic-1", "docs", "design-discussion.md"), "# disk design");
+  });
+
+  afterEach(() => {
+    rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it("merges Multica and disk docs with provenance", async () => {
+    const mockClient = {
+      getIssue: () => Promise.resolve({ ok: true, issue: { id: "epic-1", title: "Epic 1" } }),
+      getIssueChildren: () => Promise.resolve({ ok: true, issues: [{ id: "story-1", title: "Story 1" }] }),
+      getIssueComments: () => Promise.resolve({ ok: true, comments: [] })
+    } as any;
+    
+    const docs = await composeEpicDocs("epic-1", mockClient, repoDir);
+    expect(docs).not.toBeNull();
+    if (docs) {
+      expect(docs.find(d => d.type === "design-discussion")?.provenance).toBe("disk");
+      expect(docs.find(d => d.type === "epic")?.provenance).toBe("multica");
+      expect(docs.find(d => d.type === "story")?.provenance).toBe("multica");
+    }
   });
 });
