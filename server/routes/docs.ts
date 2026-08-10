@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
-import { basename } from "node:path";
+import { basename, join } from "node:path";
+import { writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { queryDocIndex, readDocContent, type DocIndexRow } from "../adapters/doc-scanner/index.js";
 import type { MulticaClient } from "../adapters/multica/client.js";
 
@@ -59,6 +61,10 @@ ${content}
 Fired from Consus on ${firedAt}`;
 }
 
+export function computeContentHash(content: string): string {
+  return createHash("sha256").update(content).digest("hex").slice(0, 12);
+}
+
 export function registerDocRoutes(app: FastifyInstance, { db, repos, client }: DocRoutesOptions): void {
   app.get<{ Querystring: { project?: string } }>("/api/docs", async (request) => {
     const { project } = request.query;
@@ -91,8 +97,44 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos, client }: D
     if (!repoPath) {
       return reply.code(404).send({ error: `unknown repo: ${repo}` });
     }
+    const doc = db.prepare("SELECT editable_content FROM doc_index WHERE repo = ? AND file_path = ?").get(repo, path) as StoredDocRow | undefined;
+    if (doc && typeof doc.editable_content === "string" && doc.editable_content.trim()) {
+      return { repo, path, format: path.endsWith(".html") ? "html" : "md", content: doc.editable_content };
+    }
     const { content, format } = readDocContent(repoPath, path);
     return { repo, path, format, content };
+  });
+
+  app.put<{ Params: { id: string }; Querystring: { disk_sync?: string }; Body: { content: string; author?: string } }>("/api/docs/:id", async (request, reply) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return reply.code(400).send({ error: "invalid doc id" });
+    }
+
+    const doc = getDocById(db, id);
+    if (!doc) {
+      return reply.code(404).send({ error: "doc not found" });
+    }
+
+    const repoPath = repos[doc.repo];
+    if (!repoPath) {
+      return reply.code(404).send({ error: `unknown repo: ${doc.repo}` });
+    }
+
+    const { content } = request.body;
+    const hash = computeContentHash(content);
+    const now = new Date().toISOString();
+
+    db.prepare(
+      `UPDATE doc_index SET editable_content = ?, content_hash = ?, last_modified = ? WHERE id = ?`
+    ).run(content, hash, now, id);
+
+    if (request.query.disk_sync === "true") {
+      const absPath = join(repoPath, doc.file_path);
+      writeFileSync(absPath, content, "utf-8");
+    }
+
+    return { success: true };
   });
 
   app.post<{ Params: { id: string } }>("/api/docs/:id/fire", async (request, reply) => {

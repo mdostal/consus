@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -145,7 +145,6 @@ describe("GET /api/docs", () => {
   });
 
   it("prefers editable_content when that dependent edit column exists", async () => {
-    db.exec("ALTER TABLE doc_index ADD COLUMN editable_content TEXT");
     db.prepare("UPDATE doc_index SET editable_content = ? WHERE id = ?").run("# Edited PRD\n\noperator version", docId(db));
     await app.close();
     const createIssue = vi.fn().mockResolvedValue({
@@ -205,5 +204,94 @@ describe("GET /api/docs", () => {
       multica_issue_url: string | null;
     };
     expect(row).toEqual({ fired_at: null, multica_issue_id: null, multica_issue_url: null });
+  });
+});
+
+describe("PUT /api/docs/:id", () => {
+  let repoDir: string;
+  let db: Database.Database;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    repoDir = mkdtempSync(join(tmpdir(), "consus-repo-"));
+    mkdirSync(join(repoDir, ".pHive", "planning"), { recursive: true });
+    writeFileSync(join(repoDir, ".pHive", "planning", "prd.md"), "# PRD\n\nold content");
+
+    db = new Database(":memory:");
+    runMigration(db);
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
+
+    app = Fastify();
+    registerDocRoutes(app, { db, repos: { consus: repoDir } });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+    rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it("updates doc_index.editable_content and last_modified on success", async () => {
+    const id = docId(db);
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/docs/${id}`,
+      payload: { content: "new content", author: "test" },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    const row = db.prepare("SELECT editable_content, last_modified, content_hash FROM doc_index WHERE id = ?").get(id) as any;
+    expect(row.editable_content).toBe("new content");
+    expect(row.last_modified).toEqual(expect.any(String));
+    // Check it's a 12 char hex string hash
+    expect(row.content_hash).toMatch(/^[a-f0-9]{12}$/);
+  });
+
+  it("returns 404 for an invalid doc ID", async () => {
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/docs/9999",
+      payload: { content: "new content", author: "test" },
+    });
+
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("writes to disk when disk_sync=true is provided", async () => {
+    const id = docId(db);
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/docs/${id}?disk_sync=true`,
+      payload: { content: "disk synced content", author: "test" },
+    });
+
+    expect(res.statusCode).toBe(200);
+
+    const fileContent = readFileSync(join(repoDir, ".pHive", "planning", "prd.md"), "utf-8");
+    expect(fileContent).toBe("disk synced content");
+  });
+
+  it("returns the latest content when queried after multiple edits", async () => {
+    const id = docId(db);
+    await app.inject({
+      method: "PUT",
+      url: `/api/docs/${id}`,
+      payload: { content: "first edit" },
+    });
+
+    await app.inject({
+      method: "PUT",
+      url: `/api/docs/${id}`,
+      payload: { content: "second edit" },
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/docs/content?repo=consus&path=${encodeURIComponent(join(".pHive", "planning", "prd.md"))}`,
+    });
+
+    expect(res.json().content).toBe("second edit");
   });
 });
