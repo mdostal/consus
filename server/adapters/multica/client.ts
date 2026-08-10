@@ -85,6 +85,8 @@ export interface MulticaIssue {
   labels: string[];
   updatedAt: string | null;
   createdAt: string | null;
+  /** parent issue id, e.g. an epic's id for a story issue — null for a root/top-level issue. */
+  parentId: string | null;
 }
 
 export interface ListIssuesInput {
@@ -140,6 +142,7 @@ function normalizeIssue(raw: unknown): MulticaIssue | null {
     labels,
     updatedAt: asString(raw.updated_at),
     createdAt: asString(raw.created_at),
+    parentId: asString(raw.parent_issue_id),
   };
 }
 
