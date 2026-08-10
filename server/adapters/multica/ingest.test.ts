@@ -151,6 +151,9 @@ describe("syncMulticaQueue", () => {
       async writeComment() {
         return { ok: true, multicaCommentId: "unused" };
       },
+      async createIssue() {
+        return { ok: false, error: "unused" };
+      },
       async listIssues() {
         return { ok: true, issues };
       },
@@ -159,6 +162,9 @@ describe("syncMulticaQueue", () => {
       },
       async updateIssueStatus(_issueId: string, status: string) {
         return { ok: true, status };
+      },
+      async unblockIssue() {
+        return { ok: false, error: "unused" };
       },
     };
   }
@@ -180,6 +186,9 @@ describe("syncMulticaQueue", () => {
       async writeComment() {
         return { ok: true, multicaCommentId: "unused" };
       },
+      async createIssue() {
+        return { ok: false, error: "unused" };
+      },
       async listIssues() {
         return { ok: false, error: "Multica returned HTTP 500" };
       },
@@ -188,6 +197,9 @@ describe("syncMulticaQueue", () => {
       },
       async updateIssueStatus(_issueId: string, status: string) {
         return { ok: true, status };
+      },
+      async unblockIssue() {
+        return { ok: false, error: "unused" };
       },
     };
 

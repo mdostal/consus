@@ -53,6 +53,9 @@ export function runMigration(db: Database.Database): void {
       file_path TEXT NOT NULL,
       content_hash TEXT NOT NULL,
       last_scanned_at TEXT NOT NULL,
+      fired_at TEXT,
+      multica_issue_id TEXT,
+      multica_issue_url TEXT,
       UNIQUE(repo, file_path)
     );
 
@@ -160,4 +163,7 @@ export function runMigration(db: Database.Database): void {
   addColumnIfMissing(db, "kb_entries", "source_repo", "TEXT");
   addColumnIfMissing(db, "kb_versions", "state", "TEXT NOT NULL DEFAULT 'published'");
   addColumnIfMissing(db, "attachments", "deleted_at", "TEXT");
+  addColumnIfMissing(db, "doc_index", "fired_at", "TEXT");
+  addColumnIfMissing(db, "doc_index", "multica_issue_id", "TEXT");
+  addColumnIfMissing(db, "doc_index", "multica_issue_url", "TEXT");
 }
