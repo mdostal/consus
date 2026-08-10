@@ -1,0 +1,159 @@
+id: cv1-02-questions-api
+epic: consus-v1-core-fa982783
+title: Implement questions API (create, list, answer)
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: [cv1-01-schema-migration]
+
+description: |
+  Implement three REST endpoints for the question-park → answer → resume flow:
+  - POST /api/questions — Minerva calls this to park a blocking question
+  - GET /api/questions — list open (unresolved) questions
+  - POST /api/questions/:id/answer — human submits answer, resumes workflow
+
+  Each endpoint integrates with Multica (create issue for question, write comment for answer)
+  and local SQLite (persist question state, track resolution).
+
+acceptance_criteria:
+  - "POST /api/questions creates SQLite row + Multica issue with hive:question label"
+  - "GET /api/questions returns only unresolved questions (resolved=0)"
+  - "POST /api/questions/:id/answer writes Multica comment, marks question resolved, returns comment_id"
+  - "404 if question ID not found or already resolved"
+  - "503 if Multica unavailable"
+
+steps:
+  - id: research
+    description: Review existing decisions.ts route pattern for Multica integration
+    agent: researcher
+  - id: test-spec
+    description: |
+      Write failing tests for questions routes (server/routes/questions.test.ts):
+      - POST /api/questions with valid payload creates row + Multica issue
+      - POST /api/questions without required fields returns 400
+      - GET /api/questions returns only resolved=0 rows
+      - POST /api/questions/:id/answer with valid answer writes comment + resolves
+      - POST /api/questions/:id/answer on already-resolved question returns 400
+      - Multica client errors surface as 503
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: |
+      Create server/routes/questions.ts with three route handlers:
+
+      1. POST /api/questions
+         - Validate body (agent_id, agent_name, question required)
+         - Generate question ID
+         - Insert into parked_questions table
+         - Create Multica issue via client.createIssue({
+             title: `[Question] ${truncate(question, 80)}`,
+             description: question body with context + agent info,
+             labels: ['hive:question']
+           })
+         - Store multica_issue_id in row
+         - Return {question_id, multica_issue_id}
+
+      2. GET /api/questions
+         - SELECT * FROM parked_questions WHERE resolved=0 ORDER BY created_at ASC
+         - Return array of question objects
+
+      3. POST /api/questions/:id/answer
+         - Validate body (answer required, actor optional)
+         - Fetch question row, return 400 if resolved=1
+         - Write Multica comment via writeCommentAndCache (reuse from decisions.ts)
+         - UPDATE parked_questions SET resolved=1, answer=?, answered_by=?, answered_at=? WHERE id=?
+         - If callback_url present, optionally POST to it (nice-to-have, not blocking)
+         - Return {ok: true, comment_id}
+
+      Register routes in server/index.ts alongside existing decision routes.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: |
+      Verify:
+      - Error handling matches decisions.ts pattern
+      - Multica client reuse is correct
+      - Tests cover happy path + error cases
+      - Question lifecycle (create → list → answer → no longer listed) works
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit questions API implementation
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/dostal/.minerva/runs/694b980e-c5b7-4053-8d56-b2c22495f702/workspace
+  tech_stack:
+    framework: fastify
+    database: better-sqlite3
+    integration: multica-client
+  key_files:
+    - path: server/routes/decisions.ts
+      purpose: Reference for Multica integration pattern (writeCommentAndCache, error handling)
+    - path: server/adapters/multica/client.ts
+      purpose: MulticaClient interface (writeComment, createIssue methods)
+    - path: server/index.ts
+      purpose: Route registration point
+
+files_to_modify:
+  - file: server/routes/questions.ts
+    change: Create new file with POST/GET/answer endpoints
+  - file: server/routes/questions.test.ts
+    change: Create test file with coverage for all three endpoints
+  - file: server/index.ts
+    change: Import and register questions routes
+
+code_examples:
+  - title: Multica comment write pattern
+    file: server/routes/decisions.ts
+    snippet: |
+      const commentResult = await writeCommentAndCache(db, client, {
+        itemId: issue.id,
+        cacheItemId: localItem.itemId,
+        author: actor,
+        body: commentBody,
+      });
+      if (!commentResult.ok) {
+        reply.code(502);
+        return { error: `Multica comment write failed: ${commentResult.error}` };
+      }
+
+  - title: Route registration pattern
+    file: server/index.ts
+    snippet: |
+      import { registerDecisionRoutes } from "./routes/decisions.js";
+      // ...
+      registerDecisionRoutes(app, { db, client, decisionLogPath });
+
+design_decisions:
+  - decision: Reuse writeCommentAndCache from decisions.ts for answer comments
+    rationale: Same Multica integration pattern, already tested, caches comment_id locally
+  - decision: Questions have separate table, not items table
+    rationale: Different lifecycle and fields (parked_workflow_id, callback_url)
+  - decision: callback_url POST is optional/best-effort
+    rationale: v1 uses polling, callback is optimization — don't block answer on callback failure
+
+risks:
+  - severity: medium
+    description: Multica issue create might fail (network, auth, rate limit)
+    mitigation: Return 503 with error message, question row still created for retry
+  - severity: low
+    description: Answer comment write succeeds but SQLite update fails
+    mitigation: Wrap in transaction if supported, or accept eventual consistency (comment exists, row updated on retry)
+
+references:
+  - path: .pHive/epics/consus-v1-core-fa982783/docs/design-discussion.md
+    relevant_excerpt: |
+      §1 Flow 1: Minerva POSTs to /api/questions with agent_id, question, context.
+      Consus creates SQLite row + Multica issue with hive:question label.
+      Human answers via POST /api/questions/:id/answer → writes Multica comment, marks resolved.
+  - path: .pHive/epics/consus-v1-core-fa982783/docs/research-brief.md
+    relevant_excerpt: |
+      Comment-Based Answers pattern from decisions.ts:
+      - Question/prompt goes into Multica comment body
+      - Comment ID cached in local SQLite for audit trail
+
+cross_cutting:
+  - concern: documentation
+    action: Add API documentation to docs/api.md (or create if missing) describing the three question endpoints

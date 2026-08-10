@@ -1,0 +1,213 @@
+id: cv1-05-questions-ui
+epic: consus-v1-core-fa982783
+title: Build question inbox UI (list and answer parked questions)
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: [cv1-02-questions-api]
+
+description: |
+  Create a React view for the question inbox showing parked questions from agents:
+  - Route: /questions
+  - Displays table of open questions (agent, context, question text)
+  - Answer textarea + Submit button per question
+  - Answered questions disappear from list
+  - Loading/error states for API calls
+
+acceptance_criteria:
+  - "Given: Navigate to /questions
+     When: Page loads
+     Then: Fetches and displays open questions from GET /api/questions"
+  - "Given: Question displayed with answer textarea
+     When: User types answer and clicks Submit
+     Then: POSTs to /api/questions/:id/answer, question disappears on success"
+  - "Given: Multica unavailable (503)
+     When: Fetching questions
+     Then: Shows error message 'Unable to load questions'"
+  - "Given: No open questions
+     When: Page loads
+     Then: Shows empty state 'No parked questions'"
+
+steps:
+  - id: research
+    description: Review existing web/src/ structure for React component patterns
+    agent: researcher
+  - id: test-spec
+    description: |
+      Write component tests for QuestionsView (web/src/views/QuestionsView.test.tsx):
+      - Renders loading state initially
+      - Fetches questions on mount via GET /api/questions
+      - Displays questions in table with agent, context, question columns
+      - Answer form submission calls POST /api/questions/:id/answer
+      - Question removed from list after successful answer
+      - Shows error state if fetch fails
+      - Shows empty state if no questions
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: |
+      Create web/src/views/QuestionsView.tsx:
+
+      import { useState, useEffect } from 'react';
+      import { apiClient } from '../api';
+
+      interface Question {
+        id: string;
+        agent_name: string;
+        context: string | null;
+        question: string;
+        created_at: string;
+      }
+
+      export function QuestionsView() {
+        const [questions, setQuestions] = useState<Question[]>([]);
+        const [loading, setLoading] = useState(true);
+        const [error, setError] = useState<string | null>(null);
+        const [answerText, setAnswerText] = useState<Record<string, string>>({});
+
+        useEffect(() => {
+          fetchQuestions();
+        }, []);
+
+        async function fetchQuestions() {
+          try {
+            const res = await fetch('/api/questions');
+            if (!res.ok) throw new Error('Failed to fetch questions');
+            const data = await res.json();
+            setQuestions(data);
+          } catch (err) {
+            setError(err.message);
+          } finally {
+            setLoading(false);
+          }
+        }
+
+        async function submitAnswer(questionId: string) {
+          const answer = answerText[questionId];
+          if (!answer?.trim()) return;
+          try {
+            const res = await fetch(`/api/questions/${questionId}/answer`, {
+              method: 'POST',
+              headers: {'content-type': 'application/json'},
+              body: JSON.stringify({answer, actor: 'mathew'}),
+            });
+            if (!res.ok) throw new Error('Failed to submit answer');
+            setQuestions(prev => prev.filter(q => q.id !== questionId));
+            setAnswerText(prev => {const {[questionId]: _, ...rest} = prev; return rest;});
+          } catch (err) {
+            alert(`Error submitting answer: ${err.message}`);
+          }
+        }
+
+        if (loading) return <div>Loading questions...</div>;
+        if (error) return <div className="error">Unable to load questions: {error}</div>;
+        if (questions.length === 0) return <div className="empty-state">No parked questions</div>;
+
+        return (
+          <div className="questions-view">
+            <h1>Question Inbox</h1>
+            <table>
+              <thead>
+                <tr>
+                  <th>Agent</th>
+                  <th>Context</th>
+                  <th>Question</th>
+                  <th>Answer</th>
+                </tr>
+              </thead>
+              <tbody>
+                {questions.map(q => (
+                  <tr key={q.id}>
+                    <td>{q.agent_name}</td>
+                    <td>{q.context || '—'}</td>
+                    <td>{q.question}</td>
+                    <td>
+                      <textarea
+                        value={answerText[q.id] || ''}
+                        onChange={e => setAnswerText({...answerText, [q.id]: e.target.value})}
+                        placeholder="Type your answer..."
+                      />
+                      <button onClick={() => submitAnswer(q.id)}>Submit</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      Add route in web/src/App.tsx:
+      import { QuestionsView } from './views/QuestionsView';
+      // ...
+      <Route path="/questions" element={<QuestionsView />} />
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: |
+      Verify:
+      - Component fetches on mount, not on every render
+      - Answer state managed per question ID
+      - Error handling is user-friendly
+      - Tests cover loading, error, empty, and happy path states
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit questions UI
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/dostal/.minerva/runs/694b980e-c5b7-4053-8d56-b2c22495f702/workspace
+  tech_stack:
+    framework: react
+    bundler: vite
+    testing: vitest
+  key_files:
+    - path: web/src/App.tsx
+      purpose: Main app with routing, where new route will be added
+    - path: web/src/views/
+      purpose: View components directory (pattern to follow)
+
+files_to_modify:
+  - file: web/src/views/QuestionsView.tsx
+    change: Create new file with question inbox component
+  - file: web/src/views/QuestionsView.test.tsx
+    change: Create test file with component test coverage
+  - file: web/src/App.tsx
+    change: Add /questions route
+
+code_examples:
+  - title: Existing view pattern (decisions or docs)
+    file: web/src/views/
+    snippet: |
+      // Existing views use useState + useEffect for data fetching
+      // Error/loading/empty states are common patterns
+      const [items, setItems] = useState([]);
+      const [loading, setLoading] = useState(true);
+      useEffect(() => { fetchItems(); }, []);
+
+design_decisions:
+  - decision: Answer textarea per row, not modal
+    rationale: Simpler UX for answering multiple questions in sequence
+  - decision: Question removed from list after answer (optimistic UI)
+    rationale: Immediate feedback; question is resolved, no longer relevant to inbox
+  - decision: Actor hardcoded to 'mathew' for v1
+    rationale: Single-operator v1, no login system yet
+
+risks:
+  - severity: low
+    description: Large question list might not paginate
+    mitigation: v1 assumes <20 questions; add pagination in v2 if needed
+  - severity: low
+    description: Answer submission fails but question is removed from UI
+    mitigation: Add error handling to re-fetch on POST failure
+
+references:
+  - path: .pHive/epics/consus-v1-core-fa982783/docs/design-discussion.md
+    relevant_excerpt: |
+      §1 UI Changes: Question Inbox (/questions) — table of parked questions with answer textarea
+
+cross_cutting:
+  - concern: documentation
+    action: Update docs/ui-guide.md (or create) with screenshot/description of question inbox

@@ -1,0 +1,177 @@
+id: cv1-04-fire-ticket-api
+epic: consus-v1-core-fa982783
+title: Implement fire ticket API (create Multica issue from doc edit)
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: [cv1-03-doc-edit-api]
+
+description: |
+  Implement the "fire" action that creates a Multica ticket from an edited doc:
+  - POST /api/docs/:edit_id/fire — creates Multica issue with doc content as body
+  - Labels issue with hive:doc-driven for hive plugin recognition
+  - Logs fired ticket in fired_tickets table
+  - Returns Multica issue ID and URL
+
+acceptance_criteria:
+  - "POST /api/docs/:edit_id/fire creates Multica issue with doc content in body"
+  - "Issue has labels: hive:doc-driven, hive:repo:<target_repo>"
+  - "fired_tickets row created linking edit_id to multica_issue_id"
+  - "Returns {multica_issue_id, ticket_url}"
+  - "400 if edit_id not found"
+  - "400 if target_repo not in configured repos"
+  - "503 if Multica unavailable"
+
+steps:
+  - id: research
+    description: Review Multica client createIssue API, check if issue URL construction is available
+    agent: researcher
+  - id: test-spec
+    description: |
+      Write failing tests for fire endpoint (server/routes/docs.test.ts additions):
+      - POST /api/docs/:edit_id/fire with valid edit creates Multica issue
+      - Issue title derived from doc path (e.g., "design-discussion.md → Design Discussion")
+      - Issue body contains full doc content + metadata footer
+      - Issue has correct labels (hive:doc-driven, hive:repo:consus)
+      - fired_tickets row created with correct edit_id and multica_issue_id
+      - POST with invalid edit_id returns 404
+      - POST with invalid target_repo returns 400
+      - Multica client errors surface as 503
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: |
+      Extend server/routes/docs.ts with fire endpoint:
+
+      app.post<{Params: {edit_id}, Body: {target_repo, actor?, title?, context_note?}}>("/api/docs/:edit_id/fire", async (request, reply) => {
+        const {edit_id} = request.params;
+        const {target_repo, actor = "consus", title, context_note} = request.body;
+
+        // Validate target_repo exists
+        if (!repos[target_repo]) {
+          return reply.code(400).send({error: `unknown target_repo: ${target_repo}`});
+        }
+
+        // Fetch edit
+        const edit = db.prepare("SELECT * FROM doc_edits WHERE id=?").get(edit_id);
+        if (!edit) return reply.code(404).send({error: "edit not found"});
+
+        // Derive title from file path if not provided
+        const derivedTitle = title || deriveTitle(edit.file_path);
+
+        // Compose issue body
+        const body = [
+          edit.content,
+          "",
+          "---",
+          `Source: ${edit.repo}:${edit.file_path}`,
+          `Fired by: ${actor}`,
+          context_note ? `Context: ${context_note}` : null,
+        ].filter(Boolean).join("\n");
+
+        // Create Multica issue
+        const issueResult = await client.createIssue({
+          title: derivedTitle,
+          description: body,
+          labels: ['hive:doc-driven', `hive:repo:${target_repo}`],
+        });
+
+        if (!issueResult.ok) {
+          return reply.code(503).send({error: `Multica issue creation failed: ${issueResult.error}`});
+        }
+
+        // Log fired ticket
+        const ticketId = `ft-${randomUUID()}`;
+        db.prepare("INSERT INTO fired_tickets (id, edit_id, multica_issue_id, target_repo, fired_by) VALUES (?, ?, ?, ?, ?)")
+          .run(ticketId, edit_id, issueResult.issue_id, target_repo, actor);
+
+        // Construct ticket URL (Multica server URL + /issues/:id)
+        const ticketUrl = `${client.serverUrl}/issues/${issueResult.issue_id}`;
+
+        return {multica_issue_id: issueResult.issue_id, ticket_url: ticketUrl};
+      });
+
+      Helper function to derive title from path:
+      function deriveTitle(filePath: string): string {
+        const basename = filePath.split('/').pop() || 'Untitled';
+        return basename.replace(/\.md$/, '').replace(/-/g, ' ')
+          .replace(/\b\w/g, c => c.toUpperCase());
+      }
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: |
+      Verify:
+      - Issue creation uses correct Multica client method
+      - Labels are applied correctly
+      - fired_tickets audit log is complete
+      - Error handling matches pattern from questions/decisions routes
+      - Tests cover happy path + Multica errors
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit fire ticket API
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/dostal/.minerva/runs/694b980e-c5b7-4053-8d56-b2c22495f702/workspace
+  tech_stack:
+    framework: fastify
+    database: better-sqlite3
+    integration: multica-client
+  key_files:
+    - path: server/routes/docs.ts
+      purpose: Where fire endpoint will be added
+    - path: server/adapters/multica/client.ts
+      purpose: MulticaClient interface (createIssue method)
+    - path: server/index.ts
+      purpose: repos config needed for target_repo validation
+
+files_to_modify:
+  - file: server/routes/docs.ts
+    change: Add POST /api/docs/:edit_id/fire endpoint + deriveTitle helper
+  - file: server/routes/docs.test.ts
+    change: Add test coverage for fire endpoint
+
+code_examples:
+  - title: Multica issue create pattern (assumed from client interface)
+    file: server/adapters/multica/client.ts
+    snippet: |
+      interface CreateIssueInput {
+        title: string;
+        description: string;
+        labels?: string[];
+      }
+      createIssue(input: CreateIssueInput): Promise<{ok: true, issue_id: string} | {ok: false, error: string}>;
+
+design_decisions:
+  - decision: Full doc content in issue body, not diff
+    rationale: Hive planner needs full context; it's the planner's job to decompose
+  - decision: Labels hive:doc-driven + hive:repo:<target>
+    rationale: hive:doc-driven signals doc-driven flow, hive:repo scopes to correct codebase
+  - decision: Title derived from file path if not provided
+    rationale: design-discussion.md → "Design Discussion" is sensible default
+  - decision: fired_tickets table for audit log
+    rationale: Tracks which edits were fired, when, by whom — needed for history view
+
+risks:
+  - severity: medium
+    description: Multica createIssue API might differ from assumed interface
+    mitigation: Verify against actual Multica client code; add createIssue if missing
+  - severity: low
+    description: Large doc content might hit Multica API limits
+    mitigation: Current docs are <10KB; if limit hit, truncate with "full content at <file_path>" note
+
+references:
+  - path: .pHive/epics/consus-v1-core-fa982783/docs/design-discussion.md
+    relevant_excerpt: |
+      §1 Flow 2 Fire action:
+      - POST /api/docs/:edit_id/fire creates Multica issue
+      - Body: full markdown content from edit + context note
+      - Labels: hive:doc-driven, hive:repo:<target_repo>
+      Decision 3: Fire granularity — full doc content, not diff
+
+cross_cutting:
+  - concern: documentation
+    action: Document the fire ticket flow and hive plugin contract in docs/workflows.md
