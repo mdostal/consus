@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { DecisionList } from "./features/decisions/DecisionList";
 import { EpicListView } from "./features/epics/EpicListView";
 import { ThemeSwitcher } from "./components/ThemeProvider";
+import { DocEditorView } from "./views/DocEditorView";
 
 export function App() {
   return (
@@ -17,6 +18,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<DecisionList />} />
           <Route path="/epics" element={<EpicListView />} />
+          <Route path="/docs/:repo/*" element={<DocEditorView />} />
           {/* A detail view stub for s2-05 */}
           <Route path="/epics/:id" element={<div>Epic Detail View Stub</div>} />
         </Routes>
