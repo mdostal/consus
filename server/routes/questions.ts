@@ -121,16 +121,15 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, client }: Que
         author: actor,
         body: composeAnswerComment({ actor, answer }),
       });
-      if (!commentResult.ok) {
-        throw new Error(`Multica comment write failed: ${commentResult.error}`);
-      }
-
+      // Multica comment is a best-effort notification. In standalone mode (or if the Multica
+      // write is unavailable) still COMMIT the answer + workflow resume — never drop the human answer.
       db.prepare("COMMIT").run();
 
       return {
         ok: true,
         question_id: question.id,
-        comment_id: commentResult.commentId,
+        comment_id: commentResult.ok ? commentResult.commentId : null,
+        multica_notified: commentResult.ok,
         workflow_status: workflowUpdate.changes > 0 ? "resumed" : null,
       };
     } catch (err) {
