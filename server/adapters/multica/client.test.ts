@@ -320,6 +320,78 @@ describe("HttpMulticaClient", () => {
       }),
     );
   });
+
+  it("lists epics from Multica's epics endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        epics: [
+          {
+            id: "epic-1",
+            identifier: "PAN-1",
+            title: "Slice 2",
+            description: null,
+            status: "todo",
+            priority: "none",
+            labels: [],
+            updated_at: "2026-08-10T00:00:00Z",
+            created_at: null,
+          },
+        ],
+      }),
+    });
+    const client = new HttpMulticaClient({
+      serverUrl: "https://api.example.com",
+      workspaceId: "ws-1",
+      token: "tok-1",
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    const result = await client.listEpics();
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.epics[0]).toMatchObject({ id: "epic-1", identifier: "PAN-1" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.com/epics",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("lists stories for an epic and preserves the epic id", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        stories: [
+          {
+            id: "story-1",
+            identifier: "PAN-2",
+            title: "Story",
+            description: null,
+            status: "todo",
+            priority: "none",
+            labels: [],
+            updated_at: "2026-08-10T00:00:00Z",
+            created_at: null,
+          },
+        ],
+      }),
+    });
+    const client = new HttpMulticaClient({
+      serverUrl: "https://api.example.com",
+      workspaceId: "ws-1",
+      token: "tok-1",
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    const result = await client.listStories("epic-1");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.stories[0]).toMatchObject({ id: "story-1", epicId: "epic-1" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.com/epics/epic-1/stories",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
 });
 
 describe("resolveMulticaToken", () => {

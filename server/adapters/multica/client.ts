@@ -87,6 +87,12 @@ export interface MulticaIssue {
   createdAt: string | null;
 }
 
+export type MulticaEpic = MulticaIssue;
+
+export interface MulticaStory extends MulticaIssue {
+  epicId: string | null;
+}
+
 export interface ListIssuesInput {
   status?: string;
   /** total issues to collect across pages (Claud-ometer's DELPHI_REVIEW_LIMIT default). */
@@ -105,12 +111,22 @@ export type MulticaStatusUpdateResult =
   | { ok: true; status: string }
   | { ok: false; error: string };
 
+export type MulticaListEpicsResult =
+  | { ok: true; epics: MulticaEpic[] }
+  | { ok: false; error: string };
+
+export type MulticaListStoriesResult =
+  | { ok: true; stories: MulticaStory[] }
+  | { ok: false; error: string };
+
 export interface MulticaClient {
   writeComment(input: WriteCommentInput): Promise<MulticaWriteResult>;
   listIssues(input?: ListIssuesInput): Promise<MulticaListResult>;
   getIssue(key: string): Promise<MulticaGetIssueResult>;
   updateIssueStatus(issueId: string, status: string): Promise<MulticaStatusUpdateResult>;
   unblockIssue(issueId: string): Promise<MulticaStatusUpdateResult>;
+  listEpics(): Promise<MulticaListEpicsResult>;
+  listStories(epicId: string): Promise<MulticaListStoriesResult>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -143,11 +159,18 @@ function normalizeIssue(raw: unknown): MulticaIssue | null {
   };
 }
 
+function normalizeStory(raw: unknown): MulticaStory | null {
+  const issue = normalizeIssue(raw);
+  if (!issue || !isRecord(raw)) return null;
+  const epicId = asString(raw.epic_id) ?? asString(raw.epicId) ?? asString(raw.parent_issue_id);
+  return { ...issue, epicId };
+}
+
 /** Unwrap the API's `{ issues: [...] }` / `{ data: [...] }` envelope, or a bare array. */
 function unwrapIssues(value: unknown): unknown[] {
   if (Array.isArray(value)) return value;
   if (!isRecord(value)) return [];
-  const candidate = value.issues ?? value.data ?? value.items;
+  const candidate = value.issues ?? value.epics ?? value.stories ?? value.data ?? value.items;
   return Array.isArray(candidate) ? candidate : [];
 }
 
@@ -301,6 +324,43 @@ export class HttpMulticaClient implements MulticaClient {
 
   async unblockIssue(issueId: string): Promise<MulticaStatusUpdateResult> {
     return this.updateIssueStatus(issueId, "todo");
+  }
+
+  async listEpics(): Promise<MulticaListEpicsResult> {
+    try {
+      const response = await this.fetchJson(`${this.serverUrl}/epics`, { method: "GET" });
+      if (!response.ok) {
+        return { ok: false, error: `Multica returned HTTP ${response.status}` };
+      }
+
+      const epics = unwrapIssues(await response.json())
+        .map(normalizeIssue)
+        .filter((i): i is MulticaEpic => i !== null);
+      return { ok: true, epics };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: message };
+    }
+  }
+
+  async listStories(epicId: string): Promise<MulticaListStoriesResult> {
+    try {
+      const response = await this.fetchJson(`${this.serverUrl}/epics/${encodeURIComponent(epicId)}/stories`, {
+        method: "GET",
+      });
+      if (!response.ok) {
+        return { ok: false, error: `Multica returned HTTP ${response.status}` };
+      }
+
+      const stories = unwrapIssues(await response.json())
+        .map(normalizeStory)
+        .filter((i): i is MulticaStory => i !== null)
+        .map((story) => ({ ...story, epicId: story.epicId ?? epicId }));
+      return { ok: true, stories };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: message };
+    }
   }
 
   private async fetchJson(url: string, init: RequestInit): Promise<Response> {
