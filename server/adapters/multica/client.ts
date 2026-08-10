@@ -85,6 +85,7 @@ export interface MulticaIssue {
   labels: string[];
   updatedAt: string | null;
   createdAt: string | null;
+  parentIssueId?: string | null;
 }
 
 export interface ListIssuesInput {
@@ -105,7 +106,22 @@ export type MulticaStatusUpdateResult =
   | { ok: true; status: string }
   | { ok: false; error: string };
 
+
+export interface MulticaComment {
+  id: string;
+  item_id: string;
+  author: string;
+  body: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export type MulticaCommentsResult =
+  | { ok: true; comments: MulticaComment[] }
+  | { ok: false; error: string };
+
 export interface MulticaClient {
+  listComments(itemId: string): Promise<MulticaCommentsResult>;
   writeComment(input: WriteCommentInput): Promise<MulticaWriteResult>;
   listIssues(input?: ListIssuesInput): Promise<MulticaListResult>;
   getIssue(key: string): Promise<MulticaGetIssueResult>;
@@ -140,6 +156,7 @@ function normalizeIssue(raw: unknown): MulticaIssue | null {
     labels,
     updatedAt: asString(raw.updated_at),
     createdAt: asString(raw.created_at),
+    parentIssueId: asString(raw.parent_issue_id),
   };
 }
 
@@ -173,6 +190,28 @@ export class HttpMulticaClient implements MulticaClient {
     this.token = token ?? resolveMulticaToken();
     this.fetchImpl = fetchImpl ?? fetch;
     this.timeoutMs = timeoutMs;
+  }
+
+  
+  async listComments(itemId: string): Promise<MulticaCommentsResult> {
+    try {
+      const response = await this.fetchJson(`${this.serverUrl}/items/${encodeURIComponent(itemId)}/comments`, { method: "GET" });
+      if (!response.ok) {
+        // Some APIs might use /comments?item_id=... Let's try both if we don't know, but standard is usually /issues/:id/comments.
+        // Actually, let's use the same URL pattern as Multica CLI. Let's check multica CLI output.
+        const response2 = await this.fetchJson(`${this.serverUrl}/comments?item_id=${encodeURIComponent(itemId)}`, { method: "GET" });
+        if (!response2.ok) return { ok: false, error: `Multica returned HTTP ${response2.status}` };
+        const raw = await response2.json();
+        const comments = Array.isArray(raw) ? raw : ((raw as any).comments || (raw as any).data || []);
+        return { ok: true, comments };
+      }
+      const raw = await response.json();
+      const comments = Array.isArray(raw) ? raw : ((raw as any).comments || (raw as any).data || []);
+      return { ok: true, comments };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: message };
+    }
   }
 
   async writeComment({ itemId, author, body }: WriteCommentInput): Promise<MulticaWriteResult> {

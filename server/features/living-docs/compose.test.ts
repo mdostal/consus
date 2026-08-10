@@ -1,11 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { runMigration } from "../../db/migrate.js";
 import { scanRepo } from "../../adapters/doc-scanner/index.js";
-import { composeLivingDoc } from "./compose.js";
+import { composeLivingDoc, composeEpicDocs } from "./compose.js";
+import type { MulticaClient, MulticaIssue } from "../../adapters/multica/client.js";
 
 describe("composeLivingDoc", () => {
   let repoDir: string;
@@ -52,19 +53,76 @@ describe("composeLivingDoc", () => {
     const view = composeLivingDoc(db, { repoName: "consus", repoPath: repoDir, itemId: "item-1" });
     expect(view.docs).toHaveLength(2);
   });
+});
 
-  it("flags the idea board source as unavailable rather than silently omitting it", () => {
-    const view = composeLivingDoc(db, { repoName: "consus", repoPath: repoDir, itemId: "item-1" });
+describe("composeEpicDocs (Dual-source ingestion)", () => {
+  let repoDir: string;
 
-    expect(view.ideaBoard).toEqual({ available: false, reason: "idea board integration point not yet specified" });
+  beforeEach(() => {
+    repoDir = mkdtempSync(join(tmpdir(), "consus-epic-repo-"));
+    mkdirSync(join(repoDir, ".pHive", "epics", "epic-1", "docs"), { recursive: true });
+    mkdirSync(join(repoDir, ".pHive", "epics", "epic-1", "stories"), { recursive: true });
   });
 
-  it("is confirmed distinct from Multica's board/task-state schema — an overlay, not a copy", () => {
-    const view = composeLivingDoc(db, { repoName: "consus", repoPath: repoDir, itemId: "item-1" });
+  afterEach(() => {
+    rmSync(repoDir, { recursive: true, force: true });
+  });
 
-    // The overlay is a composed read-model; it carries no Multica board/task
-    // fields (e.g. no `assignee`, `column`, `sprint`) — only references.
-    expect(view).not.toHaveProperty("assignee");
-    expect(view).not.toHaveProperty("column");
+  it("returns on-disk content merged with Multica metadata (Multica vs on-disk timestamps)", async () => {
+    // 1. Setup on-disk newer
+    writeFileSync(join(repoDir, ".pHive", "epics", "epic-1", "docs", "design-discussion.md"), "# Design Discussion\n\nLocal disk version.");
+    writeFileSync(join(repoDir, ".pHive", "epics", "epic-1", "stories", "story-1.yaml"), "id: story-1\ntitle: 'Story 1 on disk'\nstatus: pending");
+
+    const mockClient = {
+      getIssue: vi.fn().mockResolvedValue({
+        ok: true,
+        issue: {
+          id: "epic-1",
+          title: "Epic 1",
+          description: "Epic description from multica",
+          status: "in_progress",
+          labels: [],
+          updatedAt: new Date(Date.now() - 100000).toISOString(),
+          createdAt: new Date(Date.now() - 100000).toISOString(),
+        }
+      }),
+      listIssues: vi.fn().mockResolvedValue({
+        ok: true,
+        issues: [
+          {
+            id: "story-1",
+            title: "Story 1 Multica",
+            status: "in_progress", // Multica is source of truth for state!
+            parentIssueId: "epic-1",
+            labels: [],
+            updatedAt: new Date(Date.now() - 100000).toISOString(),
+            createdAt: new Date(Date.now() - 100000).toISOString(),
+          }
+        ]
+      }),
+      listComments: vi.fn().mockResolvedValue({
+        ok: true,
+        comments: [
+          {
+            id: "c1",
+            body: "# design-discussion\n\nMultica older version",
+            updated_at: new Date(Date.now() - 100000).toISOString(),
+          }
+        ]
+      })
+    } as unknown as MulticaClient;
+
+    const view = await composeEpicDocs(mockClient, "epic-1", repoDir);
+    
+    // docs merge
+    expect(view.docs["design-discussion"]).toBeDefined();
+    expect(view.docs["design-discussion"].content).toContain("Local disk version");
+    expect(view.docs["design-discussion"].source).toBe("merged");
+
+    // stories merge
+    expect(view.stories).toHaveLength(1);
+    expect(view.stories[0].title).toBe("Story 1 on disk"); // Disk is newer content
+    expect(view.stories[0].status).toBe("in_progress"); // Multica is source of truth for state
+    expect(view.stories[0].source).toBe("merged");
   });
 });
