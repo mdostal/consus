@@ -247,45 +247,6 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos, client }: D
     return { edit_id: editId, committed: commit_to_disk };
   });
 
-  app.put<{ Body: { repo: string; path: string; content: string; commit_to_disk?: boolean; edited_by?: string } }>(
-    "/api/docs/content",
-    async (request, reply) => {
-      const { repo, path, content, commit_to_disk = false, edited_by = "consus" } = request.body;
-
-      const repoPath = repos[repo];
-      if (!repoPath) {
-        return reply.code(400).send({ error: `unknown repo: ${repo}` });
-      }
-
-      if (!path.startsWith(".pHive/epics/")) {
-        return reply.code(400).send({ error: "only .pHive/epics docs are editable" });
-      }
-
-      const existing = db
-        .prepare(
-          "SELECT id FROM doc_edits WHERE repo=? AND file_path=? AND content=? ORDER BY created_at DESC LIMIT 1"
-        )
-        .get(repo, path, content) as { id: string } | undefined;
-
-      if (existing) {
-        return { edit_id: existing.id, committed: false, deduped: true };
-      }
-
-      const editId = `e-${randomUUID()}`;
-      db.prepare(
-        "INSERT INTO doc_edits (id, repo, file_path, content, edited_by, committed_to_disk) VALUES (?, ?, ?, ?, ?, ?)"
-      ).run(editId, repo, path, content, edited_by, commit_to_disk ? 1 : 0);
-
-      if (commit_to_disk) {
-        const fullPath = join(repoPath, path);
-        await mkdir(dirname(fullPath), { recursive: true });
-        await writeFile(fullPath, content, "utf-8");
-      }
-
-      return { edit_id: editId, committed: commit_to_disk };
-    }
-  );
-
   app.post<{ Params: { id: string } }>("/api/docs/:id/fire", async (request, reply) => {
     if (!client) {
       return reply.code(503).send({ error: "Multica client not configured" });

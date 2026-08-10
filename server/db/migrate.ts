@@ -92,7 +92,6 @@ export function runMigration(db: Database.Database): void {
       status TEXT NOT NULL,
       agent_name TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      created_at TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_human_requests_minerva_id ON human_requests(minerva_question_id);
@@ -163,9 +162,6 @@ export function runMigration(db: Database.Database): void {
       question_id TEXT NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      question_id TEXT REFERENCES human_requests(id),
-      status TEXT NOT NULL,
-      created_at TEXT NOT NULL,
       resumed_at TEXT
     );
 
