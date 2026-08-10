@@ -145,7 +145,6 @@ describe("GET /api/docs", () => {
   });
 
   it("prefers editable_content when that dependent edit column exists", async () => {
-    db.exec("ALTER TABLE doc_index ADD COLUMN editable_content TEXT");
     db.prepare("UPDATE doc_index SET editable_content = ? WHERE id = ?").run("# Edited PRD\n\noperator version", docId(db));
     await app.close();
     const createIssue = vi.fn().mockResolvedValue({

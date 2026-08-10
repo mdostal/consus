@@ -218,4 +218,6 @@ export function runMigration(db: Database.Database): void {
   addColumnIfMissing(db, "doc_index", "fired_at", "TEXT");
   addColumnIfMissing(db, "doc_index", "multica_issue_id", "TEXT");
   addColumnIfMissing(db, "doc_index", "multica_issue_url", "TEXT");
+  addColumnIfMissing(db, "doc_index", "editable_content", "TEXT");
+  addColumnIfMissing(db, "doc_index", "last_modified", "TEXT");
 }
