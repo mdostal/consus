@@ -10,6 +10,7 @@ import { registerQuestionRoutes } from "./routes/questions.js";
 import { registerAttachmentRoutes } from "./routes/attachments.js";
 import { registerDiagramRoutes } from "./routes/diagrams.js";
 import { registerEpicRoutes } from "./routes/epics.js";
+import { registerWorkflowRoutes } from "./routes/workflows.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
 import { HttpMulticaClient, type MulticaClient } from "./adapters/multica/client.js";
 import { createStorageAdapter, type StorageAdapter } from "./storage/index.js";
@@ -105,6 +106,7 @@ export function buildServer({
   registerAttachmentRoutes(app, { db, storageAdapter: finalStorageAdapter });
   registerDiagramRoutes(app, { db, client, repos });
   registerEpicRoutes(app, { db, client, repos });
+  registerWorkflowRoutes(app, { db });
 
   if (mode === "plugin") {
     app.addHook("onReady", async () => {

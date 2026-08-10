@@ -151,6 +151,18 @@ export function runMigration(db: Database.Database): void {
       UNIQUE(repo_id, diagram_type)
     );
 
+    
+    CREATE TABLE IF NOT EXISTS parked_workflows (
+      id TEXT PRIMARY KEY,
+      agent_name TEXT NOT NULL,
+      workflow_type TEXT NOT NULL,
+      parked_state TEXT NOT NULL,
+      status TEXT NOT NULL,
+      question_id TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS parked_questions (
       id TEXT PRIMARY KEY,
       agent_id TEXT NOT NULL,
