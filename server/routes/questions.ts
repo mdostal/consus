@@ -55,6 +55,21 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, client }: Que
     return rows;
   });
 
+
+  // Park a question from a god (Minerva) into the human inbox. Upserts the item (FK), inserts a pending human_request.
+  app.post<{ Body: { item_id: string; item_title?: string; minerva_question_id?: string; text: string; channel?: string; reason?: string; confidence?: number; suggested_channel?: string } }>("/api/questions", async (request, reply) => {
+    const b = request.body ?? ({} as Record<string, unknown>);
+    if (typeof b.text !== "string" || b.text.trim().length === 0) { reply.code(400); return { error: "text is required" }; }
+    if (typeof b.item_id !== "string" || b.item_id.length === 0) { reply.code(400); return { error: "item_id is required" }; }
+    const mqid = (typeof b.minerva_question_id === "string" && b.minerva_question_id) ? b.minerva_question_id : `mq-${Date.now()}`;
+    const now = new Date().toISOString();
+    try {
+      db.prepare("INSERT OR IGNORE INTO items (id, type, title, status, created_at, updated_at) VALUES (?, 'question', ?, 'open', ?, ?)").run(b.item_id, b.item_title || b.item_id, now, now);
+      const r = db.prepare("INSERT INTO human_requests (item_id, minerva_question_id, text, channel, reason, confidence, suggested_channel, status, created_at) VALUES (?,?,?,?,?,?,?,'pending',?)").run(b.item_id, mqid, b.text, b.channel || "consus", b.reason ?? null, b.confidence ?? null, b.suggested_channel ?? null, now);
+      return { id: r.lastInsertRowid, minerva_question_id: mqid, parked: true };
+    } catch (e) { reply.code(500); return { error: (e as Error).message }; }
+  });
+
   app.post<{ Params: { id: string }; Body: AnswerRequestBody }>("/api/questions/:id/answer", async (request, reply) => {
     const body = request.body ?? {};
     if (typeof body.answer !== "string" || body.answer.trim().length === 0) {
