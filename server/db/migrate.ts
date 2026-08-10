@@ -136,6 +136,15 @@ export function runMigration(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_attachments_item_id ON attachments(item_id);
+
+    CREATE TABLE IF NOT EXISTS diagrams (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo_id TEXT,
+      diagram_type TEXT NOT NULL,
+      mermaid_source TEXT NOT NULL,
+      cached_at TEXT NOT NULL,
+      UNIQUE(repo_id, diagram_type)
+    );
   `);
 
   // Guarded ALTER TABLE for columns added after a table already existed on
