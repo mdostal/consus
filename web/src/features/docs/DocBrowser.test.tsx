@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { DocBrowser } from "./DocBrowser";
 
 const GROUPED = {
@@ -15,7 +16,11 @@ const GROUPED = {
 
 describe("DocBrowser", () => {
   it("lists docs grouped by repo, then epic, then phase", () => {
-    render(<DocBrowser grouped={GROUPED} onOpen={vi.fn()} />);
+    render(
+      <MemoryRouter>
+        <DocBrowser grouped={GROUPED} onOpen={vi.fn()} />
+      </MemoryRouter>
+    );
 
     expect(screen.getByText("consus")).toBeInTheDocument();
     expect(screen.getByText("planning")).toBeInTheDocument();
@@ -27,7 +32,11 @@ describe("DocBrowser", () => {
 
   it("calls onOpen with the doc's repo and file_path when clicked", () => {
     const onOpen = vi.fn();
-    render(<DocBrowser grouped={GROUPED} onOpen={onOpen} />);
+    render(
+      <MemoryRouter>
+        <DocBrowser grouped={GROUPED} onOpen={onOpen} />
+      </MemoryRouter>
+    );
 
     fireEvent.click(screen.getByText(/prd\.md/));
 

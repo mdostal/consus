@@ -10,7 +10,11 @@ import { FiredHistoryView } from "./features/fired/FiredHistoryView";
 import { QuestionInbox } from "./features/questions/QuestionInbox";
 >>>>>>> origin/feat/PAN-8234
 import { ThemeSwitcher } from "./components/ThemeProvider";
+<<<<<<< HEAD
 import { QuestionsView } from "./views/QuestionsView";
+=======
+import { DocEditorView } from "./views/DocEditorView";
+>>>>>>> origin/feat/PAN-8227
 
 export function App() {
   return (
@@ -38,6 +42,7 @@ export function App() {
           <Route path="/epics" element={<EpicListView />} />
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
           <Route path="/epics/:epic_id" element={<EpicDetailView />} />
           <Route path="/docs/:id" element={<DocEditor />} />
           <Route path="/questions" element={<QuestionInbox />} />
@@ -46,6 +51,9 @@ export function App() {
 =======
           <Route path="/questions" element={<QuestionsView />} />
 >>>>>>> origin/feat/PAN-8226
+=======
+          <Route path="/docs/:repo/*" element={<DocEditorView />} />
+>>>>>>> origin/feat/PAN-8227
           {/* A detail view stub for s2-05 */}
           <Route path="/epics/:id" element={<div>Epic Detail View Stub</div>} />
           <Route path="/questions" element={<QuestionInbox />} />
