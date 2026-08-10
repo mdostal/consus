@@ -19,6 +19,7 @@ interface QuestionRow {
   suggested_channel: string | null;
   answer: string | null;
   status: string;
+  agent_name: string | null;
   created_at: string | null;
 }
 
@@ -45,7 +46,7 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, client }: Que
   app.get("/api/questions", async () => {
     const rows = db
       .prepare(
-        `SELECT id, item_id, minerva_question_id, text, channel, reason, confidence, suggested_channel, answer, status, created_at
+        `SELECT id, item_id, minerva_question_id, text, channel, reason, confidence, suggested_channel, answer, status, agent_name, created_at
          FROM human_requests
          WHERE status = 'pending'
          ORDER BY created_at DESC, id DESC`,
@@ -70,7 +71,7 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, client }: Que
 
       const question = db
         .prepare(
-          `SELECT id, item_id, minerva_question_id, text, channel, reason, confidence, suggested_channel, answer, status, created_at
+          `SELECT id, item_id, minerva_question_id, text, channel, reason, confidence, suggested_channel, answer, status, agent_name, created_at
            FROM human_requests
            WHERE CAST(id AS TEXT) = ?`,
         )

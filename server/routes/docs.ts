@@ -46,6 +46,16 @@ interface StoredDocRow extends DocIndexRow {
   multica_issue_url: string | null;
 }
 
+export interface FiredTicketRow {
+  id: string;
+  multica_issue_id: string;
+  target_repo: string;
+  fired_by: string;
+  fired_at: string;
+  repo: string;
+  file_path: string;
+}
+
 function getDocById(db: Database.Database, id: number): StoredDocRow | null {
   return db.prepare("SELECT * FROM doc_index WHERE id = ?").get(id) as StoredDocRow | undefined ?? null;
 }
@@ -288,11 +298,51 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos, client }: D
     `,
     ).run(firedAt, created.issueId, created.issueUrl, id);
 
+    const firedBy = "consus";
+    const existingEdit = db
+      .prepare(
+        "SELECT id FROM doc_edits WHERE repo = ? AND file_path = ? AND content = ? ORDER BY created_at DESC LIMIT 1",
+      )
+      .get(doc.repo, doc.file_path, content) as { id: string } | undefined;
+    const editId =
+      existingEdit?.id ??
+      (() => {
+        const newEditId = `e-${randomUUID()}`;
+        db.prepare(
+          "INSERT INTO doc_edits (id, repo, file_path, content, edited_by, committed_to_disk) VALUES (?, ?, ?, ?, ?, 0)",
+        ).run(newEditId, doc.repo, doc.file_path, content, firedBy);
+        return newEditId;
+      })();
+
+    db.prepare(
+      "INSERT INTO fired_tickets (id, edit_id, multica_issue_id, target_repo, fired_by, fired_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(`ft-${randomUUID()}`, editId, created.issueId, doc.repo, firedBy, firedAt);
+
     return {
       docId: id,
       issueId: created.issueId,
       issueUrl: created.issueUrl,
       firedAt,
     };
+  });
+
+  app.get("/api/fired", async () => {
+    return db
+      .prepare(
+        `
+        SELECT
+          ft.id,
+          ft.multica_issue_id,
+          ft.target_repo,
+          ft.fired_by,
+          ft.fired_at,
+          de.repo,
+          de.file_path
+        FROM fired_tickets ft
+        JOIN doc_edits de ON ft.edit_id = de.id
+        ORDER BY ft.fired_at DESC
+      `,
+      )
+      .all() as FiredTicketRow[];
   });
 }

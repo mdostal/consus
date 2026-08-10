@@ -90,6 +90,7 @@ export function runMigration(db: Database.Database): void {
       suggested_channel TEXT,
       answer TEXT,
       status TEXT NOT NULL,
+      agent_name TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -215,6 +216,7 @@ export function runMigration(db: Database.Database): void {
   addColumnIfMissing(db, "human_requests", "answer", "TEXT");
   addColumnIfMissing(db, "human_requests", "survey_id", "INTEGER REFERENCES surveys(id)");
   addColumnIfMissing(db, "human_requests", "created_at", "TEXT");
+  addColumnIfMissing(db, "human_requests", "agent_name", "TEXT");
   db.exec("CREATE INDEX IF NOT EXISTS idx_human_requests_status_created_at ON human_requests(status, created_at)");
   addColumnIfMissing(db, "parked_workflows", "resumed_at", "TEXT");
   addColumnIfMissing(db, "kb_entries", "source_repo", "TEXT");

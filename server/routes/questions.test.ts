@@ -38,6 +38,7 @@ function insertQuestion(
     status?: string;
     createdAt: string;
     answer?: string | null;
+    agentName?: string;
   },
 ): number {
   db.prepare("INSERT INTO items (id, type, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(
@@ -50,8 +51,8 @@ function insertQuestion(
   );
   const result = db
     .prepare(
-      `INSERT INTO human_requests (item_id, minerva_question_id, text, channel, reason, answer, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO human_requests (item_id, minerva_question_id, text, channel, reason, answer, status, agent_name, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       input.itemId,
@@ -61,6 +62,7 @@ function insertQuestion(
       null,
       input.answer ?? null,
       input.status ?? "pending",
+      input.agentName ?? "auriga",
       input.createdAt,
     );
   return Number(result.lastInsertRowid);
