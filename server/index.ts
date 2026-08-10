@@ -7,6 +7,7 @@ import { registerArtifactLinkRoutes } from "./routes/artifact-links.js";
 import { registerDecisionRoutes } from "./routes/decisions.js";
 import { registerAttachmentRoutes } from "./routes/attachments.js";
 import { registerDiagramRoutes } from "./routes/diagrams.js";
+import { registerEpicRoutes } from "./routes/epics.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
 import { HttpMulticaClient, type MulticaClient } from "./adapters/multica/client.js";
 import { createStorageAdapter, type StorageAdapter } from "./storage/index.js";
@@ -61,6 +62,7 @@ export function buildServer({
   registerDecisionRoutes(app, { db, client, decisionLogPath });
   registerAttachmentRoutes(app, { db, storageAdapter: finalStorageAdapter });
   registerDiagramRoutes(app, { db, client, repos });
+  registerEpicRoutes(app, { db, client, repos });
 
   const healthHandler = async () => {
     const row = db.prepare("SELECT 1 AS ok").get() as { ok: number } | undefined;

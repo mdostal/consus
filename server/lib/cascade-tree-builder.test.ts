@@ -115,6 +115,7 @@ stories:
       repo: "consus",
       name: "consus-v1-core-loop",
       title: "Consus v1 Core Loop",
+      updatedAt: "1970-01-01T00:00:00.000Z",
       stories: [
         { id: "story-01-server-skeleton", title: "Server skeleton" },
         { id: "story-02-doc-scanner", title: "Doc scanner" },
@@ -165,7 +166,7 @@ describe("findEpicYamlPaths / loadEpicFiles", () => {
   it("loads and parses epic.yaml files across a repo registry", () => {
     const files = loadEpicFiles({ sample: repoDir });
     expect(files).toEqual([
-      { repo: "sample", name: "sample-epic", title: "Sample Epic", stories: [{ id: "sample-story", title: "Sample story" }] },
+      { repo: "sample", name: "sample-epic", title: "Sample Epic", updatedAt: expect.any(String), stories: [{ id: "sample-story", title: "Sample story" }] },
     ]);
   });
 });
