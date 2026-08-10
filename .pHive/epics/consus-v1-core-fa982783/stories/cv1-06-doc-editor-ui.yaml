@@ -1,0 +1,201 @@
+id: cv1-06-doc-editor-ui
+epic: consus-v1-core-fa982783
+title: Build doc editor UI (edit, save, fire)
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: [cv1-03-doc-edit-api, cv1-04-fire-ticket-api]
+
+description: |
+  Create React views for editing living docs:
+  - Add "Edit" button to doc list view (/docs)
+  - Editor route: /docs/:repo/:path/edit
+  - Markdown textarea with Save and Fire buttons
+  - Save writes to SQLite (optionally to disk via checkbox)
+  - Fire creates Multica ticket, shows success with ticket URL
+
+acceptance_criteria:
+  - "Given: Viewing /docs list
+     When: Click Edit button on a doc
+     Then: Navigates to /docs/:repo/:path/edit with doc content loaded"
+  - "Given: On editor page
+     When: Modify content and click Save
+     Then: PUTs to /api/docs/content, shows 'Saved' confirmation"
+  - "Given: Saved edit exists
+     When: Click Fire button
+     Then: POSTs to /api/docs/:edit_id/fire, shows ticket URL"
+  - "Given: commit_to_disk checkbox checked
+     When: Save clicked
+     Then: Sends commit_to_disk=true in PUT request"
+
+steps:
+  - id: research
+    description: Review existing doc list view, check React Router patterns for nested routes
+    agent: researcher
+  - id: test-spec
+    description: |
+      Write component tests for DocEditorView (web/src/views/DocEditorView.test.tsx):
+      - Renders loading state while fetching doc content
+      - Fetches doc via GET /api/docs/content?repo=...&path=...
+      - Textarea displays fetched content
+      - Save button calls PUT /api/docs/content with modified text
+      - commit_to_disk checkbox controls request payload
+      - Fire button calls POST /api/docs/:edit_id/fire
+      - Success message shows ticket URL after fire
+      - Error states for fetch/save/fire failures
+
+      Update DocListView tests (add Edit button rendering)
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: |
+      Create web/src/views/DocEditorView.tsx:
+
+      import { useState, useEffect } from 'react';
+      import { useParams, useNavigate } from 'react-router-dom';
+
+      export function DocEditorView() {
+        const { repo, '*': path } = useParams();  // Catch-all for path with slashes
+        const [content, setContent] = useState('');
+        const [loading, setLoading] = useState(true);
+        const [editId, setEditId] = useState<string | null>(null);
+        const [commitToDisk, setCommitToDisk] = useState(false);
+        const [ticketUrl, setTicketUrl] = useState<string | null>(null);
+
+        useEffect(() => {
+          fetchContent();
+        }, [repo, path]);
+
+        async function fetchContent() {
+          const res = await fetch(`/api/docs/content?repo=${repo}&path=${path}`);
+          const data = await res.json();
+          setContent(data.content);
+          setLoading(false);
+        }
+
+        async function saveEdit() {
+          const res = await fetch('/api/docs/content', {
+            method: 'PUT',
+            headers: {'content-type': 'application/json'},
+            body: JSON.stringify({repo, path, content, commit_to_disk: commitToDisk}),
+          });
+          const data = await res.json();
+          setEditId(data.edit_id);
+          alert('Saved!');
+        }
+
+        async function fireTicket() {
+          if (!editId) {alert('Save first!'); return;}
+          const res = await fetch(`/api/docs/${editId}/fire`, {
+            method: 'POST',
+            headers: {'content-type': 'application/json'},
+            body: JSON.stringify({target_repo: repo, actor: 'mathew'}),
+          });
+          const data = await res.json();
+          setTicketUrl(data.ticket_url);
+        }
+
+        if (loading) return <div>Loading...</div>;
+
+        return (
+          <div className="doc-editor">
+            <h1>Edit {path}</h1>
+            <textarea
+              value={content}
+              onChange={e => setContent(e.target.value)}
+              rows={30}
+              style={{width: '100%'}}
+            />
+            <div className="controls">
+              <label>
+                <input type="checkbox" checked={commitToDisk} onChange={e => setCommitToDisk(e.target.checked)} />
+                Commit to disk
+              </label>
+              <button onClick={saveEdit}>Save</button>
+              <button onClick={fireTicket} disabled={!editId}>Fire</button>
+            </div>
+            {ticketUrl && <div className="success">Ticket created: <a href={ticketUrl}>{ticketUrl}</a></div>}
+          </div>
+        );
+      }
+
+      Update web/src/views/DocListView.tsx (or equivalent):
+      - Add "Edit" button/link per doc row
+      - Link to `/docs/${repo}/${encodeURIComponent(doc.file_path)}/edit`
+
+      Update web/src/App.tsx:
+      <Route path="/docs/:repo/*" element={<DocEditorView />} />
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: |
+      Verify:
+      - Doc path with slashes (e.g., .pHive/epics/xyz/docs/design.md) routes correctly
+      - Save before fire is enforced (fire button disabled until editId set)
+      - commit_to_disk checkbox state persists during save
+      - Ticket URL link is clickable
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit doc editor UI
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/dostal/.minerva/runs/694b980e-c5b7-4053-8d56-b2c22495f702/workspace
+  tech_stack:
+    framework: react
+    routing: react-router-dom
+    bundler: vite
+  key_files:
+    - path: web/src/App.tsx
+      purpose: Routing setup
+    - path: web/src/views/
+      purpose: View components
+
+files_to_modify:
+  - file: web/src/views/DocEditorView.tsx
+    change: Create new editor component
+  - file: web/src/views/DocEditorView.test.tsx
+    change: Create test file
+  - file: web/src/views/DocListView.tsx
+    change: Add Edit button per doc row
+  - file: web/src/App.tsx
+    change: Add /docs/:repo/* route for editor
+
+code_examples:
+  - title: React Router catch-all route
+    file: web/src/App.tsx
+    snippet: |
+      // Catch-all route for paths with multiple segments
+      <Route path="/docs/:repo/*" element={<DocEditorView />} />
+      // In component:
+      const { repo, '*': path } = useParams();
+
+design_decisions:
+  - decision: Plain textarea, no markdown preview
+    rationale: MVP simplicity; preview is v2 feature
+  - decision: Fire button disabled until save completes
+    rationale: Need edit_id from save before fire can succeed
+  - decision: Ticket URL shown in success message
+    rationale: User needs to verify ticket was created in Multica
+
+risks:
+  - severity: low
+    description: Large doc content might make textarea sluggish
+    mitigation: Current docs are <10KB; acceptable for v1
+  - severity: low
+    description: User edits, forgets to save, navigates away (lost changes)
+    mitigation: Add beforeunload warning if content changed and not saved (v2)
+
+references:
+  - path: .pHive/epics/consus-v1-core-fa982783/docs/design-discussion.md
+    relevant_excerpt: |
+      §1 UI Changes:
+      - Doc Editor (/docs/:repo/:path/edit) — markdown editor with Save + Fire buttons
+      - Save persists to SQLite, optionally to disk
+      - Fire creates Multica ticket
+
+cross_cutting:
+  - concern: documentation
+    action: Add doc editing workflow to docs/user-guide.md

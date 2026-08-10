@@ -1,0 +1,175 @@
+id: cv1-07-fire-history-ui
+epic: consus-v1-core-fa982783
+title: Build fire history view (audit log of fired tickets)
+status: pending
+complexity: low
+methodology: tdd
+depends_on: [cv1-04-fire-ticket-api]
+
+description: |
+  Create a view showing the history of fired tickets:
+  - Route: /fired
+  - Displays table of all fired tickets with doc path, Multica issue link, timestamp
+  - Read-only view for audit purposes
+  - Optional: link to view the edit that was fired
+
+acceptance_criteria:
+  - "Given: Navigate to /fired
+     When: Page loads
+     Then: Fetches and displays fired_tickets joined with doc_edits"
+  - "Given: Fired ticket row
+     When: Displayed
+     Then: Shows doc path, Multica issue link, fired timestamp, fired_by actor"
+  - "Given: No fired tickets
+     When: Page loads
+     Then: Shows empty state 'No tickets fired yet'"
+
+steps:
+  - id: research
+    description: Check if GET endpoint for fired_tickets exists, or needs to be added to docs.ts
+    agent: researcher
+  - id: test-spec
+    description: |
+      Write test for GET /api/fired endpoint (server/routes/docs.test.ts):
+      - Returns joined data from fired_tickets + doc_edits
+      - Ordered by fired_at DESC (most recent first)
+
+      Write component test for FiredHistoryView (web/src/views/FiredHistoryView.test.tsx):
+      - Fetches from GET /api/fired on mount
+      - Displays table with columns: doc path, ticket link, fired by, fired at
+      - Shows empty state if no rows
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: |
+      Add backend endpoint to server/routes/docs.ts:
+
+      app.get("/api/fired", async () => {
+        const rows = db.prepare(`
+          SELECT
+            ft.id,
+            ft.multica_issue_id,
+            ft.target_repo,
+            ft.fired_by,
+            ft.fired_at,
+            de.repo,
+            de.file_path
+          FROM fired_tickets ft
+          JOIN doc_edits de ON ft.edit_id = de.id
+          ORDER BY ft.fired_at DESC
+        `).all();
+        return rows;
+      });
+
+      Create web/src/views/FiredHistoryView.tsx:
+
+      import { useState, useEffect } from 'react';
+
+      interface FiredTicket {
+        id: string;
+        multica_issue_id: string;
+        target_repo: string;
+        fired_by: string;
+        fired_at: string;
+        repo: string;
+        file_path: string;
+      }
+
+      export function FiredHistoryView() {
+        const [tickets, setTickets] = useState<FiredTicket[]>([]);
+        const [loading, setLoading] = useState(true);
+
+        useEffect(() => {
+          fetch('/api/fired')
+            .then(res => res.json())
+            .then(data => setTickets(data))
+            .finally(() => setLoading(false));
+        }, []);
+
+        if (loading) return <div>Loading...</div>;
+        if (tickets.length === 0) return <div>No tickets fired yet</div>;
+
+        return (
+          <div className="fired-history">
+            <h1>Fire History</h1>
+            <table>
+              <thead>
+                <tr>
+                  <th>Doc</th>
+                  <th>Target Repo</th>
+                  <th>Multica Ticket</th>
+                  <th>Fired By</th>
+                  <th>Fired At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tickets.map(t => (
+                  <tr key={t.id}>
+                    <td>{t.repo}:{t.file_path}</td>
+                    <td>{t.target_repo}</td>
+                    <td><a href={`/multica/issues/${t.multica_issue_id}`}>{t.multica_issue_id}</a></td>
+                    <td>{t.fired_by}</td>
+                    <td>{new Date(t.fired_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      Add route in web/src/App.tsx:
+      <Route path="/fired" element={<FiredHistoryView />} />
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: Verify timestamp formatting, Multica link construction, empty state rendering
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit fire history view
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/dostal/.minerva/runs/694b980e-c5b7-4053-8d56-b2c22495f702/workspace
+  tech_stack:
+    framework: react
+    bundler: vite
+  key_files:
+    - path: server/routes/docs.ts
+      purpose: Where GET /api/fired endpoint will be added
+    - path: web/src/App.tsx
+      purpose: Route registration
+
+files_to_modify:
+  - file: server/routes/docs.ts
+    change: Add GET /api/fired endpoint
+  - file: server/routes/docs.test.ts
+    change: Add test for /api/fired endpoint
+  - file: web/src/views/FiredHistoryView.tsx
+    change: Create new view component
+  - file: web/src/views/FiredHistoryView.test.tsx
+    change: Create test file
+  - file: web/src/App.tsx
+    change: Add /fired route
+
+design_decisions:
+  - decision: Read-only view, no actions
+    rationale: Audit log only; user can click through to Multica for ticket status
+  - decision: Join fired_tickets with doc_edits to show doc path
+    rationale: Ticket ID alone is opaque; doc path gives context
+
+risks:
+  - severity: low
+    description: Large history might not paginate
+    mitigation: v1 assumes <100 fires; add pagination v2 if needed
+
+references:
+  - path: .pHive/epics/consus-v1-core-fa982783/docs/design-discussion.md
+    relevant_excerpt: |
+      §1 UI Changes: Fire History (/docs/fired) — audit log of fired tickets with status
+
+cross_cutting:
+  - concern: documentation
+    action: Add fire history view to docs/ui-guide.md

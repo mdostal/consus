@@ -1,0 +1,138 @@
+id: cv1-01-schema-migration
+epic: consus-v1-core-fa982783
+title: Add SQLite schema for parked questions, doc edits, and fired tickets
+status: pending
+complexity: low
+methodology: tdd
+depends_on: []
+
+description: |
+  Create three new SQLite tables to support the v1 core flows:
+  - parked_questions (agent blocking questions)
+  - doc_edits (transient/committed doc changes)
+  - fired_tickets (audit log of doc→Multica issue creates)
+
+  Schema is additive — existing tables (items, comments, doc_index) are unchanged.
+
+acceptance_criteria:
+  - "Migration script creates all three tables with correct columns and types"
+  - "Migration is idempotent (safe to run twice)"
+  - "Test can insert/query each table"
+  - "Foreign key from fired_tickets.edit_id to doc_edits.id enforced"
+
+steps:
+  - id: research
+    description: Review existing schema in server/db/ and migration pattern
+    agent: researcher
+  - id: test-spec
+    description: |
+      Write failing tests for schema migration:
+      - Test migration creates parked_questions table with expected columns
+      - Test migration creates doc_edits table
+      - Test migration creates fired_tickets table with FK constraint
+      - Test idempotency (run migration twice, second run is no-op)
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: |
+      Create migration file server/db/migrations/00X-v1-core-schema.sql with:
+
+      CREATE TABLE IF NOT EXISTS parked_questions (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        agent_name TEXT NOT NULL,
+        context TEXT,
+        question TEXT NOT NULL,
+        parked_workflow_id TEXT,
+        callback_url TEXT,
+        multica_issue_id TEXT,
+        resolved INTEGER DEFAULT 0,
+        answer TEXT,
+        answered_by TEXT,
+        answered_at TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS doc_edits (
+        id TEXT PRIMARY KEY,
+        repo TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        content TEXT NOT NULL,
+        edited_by TEXT NOT NULL,
+        committed_to_disk INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS fired_tickets (
+        id TEXT PRIMARY KEY,
+        edit_id TEXT NOT NULL REFERENCES doc_edits(id),
+        multica_issue_id TEXT NOT NULL,
+        target_repo TEXT NOT NULL,
+        fired_by TEXT NOT NULL,
+        fired_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_parked_questions_resolved ON parked_questions(resolved);
+      CREATE INDEX IF NOT EXISTS idx_doc_edits_repo_path ON doc_edits(repo, file_path);
+      CREATE INDEX IF NOT EXISTS idx_fired_tickets_edit ON fired_tickets(edit_id);
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: Verify schema matches design-discussion spec and tests pass
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit schema migration
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/dostal/.minerva/runs/694b980e-c5b7-4053-8d56-b2c22495f702/workspace
+  tech_stack:
+    database: better-sqlite3
+    migration_pattern: SQL files in server/db/migrations/
+  key_files:
+    - path: server/db/migrate.ts
+      purpose: Migration runner (apply migrations on server startup)
+    - path: server/db/migrate.test.ts
+      purpose: Migration test pattern to follow
+
+files_to_modify:
+  - file: server/db/migrations/00X-v1-core-schema.sql
+    change: Create new migration file with three table definitions
+
+code_examples:
+  - title: Existing migration pattern
+    file: server/db/migrations/
+    snippet: |
+      -- Migrations are plain SQL, numbered sequentially
+      -- Applied in order by migrate.ts
+      CREATE TABLE IF NOT EXISTS <table_name> (
+        id TEXT PRIMARY KEY,
+        ...
+      );
+
+design_decisions:
+  - decision: Use INTEGER for boolean columns (resolved, committed_to_disk)
+    rationale: SQLite best practice — 0/1 instead of TRUE/FALSE
+  - decision: FK from fired_tickets to doc_edits enforced at schema level
+    rationale: Prevents orphaned fired_tickets; safe because edits never deleted
+  - decision: Indexes on common query paths (resolved, repo+path, edit_id)
+    rationale: Optimize list-open-questions, get-latest-edit, fire-history queries
+
+risks:
+  - severity: low
+    description: Migration number conflict if concurrent schema changes
+    mitigation: Check migrations/ directory for highest number before creating
+
+references:
+  - path: .pHive/epics/consus-v1-core-fa982783/docs/design-discussion.md
+    relevant_excerpt: |
+      § Data Model section defines the three table schemas:
+      - parked_questions: id, agent_id, agent_name, question, resolved, answer, etc.
+      - doc_edits: id, repo, file_path, content, edited_by, committed_to_disk
+      - fired_tickets: id, edit_id, multica_issue_id, target_repo, fired_by
+
+cross_cutting:
+  - concern: documentation
+    action: Update server/db/README.md (if exists) with new table descriptions

@@ -1,0 +1,149 @@
+id: cv1-08-e2e-integration
+epic: consus-v1-core-fa982783
+title: E2E tests for question-park and doc-fire flows
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: [cv1-05-questions-ui, cv1-06-doc-editor-ui, cv1-07-fire-history-ui]
+
+description: |
+  Write end-to-end Playwright tests covering both core flows:
+  1. Question round-trip: POST question → view in inbox → answer → verify Multica comment
+  2. Doc edit-fire: edit doc → save → fire → verify Multica issue created
+
+  Tests run against real Consus server + Multica test instance (or mocked Multica).
+
+acceptance_criteria:
+  - "E2E test: question round-trip completes successfully"
+  - "E2E test: doc edit-fire creates Multica issue"
+  - "Tests can run in CI (Multica mocked or test instance configured)"
+  - "All tests pass on clean database state"
+
+steps:
+  - id: research
+    description: Review existing e2e test setup in tests/e2e/, check Playwright config
+    agent: researcher
+  - id: test-spec
+    description: |
+      Write E2E test files:
+
+      tests/e2e/question-round-trip.spec.ts:
+      - Setup: POST /api/questions to create a parked question (via API, not UI click)
+      - Navigate to /questions
+      - Verify question appears in list
+      - Fill answer textarea, click Submit
+      - Verify question disappears from list
+      - (Optional) Verify Multica comment exists via API call
+
+      tests/e2e/doc-edit-fire.spec.ts:
+      - Navigate to /docs
+      - Click Edit on a doc
+      - Modify content in textarea
+      - Click Save, verify "Saved!" confirmation
+      - Click Fire, verify success message with ticket URL
+      - Navigate to /fired, verify ticket appears in history
+
+      Playwright config updates (if needed):
+      - Set up test database (SQLite in-memory or temp file)
+      - Mock Multica client or point to test Multica instance
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: |
+      Implement the two E2E test files as specified.
+
+      For Multica mocking, consider:
+      - Option A: Override MulticaClient in test with mock implementation
+      - Option B: Use MSW (Mock Service Worker) to intercept Multica API calls
+      - Option C: Use real test Multica instance (requires MULTICA_TEST_TOKEN env)
+
+      Recommendation: Option B (MSW) — more realistic, easier to debug.
+
+      Example MSW setup in tests/e2e/multica-mock.ts:
+      import { rest } from 'msw';
+      import { setupServer } from 'msw/node';
+
+      export const server = setupServer(
+        rest.post('http://multica-test/comments', (req, res, ctx) => {
+          return res(ctx.json({ id: 'comment-123' }));
+        }),
+        rest.post('http://multica-test/issues', (req, res, ctx) => {
+          return res(ctx.json({ id: 'issue-456' }));
+        }),
+      );
+
+      Start server in beforeAll, close in afterAll.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: |
+      Verify:
+      - Tests are isolated (each starts with clean DB state)
+      - Multica mocking works correctly
+      - Tests cover both happy paths
+      - CI can run tests (no hardcoded localhost URLs)
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit E2E tests and CI config updates
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/dostal/.minerva/runs/694b980e-c5b7-4053-8d56-b2c22495f702/workspace
+  tech_stack:
+    e2e_framework: playwright
+    mocking: msw (recommended)
+  key_files:
+    - path: tests/e2e/
+      purpose: E2E test directory
+    - path: playwright.config.ts
+      purpose: Playwright configuration
+
+files_to_modify:
+  - file: tests/e2e/question-round-trip.spec.ts
+    change: Create new E2E test for question flow
+  - file: tests/e2e/doc-edit-fire.spec.ts
+    change: Create new E2E test for doc fire flow
+  - file: tests/e2e/multica-mock.ts
+    change: Create MSW mock for Multica API (if using Option B)
+  - file: playwright.config.ts
+    change: Add test database setup/teardown hooks if needed
+
+code_examples:
+  - title: Existing E2E test pattern
+    file: tests/e2e/attachment-upload.spec.ts
+    snippet: |
+      import { test, expect } from '@playwright/test';
+
+      test('uploads attachment', async ({ page }) => {
+        await page.goto('/decisions');
+        // ... test steps
+      });
+
+design_decisions:
+  - decision: Use MSW for Multica mocking
+    rationale: More realistic than full mock client, easier CI setup than real test instance
+  - decision: E2E tests use API setup (POST question via fetch)
+    rationale: Faster than clicking through UI to create setup state
+  - decision: Tests verify end state (question gone, ticket in history)
+    rationale: More robust than verifying intermediate states
+
+risks:
+  - severity: medium
+    description: Multica test instance not available in CI
+    mitigation: Use MSW mocking as fallback; document how to run with real Multica locally
+  - severity: low
+    description: Tests flaky due to timing (async UI updates)
+    mitigation: Use Playwright's auto-waiting; add explicit waits if needed
+
+references:
+  - path: .pHive/epics/consus-v1-core-fa982783/docs/design-discussion.md
+    relevant_excerpt: |
+      §6 Testing Strategy:
+      - Integration tests: question round-trip, doc edit-fire-build
+      - E2E tests: verify both flows with real Multica instance (or mock)
+
+cross_cutting:
+  - concern: documentation
+    action: Document E2E test setup (Multica mocking vs test instance) in docs/testing.md

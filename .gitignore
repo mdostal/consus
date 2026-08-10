@@ -16,6 +16,10 @@ build/
 .pHive/epics/**/index.html
 .pHive/epics/**/docs/*.png
 
+# sidecar_retention=transient for consus-v1-core-fa982783: HTML sidecars regenerated on demand
+.pHive/epics/consus-v1-core-fa982783/docs/*.html
+.pHive/epics/consus-v1-core-fa982783/index.html
+
 # Hive epics — blanket-ignored, allowlisted per epic below
 .pHive/epics/*
 !.pHive/epics/consus-v1-core-loop/
@@ -24,6 +28,8 @@ build/
 !.pHive/epics/consus-phase2-survey-kb-api/**
 !.pHive/epics/consus-phase4-close-the-loop/
 !.pHive/epics/consus-phase4-close-the-loop/**
+!.pHive/epics/consus-v1-core-fa982783/
+!.pHive/epics/consus-v1-core-fa982783/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/

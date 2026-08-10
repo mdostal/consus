@@ -1,0 +1,172 @@
+id: cv1-03-doc-edit-api
+epic: consus-v1-core-fa982783
+title: Implement doc editing API (save to SQLite, optionally commit to disk)
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: [cv1-01-schema-migration]
+
+description: |
+  Implement doc content editing with hybrid persistence:
+  - PUT /api/docs/content — save edit to SQLite always, optionally write to .pHive file
+  - GET /api/docs/content — return latest edit if exists, else read from disk
+
+  Edits are stored in doc_edits table with content hash for deduplication.
+
+acceptance_criteria:
+  - "PUT /api/docs/content creates doc_edits row with full markdown content"
+  - "PUT with commit_to_disk=true writes content to actual .pHive file path"
+  - "PUT with commit_to_disk=false writes only to SQLite"
+  - "GET /api/docs/content returns edit content if edit exists, else disk content"
+  - "400 if repo or file_path invalid/not found"
+  - "Idempotent: saving same content twice creates only one edit row (content hash dedup)"
+
+steps:
+  - id: research
+    description: Review doc-scanner adapter for file read pattern, check repo path resolution
+    agent: researcher
+  - id: test-spec
+    description: |
+      Write failing tests for doc edit routes (server/routes/docs.test.ts additions):
+      - PUT /api/docs/content with valid payload creates doc_edits row
+      - PUT with commit_to_disk=true writes to disk (mock fs or use temp directory)
+      - PUT with commit_to_disk=false does not touch disk
+      - PUT with invalid repo returns 400
+      - GET /api/docs/content returns edit content if edit exists for that repo+path
+      - GET /api/docs/content falls back to disk read if no edit exists
+      - Content hash dedup: same content twice creates single edit row
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: |
+      Extend server/routes/docs.ts with new PUT handler:
+
+      app.put<{Body: {repo, path, content, commit_to_disk?, edited_by?}}>("/api/docs/content", async (request, reply) => {
+        const {repo, path, content, commit_to_disk = false, edited_by = "consus"} = request.body;
+
+        // Validate repo exists in repos config
+        const repoPath = repos[repo];
+        if (!repoPath) return reply.code(400).send({error: `unknown repo: ${repo}`});
+
+        // Validate file path is within .pHive/epics (safety check)
+        if (!path.startsWith('.pHive/epics/')) {
+          return reply.code(400).send({error: 'only .pHive/epics docs are editable'});
+        }
+
+        // Generate content hash for dedup
+        const contentHash = crypto.createHash('sha256').update(content).digest('hex').slice(0, 12);
+
+        // Check if identical edit already exists (same repo+path+hash)
+        const existing = db.prepare(
+          "SELECT id FROM doc_edits WHERE repo=? AND file_path=? AND substr(content, 1, 32) = substr(?, 1, 32) ORDER BY created_at DESC LIMIT 1"
+        ).get(repo, path, content);
+
+        if (existing) return {edit_id: existing.id, committed: false, deduped: true};
+
+        // Insert new edit
+        const editId = `e-${randomUUID()}`;
+        db.prepare("INSERT INTO doc_edits (id, repo, file_path, content, edited_by, committed_to_disk) VALUES (?, ?, ?, ?, ?, ?)")
+          .run(editId, repo, path, content, edited_by, commit_to_disk ? 1 : 0);
+
+        // Optionally write to disk
+        if (commit_to_disk) {
+          const fullPath = join(repoPath, path);
+          await mkdir(dirname(fullPath), {recursive: true});
+          await writeFile(fullPath, content, 'utf-8');
+        }
+
+        return {edit_id: editId, committed: commit_to_disk};
+      });
+
+      Modify existing GET /api/docs/content to check doc_edits first:
+
+      app.get<{Querystring: {repo, path}}>("/api/docs/content", async (request, reply) => {
+        const {repo, path} = request.query;
+        const repoPath = repos[repo];
+        if (!repoPath) return reply.code(404).send({error: `unknown repo: ${repo}`});
+
+        // Check for latest edit
+        const edit = db.prepare("SELECT content FROM doc_edits WHERE repo=? AND file_path=? ORDER BY created_at DESC LIMIT 1")
+          .get(repo, path);
+
+        if (edit) {
+          return {repo, path, format: 'markdown', content: edit.content, source: 'edit'};
+        }
+
+        // Fallback to disk read (existing logic)
+        const {content, format} = readDocContent(repoPath, path);
+        return {repo, path, format, content, source: 'disk'};
+      });
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: |
+      Verify:
+      - Content hash dedup works correctly
+      - File writes are safe (no path traversal, mkdir recursive)
+      - GET fallback to disk is correct
+      - Tests cover both SQLite-only and commit-to-disk paths
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit doc editing API
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/dostal/.minerva/runs/694b980e-c5b7-4053-8d56-b2c22495f702/workspace
+  tech_stack:
+    framework: fastify
+    database: better-sqlite3
+    filesystem: node:fs/promises
+  key_files:
+    - path: server/routes/docs.ts
+      purpose: Existing doc routes to extend
+    - path: server/adapters/doc-scanner/index.js
+      purpose: readDocContent function for disk reads
+    - path: server/index.ts
+      purpose: repos config map (repo name -> absolute path)
+
+files_to_modify:
+  - file: server/routes/docs.ts
+    change: Add PUT /api/docs/content handler, modify GET to check edits first
+  - file: server/routes/docs.test.ts
+    change: Add test coverage for PUT and modified GET behavior
+
+code_examples:
+  - title: Repo path resolution pattern
+    file: server/routes/docs.ts
+    snippet: |
+      const repoPath = repos[repo];
+      if (!repoPath) {
+        return reply.code(404).send({ error: `unknown repo: ${repo}` });
+      }
+      const { content, format } = readDocContent(repoPath, path);
+
+design_decisions:
+  - decision: Content hash dedup to prevent duplicate edits
+    rationale: Human might hit Save multiple times; single edit row per unique content
+  - decision: Path validation restricts edits to .pHive/epics/
+    rationale: Safety — prevent arbitrary file writes outside doc directory
+  - decision: GET returns source field (edit vs disk)
+    rationale: UI can show "Unsaved changes" indicator if source=edit
+
+risks:
+  - severity: medium
+    description: Disk write fails but SQLite row succeeds (commit_to_disk=true)
+    mitigation: Log error, return committed=false; user can retry or fire without disk commit
+  - severity: low
+    description: Large doc content (>1MB) might hit SQLite blob limits
+    mitigation: SQLite TEXT has no practical limit; if issue arises, add size check in validation
+
+references:
+  - path: .pHive/epics/consus-v1-core-fa982783/docs/design-discussion.md
+    relevant_excerpt: |
+      §1 Flow 2 Doc editing:
+      - PUT /api/docs/content writes to doc_edits table always, optionally to disk
+      - GET /api/docs/content returns latest edit if exists, else disk version
+      Decision 1: SQLite-first with optional commit-to-disk (hybrid persistence)
+
+cross_cutting:
+  - concern: documentation
+    action: Document the edit persistence model (SQLite vs disk) in docs/architecture.md
