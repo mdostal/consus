@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { DecisionList } from "./features/decisions/DecisionList";
+import { EpicDetailView } from "./features/epics/EpicDetailView";
 import { EpicListView } from "./features/epics/EpicListView";
 import { ThemeSwitcher } from "./components/ThemeProvider";
 
@@ -17,8 +18,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<DecisionList />} />
           <Route path="/epics" element={<EpicListView />} />
-          {/* A detail view stub for s2-05 */}
-          <Route path="/epics/:id" element={<div>Epic Detail View Stub</div>} />
+          <Route path="/epics/:epic_id" element={<EpicDetailView />} />
         </Routes>
       </main>
     </BrowserRouter>
