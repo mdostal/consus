@@ -33,6 +33,16 @@ interface StoredDocRow extends DocIndexRow {
   multica_issue_url: string | null;
 }
 
+export interface FiredTicketRow {
+  id: string;
+  multica_issue_id: string;
+  target_repo: string;
+  fired_by: string;
+  fired_at: string;
+  repo: string;
+  file_path: string;
+}
+
 function getDocById(db: Database.Database, id: number): StoredDocRow | null {
   return db.prepare("SELECT * FROM doc_index WHERE id = ?").get(id) as StoredDocRow | undefined ?? null;
 }
@@ -151,5 +161,25 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos, client }: D
       issueUrl: created.issueUrl,
       firedAt,
     };
+  });
+
+  app.get("/api/fired", async () => {
+    return db
+      .prepare(
+        `
+        SELECT
+          ft.id,
+          ft.multica_issue_id,
+          ft.target_repo,
+          ft.fired_by,
+          ft.fired_at,
+          de.repo,
+          de.file_path
+        FROM fired_tickets ft
+        JOIN doc_edits de ON ft.edit_id = de.id
+        ORDER BY ft.fired_at DESC
+      `,
+      )
+      .all() as FiredTicketRow[];
   });
 }

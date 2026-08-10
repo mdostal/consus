@@ -207,3 +207,73 @@ describe("GET /api/docs", () => {
     expect(row).toEqual({ fired_at: null, multica_issue_id: null, multica_issue_url: null });
   });
 });
+
+describe("GET /api/fired", () => {
+  let db: Database.Database;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    runMigration(db);
+    app = Fastify();
+    registerDocRoutes(app, { db, repos: {} });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+  });
+
+  function insertEdit(id: string, repo: string, filePath: string): void {
+    db.prepare(
+      "INSERT INTO doc_edits (id, repo, file_path, content, edited_by) VALUES (?, ?, ?, ?, ?)",
+    ).run(id, repo, filePath, "content", "operator");
+  }
+
+  function insertFired(
+    id: string,
+    editId: string,
+    multicaIssueId: string,
+    targetRepo: string,
+    firedBy: string,
+    firedAt: string,
+  ): void {
+    db.prepare(
+      "INSERT INTO fired_tickets (id, edit_id, multica_issue_id, target_repo, fired_by, fired_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(id, editId, multicaIssueId, targetRepo, firedBy, firedAt);
+  }
+
+  it("returns an empty list when no tickets have been fired", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/fired" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual([]);
+  });
+
+  it("returns fired_tickets joined with doc_edits, ordered by fired_at DESC", async () => {
+    insertEdit("edit-1", "consus", "docs/a.md");
+    insertEdit("edit-2", "consus", "docs/b.md");
+    insertFired("ft-1", "edit-1", "PAN-1", "consus", "operator", "2026-08-01T00:00:00.000Z");
+    insertFired("ft-2", "edit-2", "PAN-2", "consus", "operator", "2026-08-02T00:00:00.000Z");
+
+    const res = await app.inject({ method: "GET", url: "/api/fired" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body).toHaveLength(2);
+    expect(body[0]).toMatchObject({
+      id: "ft-2",
+      multica_issue_id: "PAN-2",
+      target_repo: "consus",
+      fired_by: "operator",
+      fired_at: "2026-08-02T00:00:00.000Z",
+      repo: "consus",
+      file_path: "docs/b.md",
+    });
+    expect(body[1]).toMatchObject({
+      id: "ft-1",
+      multica_issue_id: "PAN-1",
+      repo: "consus",
+      file_path: "docs/a.md",
+    });
+  });
+});
