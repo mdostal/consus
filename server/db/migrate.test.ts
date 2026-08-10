@@ -202,4 +202,32 @@ describe("runMigration", () => {
 
     db.close();
   });
+
+  it("creates the parked_workflows table and allows inserting a record", () => {
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
+    const db = new Database(dbPath);
+
+    runMigration(db);
+
+    const names = tableNames(db);
+    expect(names).toContain("parked_workflows");
+
+    db.prepare(
+      "INSERT INTO parked_workflows (id, agent_name, workflow_type, parked_state, question_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    ).run(
+      "pw-1",
+      "researcher",
+      "research",
+      JSON.stringify({ some_key: "some_value" }),
+      "question-1",
+      "parked",
+      "2026-08-10T00:00:00Z"
+    );
+
+    const row = db.prepare("SELECT * FROM parked_workflows WHERE id = ?").get("pw-1") as any;
+    expect(row.agent_name).toBe("researcher");
+    expect(JSON.parse(row.parked_state)).toEqual({ some_key: "some_value" });
+
+    db.close();
+  });
 });

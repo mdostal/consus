@@ -89,7 +89,9 @@ export function runMigration(db: Database.Database): void {
       confidence REAL,
       suggested_channel TEXT,
       answer TEXT,
-      status TEXT NOT NULL
+      status TEXT NOT NULL,
+      agent_name TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE INDEX IF NOT EXISTS idx_human_requests_minerva_id ON human_requests(minerva_question_id);
@@ -151,7 +153,6 @@ export function runMigration(db: Database.Database): void {
       UNIQUE(repo_id, diagram_type)
     );
 
-    
     CREATE TABLE IF NOT EXISTS parked_workflows (
       id TEXT PRIMARY KEY,
       agent_name TEXT NOT NULL,
@@ -160,7 +161,8 @@ export function runMigration(db: Database.Database): void {
       status TEXT NOT NULL,
       question_id TEXT NOT NULL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      resumed_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS parked_questions (
@@ -213,10 +215,16 @@ export function runMigration(db: Database.Database): void {
   addColumnIfMissing(db, "items", "source_body", "TEXT");
   addColumnIfMissing(db, "human_requests", "answer", "TEXT");
   addColumnIfMissing(db, "human_requests", "survey_id", "INTEGER REFERENCES surveys(id)");
+  addColumnIfMissing(db, "human_requests", "created_at", "TEXT");
+  addColumnIfMissing(db, "human_requests", "agent_name", "TEXT");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_human_requests_status_created_at ON human_requests(status, created_at)");
+  addColumnIfMissing(db, "parked_workflows", "resumed_at", "TEXT");
   addColumnIfMissing(db, "kb_entries", "source_repo", "TEXT");
   addColumnIfMissing(db, "kb_versions", "state", "TEXT NOT NULL DEFAULT 'published'");
   addColumnIfMissing(db, "attachments", "deleted_at", "TEXT");
   addColumnIfMissing(db, "doc_index", "fired_at", "TEXT");
   addColumnIfMissing(db, "doc_index", "multica_issue_id", "TEXT");
   addColumnIfMissing(db, "doc_index", "multica_issue_url", "TEXT");
+  addColumnIfMissing(db, "doc_index", "editable_content", "TEXT");
+  addColumnIfMissing(db, "doc_index", "last_modified", "TEXT");
 }

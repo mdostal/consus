@@ -45,8 +45,8 @@ export function registerWorkflowRoutes(
     `);
 
     const insertHumanRequest = db.prepare(`
-      INSERT INTO human_requests (item_id, minerva_question_id, text, channel, status)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO human_requests (item_id, minerva_question_id, text, channel, status, agent_name)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
     const runTransaction = db.transaction(() => {
@@ -75,7 +75,8 @@ export function registerWorkflowRoutes(
         questionId,
         question_text,
         "minerva",
-        "pending"
+        "pending",
+        agent_name
       );
     });
 
