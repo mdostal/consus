@@ -93,6 +93,100 @@ describe("GET /api/docs", () => {
     const body = res.json();
     expect(body.format).toBe("md");
     expect(body.content).toContain("hello world");
+    expect(body.source).toBe("disk");
+  });
+
+  describe("PUT /api/docs/content", () => {
+    it("creates doc_edits row and returns it via GET", async () => {
+      const payload = {
+        repo: "consus",
+        path: ".pHive/epics/new-epic/doc.md",
+        content: "# New Content",
+        commit_to_disk: false,
+      };
+      
+      const putRes = await app.inject({
+        method: "PUT",
+        url: "/api/docs/content",
+        payload,
+      });
+      expect(putRes.statusCode).toBe(200);
+      expect(putRes.json().committed).toBe(false);
+
+      const row = db.prepare("SELECT * FROM doc_edits WHERE repo=? AND file_path=?").get("consus", ".pHive/epics/new-epic/doc.md") as any;
+      expect(row).toBeDefined();
+      expect(row.content).toBe("# New Content");
+      expect(row.committed_to_disk).toBe(0);
+
+      const getRes = await app.inject({
+        method: "GET",
+        url: "/api/docs/content?repo=consus&path=.pHive/epics/new-epic/doc.md",
+      });
+      expect(getRes.statusCode).toBe(200);
+      expect(getRes.json().content).toBe("# New Content");
+      expect(getRes.json().source).toBe("edit");
+    });
+
+    it("writes to disk when commit_to_disk is true", async () => {
+      const payload = {
+        repo: "consus",
+        path: ".pHive/epics/disk-epic/doc.md",
+        content: "# Disk Content",
+        commit_to_disk: true,
+      };
+
+      const putRes = await app.inject({
+        method: "PUT",
+        url: "/api/docs/content",
+        payload,
+      });
+      expect(putRes.statusCode).toBe(200);
+      expect(putRes.json().committed).toBe(true);
+
+      const diskRes = await app.inject({
+        method: "GET",
+        url: "/api/docs/content?repo=consus&path=.pHive/epics/disk-epic/doc.md",
+      });
+      // source is 'edit' because doc_edits is still checked first and it was written there too
+      expect(diskRes.json().source).toBe("edit");
+
+      // Verify the disk file directly
+      const fs = await import("node:fs/promises");
+      const diskContent = await fs.readFile(join(repoDir, ".pHive/epics/disk-epic/doc.md"), "utf-8");
+      expect(diskContent).toBe("# Disk Content");
+    });
+
+    it("returns 400 for invalid repo", async () => {
+      const putRes = await app.inject({
+        method: "PUT",
+        url: "/api/docs/content",
+        payload: { repo: "invalid-repo", path: ".pHive/epics/doc.md", content: "..." }
+      });
+      expect(putRes.statusCode).toBe(400);
+    });
+
+    it("returns 400 for path outside .pHive/epics", async () => {
+      const putRes = await app.inject({
+        method: "PUT",
+        url: "/api/docs/content",
+        payload: { repo: "consus", path: "src/index.ts", content: "..." }
+      });
+      expect(putRes.statusCode).toBe(400);
+    });
+
+    it("deduplicates identical edits", async () => {
+      const payload = { repo: "consus", path: ".pHive/epics/dedup.md", content: "dedup content" };
+      const res1 = await app.inject({ method: "PUT", url: "/api/docs/content", payload });
+      const res2 = await app.inject({ method: "PUT", url: "/api/docs/content", payload });
+      
+      expect(res1.statusCode).toBe(200);
+      expect(res2.statusCode).toBe(200);
+      expect(res2.json().deduped).toBe(true);
+      expect(res2.json().edit_id).toBe(res1.json().edit_id);
+
+      const rows = db.prepare("SELECT * FROM doc_edits WHERE repo=? AND file_path=?").all("consus", ".pHive/epics/dedup.md");
+      expect(rows.length).toBe(1);
+    });
   });
 
   it("fires a doc by creating a Multica issue with structured body and storing tracking fields", async () => {
