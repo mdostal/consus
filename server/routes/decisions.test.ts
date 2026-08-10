@@ -54,6 +54,9 @@ function fakeClient(result: MulticaListResult, overrides: Partial<MulticaClient>
     async writeComment() {
       return { ok: true, multicaCommentId: "unused" };
     },
+    async createIssue() {
+      return { ok: false, error: "unused" };
+    },
     async listIssues() {
       return result;
     },

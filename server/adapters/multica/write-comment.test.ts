@@ -14,6 +14,9 @@ function insertItem(db: Database.Database, id: string) {
 function fakeClient(writeComment: MulticaClient["writeComment"]): MulticaClient {
   return {
     writeComment,
+    async createIssue() {
+      return { ok: false, error: "unused" };
+    },
     async listIssues() {
       return { ok: true, issues: [] };
     },
@@ -35,6 +38,9 @@ function fakeClient(writeComment: MulticaClient["writeComment"]): MulticaClient 
     },
     async updateIssueStatus(_issueId: string, status: string) {
       return { ok: true, status };
+    },
+    async unblockIssue() {
+      return { ok: false, error: "unused" };
     },
   };
 }

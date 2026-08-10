@@ -289,6 +289,9 @@ describe("buildCascadeTree", () => {
       async writeComment() {
         return { ok: false, error: "unused" };
       },
+      async createIssue() {
+        return { ok: false, error: "unused" };
+      },
       async listIssues() {
         return {
           ok: true,
@@ -321,6 +324,9 @@ describe("buildCascadeTree", () => {
   it("surfaces the Multica error instead of throwing", async () => {
     const client: MulticaClient = {
       async writeComment() {
+        return { ok: false, error: "unused" };
+      },
+      async createIssue() {
         return { ok: false, error: "unused" };
       },
       async listIssues() {

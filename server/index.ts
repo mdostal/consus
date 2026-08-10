@@ -30,6 +30,9 @@ const UNCONFIGURED_MULTICA_CLIENT: MulticaClient = {
   async writeComment() {
     return { ok: false, error: "Multica client not configured" };
   },
+  async createIssue() {
+    return { ok: false, error: "Multica client not configured" };
+  },
   async listIssues() {
     return { ok: false, error: "Multica client not configured" };
   },
@@ -47,6 +50,9 @@ const UNCONFIGURED_MULTICA_CLIENT: MulticaClient = {
 const STANDALONE_MULTICA_CLIENT: MulticaClient = {
   async writeComment() {
     return { ok: false, error: "Multica writes are unavailable in standalone mode" };
+  },
+  async createIssue() {
+    return { ok: false, error: "Multica issue creation is unavailable in standalone mode" };
   },
   async listIssues() {
     return { ok: true, issues: [] };
@@ -90,7 +96,7 @@ export function buildServer({
   
   const finalStorageAdapter = storageAdapter || createStorageAdapter({ type: 'filesystem', baseDir: '.pHive/attachments' });
 
-  registerDocRoutes(app, { db, repos });
+  registerDocRoutes(app, { db, repos, client });
   registerKbRoutes(app, { db });
   registerArtifactLinkRoutes(app, { db });
   registerDecisionRoutes(app, { db, client, decisionLogPath });

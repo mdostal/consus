@@ -107,8 +107,19 @@ export type MulticaStatusUpdateResult =
   | { ok: true; status: string }
   | { ok: false; error: string };
 
+export interface CreateIssueInput {
+  title: string;
+  body: string;
+  labels?: string[];
+}
+
+export type MulticaCreateIssueResult =
+  | { ok: true; issueId: string; issueUrl: string }
+  | { ok: false; error: string };
+
 export interface MulticaClient {
   writeComment(input: WriteCommentInput): Promise<MulticaWriteResult>;
+  createIssue(input: CreateIssueInput): Promise<MulticaCreateIssueResult>;
   listIssues(input?: ListIssuesInput): Promise<MulticaListResult>;
   getIssue(key: string): Promise<MulticaGetIssueResult>;
   updateIssueStatus(issueId: string, status: string): Promise<MulticaStatusUpdateResult>;
@@ -144,6 +155,17 @@ function normalizeIssue(raw: unknown): MulticaIssue | null {
     createdAt: asString(raw.created_at),
     parentId: asString(raw.parent_issue_id),
   };
+}
+
+function normalizeCreatedIssue(raw: unknown): { issueId: string; issueUrl: string } | null {
+  const issue = isRecord(raw) && "issue" in raw ? raw.issue : raw;
+  if (!isRecord(issue)) return null;
+
+  const issueId = asString(issue.id);
+  const issueUrl = asString(issue.issue_url) ?? asString(issue.html_url) ?? asString(issue.web_url) ?? asString(issue.url);
+  if (!issueId || !issueUrl) return null;
+
+  return { issueId, issueUrl };
 }
 
 /** Unwrap the API's `{ issues: [...] }` / `{ data: [...] }` envelope, or a bare array. */
@@ -201,6 +223,30 @@ export class HttpMulticaClient implements MulticaClient {
 
       const data = (await response.json()) as { id: string };
       return { ok: true, multicaCommentId: data.id };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: message };
+    }
+  }
+
+  async createIssue({ title, body, labels = [] }: CreateIssueInput): Promise<MulticaCreateIssueResult> {
+    try {
+      const response = await this.fetchJson(`${this.serverUrl}/issues`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title, description: body, labels }),
+      });
+
+      if (!response.ok) {
+        return { ok: false, error: `Multica returned HTTP ${response.status}` };
+      }
+
+      const created = normalizeCreatedIssue(await response.json());
+      if (!created) {
+        return { ok: false, error: "Multica returned an invalid issue create payload" };
+      }
+
+      return { ok: true, issueId: created.issueId, issueUrl: created.issueUrl };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return { ok: false, error: message };

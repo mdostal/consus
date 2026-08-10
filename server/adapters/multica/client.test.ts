@@ -46,6 +46,52 @@ describe("HttpMulticaClient", () => {
     }
   });
 
+  it("creates an issue and normalizes the returned tracking fields", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        issue: {
+          id: "issue-123",
+          html_url: "https://multica.example/issues/PAN-123",
+        },
+      }),
+    });
+    const client = new HttpMulticaClient({
+      serverUrl: "https://api.example.com",
+      workspaceId: "ws-1",
+      token: "tok-1",
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    const result = await client.createIssue({
+      title: "Fire doc: PRD",
+      body: "## Doc: PRD",
+      labels: ["consus:fired"],
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.issueId).toBe("issue-123");
+      expect(result.issueUrl).toBe("https://multica.example/issues/PAN-123");
+    }
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.com/issues",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "content-type": "application/json",
+          authorization: "Bearer tok-1",
+          "x-workspace-id": "ws-1",
+        }),
+        body: JSON.stringify({
+          title: "Fire doc: PRD",
+          description: "## Doc: PRD",
+          labels: ["consus:fired"],
+        }),
+      }),
+    );
+  });
+
   it("sends a bearer Authorization header and X-Workspace-ID header on every request", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

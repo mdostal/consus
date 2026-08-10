@@ -30,6 +30,9 @@ function makeClient(listIssuesResult: MulticaListResult): MulticaClient {
     async writeComment() {
       return { ok: false, error: "unused" };
     },
+    async createIssue() {
+      return { ok: false, error: "unused" };
+    },
     async listIssues() {
       return listIssuesResult;
     },
