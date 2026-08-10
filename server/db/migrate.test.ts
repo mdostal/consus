@@ -19,6 +19,13 @@ function tableColumns(db: Database.Database, tableName: string) {
     .map((row) => row as { name: string; type: string; notnull: number; dflt_value: string | null; pk: number });
 }
 
+function indexNames(db: Database.Database, tableName: string): string[] {
+  return db
+    .prepare(`PRAGMA index_list(${tableName})`)
+    .all()
+    .map((row) => (row as { name: string }).name);
+}
+
 describe("runMigration", () => {
   let dbPath: string;
 
@@ -73,6 +80,42 @@ describe("runMigration", () => {
     db.close();
   });
 
+  it("adds question ordering fields to an existing human_requests table without losing rows", () => {
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
+    const db = new Database(dbPath);
+
+    db.exec(`
+      CREATE TABLE human_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id TEXT NOT NULL,
+        minerva_question_id TEXT NOT NULL UNIQUE,
+        text TEXT NOT NULL,
+        channel TEXT NOT NULL,
+        reason TEXT,
+        confidence REAL,
+        suggested_channel TEXT,
+        answer TEXT,
+        status TEXT NOT NULL
+      );
+    `);
+    db.prepare(
+      "INSERT INTO human_requests (item_id, minerva_question_id, text, channel, status) VALUES (?, ?, ?, ?, ?)",
+    ).run("human_request:q-1", "q-1", "Keep this row?", "architecture", "pending");
+
+    runMigration(db);
+
+    expect(tableColumns(db, "human_requests")).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "created_at", type: "TEXT" })]),
+    );
+    expect(indexNames(db, "human_requests")).toContain("idx_human_requests_status_created_at");
+    expect(db.prepare("SELECT minerva_question_id, status FROM human_requests WHERE minerva_question_id = ?").get("q-1")).toEqual({
+      minerva_question_id: "q-1",
+      status: "pending",
+    });
+
+    db.close();
+  });
+
   it("creates the v1 core schema tables with expected columns", () => {
     dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
     const db = new Database(dbPath);
@@ -110,6 +153,16 @@ describe("runMigration", () => {
       expect.objectContaining({ name: "target_repo", type: "TEXT", notnull: 1 }),
       expect.objectContaining({ name: "fired_by", type: "TEXT", notnull: 1 }),
       expect.objectContaining({ name: "fired_at", type: "TEXT", dflt_value: "CURRENT_TIMESTAMP" }),
+    ]);
+    expect(tableColumns(db, "parked_workflows")).toEqual([
+      expect.objectContaining({ name: "id", type: "TEXT", pk: 1 }),
+      expect.objectContaining({ name: "agent_name", type: "TEXT", notnull: 1 }),
+      expect.objectContaining({ name: "workflow_type", type: "TEXT", notnull: 1 }),
+      expect.objectContaining({ name: "parked_state", type: "TEXT", notnull: 1 }),
+      expect.objectContaining({ name: "question_id", type: "TEXT" }),
+      expect.objectContaining({ name: "status", type: "TEXT", notnull: 1 }),
+      expect.objectContaining({ name: "created_at", type: "TEXT", notnull: 1 }),
+      expect.objectContaining({ name: "resumed_at", type: "TEXT" }),
     ]);
 
     db.close();

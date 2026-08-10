@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom';
+
 export interface GroupedDoc {
   epic: string | null;
   file_path: string;
@@ -33,6 +35,9 @@ export function DocBrowser({ grouped, onOpen }: DocBrowserProps) {
                     <button type="button" onClick={() => onOpen(repo, doc.file_path)}>
                       {doc.file_path}
                     </button>
+                    <Link to={`/docs/${repo}/${encodeURIComponent(doc.file_path)}/edit`} className="edit-btn">
+                      Edit
+                    </Link>
                   </li>
                 ))}
               </ul>

@@ -19,7 +19,6 @@ interface QuestionRow {
   suggested_channel: string | null;
   answer: string | null;
   status: string;
-  agent_name: string | null;
   created_at: string | null;
 }
 
@@ -46,7 +45,7 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, client }: Que
   app.get("/api/questions", async () => {
     const rows = db
       .prepare(
-        `SELECT id, item_id, minerva_question_id, text, channel, reason, confidence, suggested_channel, answer, status, agent_name, created_at
+        `SELECT id, item_id, minerva_question_id, text, channel, reason, confidence, suggested_channel, answer, status, created_at
          FROM human_requests
          WHERE status = 'pending'
          ORDER BY created_at DESC, id DESC`,
@@ -71,7 +70,7 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, client }: Que
 
       const question = db
         .prepare(
-          `SELECT id, item_id, minerva_question_id, text, channel, reason, confidence, suggested_channel, answer, status, agent_name, created_at
+          `SELECT id, item_id, minerva_question_id, text, channel, reason, confidence, suggested_channel, answer, status, created_at
            FROM human_requests
            WHERE CAST(id AS TEXT) = ?`,
         )
@@ -98,8 +97,8 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, client }: Que
       db.prepare("UPDATE human_requests SET answer = ?, status = 'answered' WHERE id = ?").run(answer, question.id);
       db.prepare("UPDATE items SET status = 'answered', updated_at = ? WHERE id = ?").run(now, question.item_id);
       const workflowUpdate = db
-        .prepare("UPDATE parked_workflows SET status = 'resumed', resumed_at = ? WHERE question_id = ?")
-        .run(now, question.minerva_question_id);
+        .prepare("UPDATE parked_workflows SET status = 'resumed', resumed_at = ? WHERE CAST(question_id AS TEXT) = ?")
+        .run(now, String(question.id));
 
       const commentResult = await writeCommentAndCache(db, client, {
         itemId: remoteItemIdFor(question.item_id),

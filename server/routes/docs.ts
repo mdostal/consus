@@ -122,7 +122,6 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos, client }: D
     if (edit) {
       return { repo, path, format: path.endsWith(".html") ? "html" : "md", content: edit.content, source: "edit" };
     }
-
     const { content, format } = readDocContent(repoPath, path);
     return { repo, path, format, content, source: "disk" };
   });

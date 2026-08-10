@@ -219,6 +219,7 @@ export function runMigration(db: Database.Database): void {
   addColumnIfMissing(db, "human_requests", "agent_name", "TEXT");
   db.exec("CREATE INDEX IF NOT EXISTS idx_human_requests_status_created_at ON human_requests(status, created_at)");
   addColumnIfMissing(db, "parked_workflows", "resumed_at", "TEXT");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_human_requests_status_created_at ON human_requests(status, created_at)");
   addColumnIfMissing(db, "kb_entries", "source_repo", "TEXT");
   addColumnIfMissing(db, "kb_versions", "state", "TEXT NOT NULL DEFAULT 'published'");
   addColumnIfMissing(db, "attachments", "deleted_at", "TEXT");
