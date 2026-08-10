@@ -21,6 +21,7 @@
     "rebuild:native": "npm rebuild better-sqlite3",
     "pretest": "node scripts/check-native-abi.mjs",
     "test": "vitest run",
+    "test:dual-mode": "vitest run server/index.test.ts",
     "test:watch": "vitest",
     "test:e2e": "playwright test"
   },
