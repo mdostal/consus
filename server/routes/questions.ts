@@ -74,6 +74,16 @@ export function registerQuestionRoutes(app: FastifyInstance, { db, client }: Que
     } catch (e) { reply.code(500); return { error: (e as Error).message }; }
   });
 
+
+  // Single question by id — the Minerva poller reads this to detect answered/status + fetch the answer.
+  app.get<{ Params: { id: string } }>("/api/questions/:id", async (request, reply) => {
+    const row = db
+      .prepare("SELECT id, item_id, minerva_question_id, text, channel, reason, confidence, suggested_channel, answer, status, created_at FROM human_requests WHERE CAST(id AS TEXT) = ?")
+      .get(request.params.id) as QuestionRow | undefined;
+    if (!row) { reply.code(404); return { error: "question not found" }; }
+    return row;
+  });
+
   app.post<{ Params: { id: string }; Body: AnswerRequestBody }>("/api/questions/:id/answer", async (request, reply) => {
     const body = request.body ?? {};
     if (typeof body.answer !== "string" || body.answer.trim().length === 0) {
