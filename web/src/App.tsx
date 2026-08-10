@@ -3,12 +3,16 @@ import { DecisionList } from "./features/decisions/DecisionList";
 import { EpicDetailView } from "./features/epics/EpicDetailView";
 import { EpicListView } from "./features/epics/EpicListView";
 <<<<<<< HEAD
+<<<<<<< HEAD
 import { DocEditor } from "./features/docs/DocEditor";
 import { QuestionInbox } from "./features/questions/QuestionInbox";
 import { FiredHistoryView } from "./features/fired/FiredHistoryView";
 =======
 import { QuestionInbox } from "./features/questions/QuestionInbox";
 >>>>>>> origin/feat/PAN-8234
+=======
+import { FiredHistoryView } from "./features/fired/FiredHistoryView";
+>>>>>>> origin/feat/PAN-8228
 import { ThemeSwitcher } from "./components/ThemeProvider";
 <<<<<<< HEAD
 import { QuestionsView } from "./views/QuestionsView";
@@ -28,6 +32,7 @@ export function App() {
           <Link to="/epics" style={{ marginRight: '1rem' }}>Epics</Link>
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
           <Link to="/questions" style={{ marginRight: '1rem' }}>Questions</Link>
           <Link to="/fired">Fire History</Link>
 =======
@@ -36,6 +41,9 @@ export function App() {
 =======
           <Link to="/questions">Questions</Link>
 >>>>>>> origin/feat/PAN-8226
+=======
+          <Link to="/fired">Fire History</Link>
+>>>>>>> origin/feat/PAN-8228
         </nav>
         <Routes>
           <Route path="/" element={<DecisionList />} />
@@ -56,8 +64,12 @@ export function App() {
 >>>>>>> origin/feat/PAN-8227
           {/* A detail view stub for s2-05 */}
           <Route path="/epics/:id" element={<div>Epic Detail View Stub</div>} />
+<<<<<<< HEAD
           <Route path="/questions" element={<QuestionInbox />} />
 >>>>>>> origin/feat/PAN-8234
+=======
+          <Route path="/fired" element={<FiredHistoryView />} />
+>>>>>>> origin/feat/PAN-8228
         </Routes>
       </main>
     </BrowserRouter>

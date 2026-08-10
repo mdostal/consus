@@ -1,5 +1,3 @@
-import { API_BASE_URL } from "../config";
-
 export interface FiredTicket {
   id: string;
   multica_issue_id: string;
@@ -11,7 +9,7 @@ export interface FiredTicket {
 }
 
 export async function fetchFiredTickets(): Promise<FiredTicket[]> {
-  const response = await fetch(`${API_BASE_URL}/api/fired`);
+  const response = await fetch("/api/fired");
   if (!response.ok) {
     throw new Error(`Failed to load fired tickets: HTTP ${response.status}`);
   }
