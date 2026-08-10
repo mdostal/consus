@@ -160,4 +160,5 @@ export function runMigration(db: Database.Database): void {
   addColumnIfMissing(db, "kb_entries", "source_repo", "TEXT");
   addColumnIfMissing(db, "kb_versions", "state", "TEXT NOT NULL DEFAULT 'published'");
   addColumnIfMissing(db, "attachments", "deleted_at", "TEXT");
+  addColumnIfMissing(db, "diagrams", "docs_fingerprint", "TEXT");
 }

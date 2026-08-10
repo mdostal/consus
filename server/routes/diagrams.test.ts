@@ -161,3 +161,114 @@ describe("GET /api/diagrams/cascade", () => {
     expect(res.json().error).toContain("503");
   });
 });
+
+describe("GET /api/diagrams/repo/:repo_id/architecture", () => {
+  let db: Database.Database;
+  let app: FastifyInstance;
+  let repoDir: string;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    runMigration(db);
+    repoDir = mkdtempSync(join(tmpdir(), "consus-repo-arch-route-"));
+  });
+
+  afterEach(async () => {
+    if (app) await app.close();
+    db.close();
+    rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  function writeEpicDoc(epic: string, phase: string, fileName: string, content: string): void {
+    const dir = join(repoDir, ".pHive", "epics", epic, phase);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, fileName), content);
+  }
+
+  it("returns a top-level Mermaid diagram built from the repo's .pHive docs", async () => {
+    writeEpicDoc("alpha", "docs", "architecture.md", "# alpha");
+    writeEpicDoc("bravo", "docs", "architecture.md", "# bravo");
+
+    app = Fastify();
+    registerDiagramRoutes(app, { db, client: makeClient({ ok: true, issues: [] }), repos: { consus: repoDir } });
+    await app.ready();
+
+    const res = await app.inject({ method: "GET", url: "/api/diagrams/repo/consus/architecture?level=top" });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.mermaid.split("\n")[0]).toBe("graph TD");
+    expect(body.mermaid).toContain("alpha");
+    expect(body.mermaid).toContain("bravo");
+    expect(body.stale).toBe(false);
+  });
+
+  it("returns a full Mermaid diagram with components and dependency edges", async () => {
+    writeEpicDoc("alpha", "planning", "brief.md", "# brief");
+    writeEpicDoc("alpha", "docs", "architecture.md", "# architecture");
+
+    app = Fastify();
+    registerDiagramRoutes(app, { db, client: makeClient({ ok: true, issues: [] }), repos: { consus: repoDir } });
+    await app.ready();
+
+    const res = await app.inject({ method: "GET", url: "/api/diagrams/repo/consus/architecture?level=full" });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.mermaid).toContain("alpha / planning");
+    expect(body.mermaid).toContain("alpha / docs");
+    expect(body.mermaid).toMatch(/-->/);
+  });
+
+  it("serves the cached diagram without rescanning when .pHive docs are unchanged", async () => {
+    writeEpicDoc("alpha", "docs", "architecture.md", "# alpha");
+
+    app = Fastify();
+    registerDiagramRoutes(app, { db, client: makeClient({ ok: true, issues: [] }), repos: { consus: repoDir } });
+    await app.ready();
+
+    const first = await app.inject({ method: "GET", url: "/api/diagrams/repo/consus/architecture?level=top" });
+    expect(first.json().stale).toBe(false);
+
+    // Mutate the mermaid source directly to prove the second request serves this cached value
+    // rather than regenerating (docs on disk are unchanged).
+    const cachedRow = db.prepare("SELECT * FROM diagrams WHERE diagram_type = 'repo-architecture-top'").get() as {
+      mermaid_source: string;
+    };
+    db.prepare("UPDATE diagrams SET mermaid_source = ? WHERE diagram_type = 'repo-architecture-top'").run(
+      "graph TD\n  z[\"sentinel-cached-value\"]"
+    );
+
+    const second = await app.inject({ method: "GET", url: "/api/diagrams/repo/consus/architecture?level=top" });
+    expect(second.json().mermaid).toBe("graph TD\n  z[\"sentinel-cached-value\"]");
+    expect(second.json().mermaid).not.toBe(cachedRow.mermaid_source);
+  });
+
+  it("regenerates and re-caches when the repo's .pHive docs change", async () => {
+    writeEpicDoc("alpha", "docs", "architecture.md", "# alpha");
+
+    app = Fastify();
+    registerDiagramRoutes(app, { db, client: makeClient({ ok: true, issues: [] }), repos: { consus: repoDir } });
+    await app.ready();
+
+    const first = await app.inject({ method: "GET", url: "/api/diagrams/repo/consus/architecture?level=top" });
+    expect(first.json().mermaid).toContain("alpha");
+    expect(first.json().mermaid).not.toContain("bravo");
+
+    writeEpicDoc("bravo", "docs", "architecture.md", "# bravo");
+
+    const second = await app.inject({ method: "GET", url: "/api/diagrams/repo/consus/architecture?level=top" });
+    expect(second.json().mermaid).toContain("bravo");
+  });
+
+  it("returns 404 for an unknown repo", async () => {
+    app = Fastify();
+    registerDiagramRoutes(app, { db, client: makeClient({ ok: true, issues: [] }), repos: {} });
+    await app.ready();
+
+    const res = await app.inject({ method: "GET", url: "/api/diagrams/repo/unknown/architecture" });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toContain("unknown");
+  });
+});
