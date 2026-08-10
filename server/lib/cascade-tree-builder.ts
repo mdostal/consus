@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { load as loadYaml } from "js-yaml";
 import type { MulticaClient, MulticaIssue } from "../adapters/multica/client.js";
@@ -26,6 +26,7 @@ export interface EpicFile {
   name: string;
   title: string;
   stories: EpicFileStory[];
+  updatedAt: string;
 }
 
 /** Minimal shape the cascade builder needs from a Multica issue. */
@@ -164,7 +165,7 @@ export function mergeEpicFilesIntoForest(forest: CascadeNode[], epicFiles: EpicF
 }
 
 /** Parses one .pHive/epics/<name>/epic.yaml file's `name`, `title`, and `stories[].{id,title}`. */
-export function parseEpicYaml(raw: string, repo: string): EpicFile | null {
+export function parseEpicYaml(raw: string, repo: string, updatedAt: string = new Date(0).toISOString()): EpicFile | null {
   let doc: unknown;
   try {
     doc = loadYaml(raw);
@@ -186,7 +187,7 @@ export function parseEpicYaml(raw: string, repo: string): EpicFile | null {
     }))
     .filter((s) => s.id.length > 0);
 
-  return { repo, name, title, stories };
+  return { repo, name, title, stories, updatedAt };
 }
 
 /** Finds every .pHive/epics/*\/epic.yaml under a repo's absolute path. */
@@ -217,7 +218,8 @@ export function loadEpicFiles(repos: Record<string, string>): EpicFile[] {
   for (const [repoName, repoPath] of Object.entries(repos)) {
     for (const epicYamlPath of findEpicYamlPaths(repoPath)) {
       const raw = readFileSync(epicYamlPath, "utf-8");
-      const parsed = parseEpicYaml(raw, repoName);
+      const stat = statSync(epicYamlPath);
+      const parsed = parseEpicYaml(raw, repoName, stat.mtime.toISOString());
       if (parsed) files.push(parsed);
     }
   }
