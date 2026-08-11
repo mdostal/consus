@@ -10,6 +10,9 @@ export interface DecisionListItem {
   decision_payload: DecisionPayload | null;
   decision_type: DecisionType | null;
   triage_bucket: TriageBucket | null;
+  /** raw source text (issue body, doc, etc.) — present on the wire but only
+   *  worth rendering in the detail panel, not the list rows. */
+  source_body?: string | null;
 }
 
 export interface FetchDecisionsOptions {

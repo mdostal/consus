@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { DecisionList } from "./DecisionList";
 import * as decisionsApi from "../../api/decisions";
 import type { DecisionListItem } from "../../api/decisions";
@@ -62,5 +62,36 @@ describe("DecisionList", () => {
     render(<DecisionList />);
 
     await waitFor(() => expect(screen.getByTestId("decision-list-empty")).toBeInTheDocument());
+  });
+
+  it("Given items are passed directly, skips the fetch and renders them", async () => {
+    render(<DecisionList items={[makeItem({ id: "multica:mul-9", title: "Controlled item" })]} />);
+
+    expect(await screen.findByText("Controlled item")).toBeInTheDocument();
+    expect(fetchDecisionsMock).not.toHaveBeenCalled();
+  });
+
+  it("Given an onSelect handler, clicking a row calls it with that row's item", async () => {
+    const onSelect = vi.fn();
+    render(<DecisionList items={[makeItem({ id: "multica:mul-1" }), makeItem({ id: "multica:mul-2" })]} onSelect={onSelect} />);
+
+    const rows = await screen.findAllByRole("option");
+    fireEvent.click(rows[1]);
+
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ id: "multica:mul-2" }));
+  });
+
+  it("Given a selectedId matching a row, marks that row aria-selected and leaves others unselected", async () => {
+    render(
+      <DecisionList
+        items={[makeItem({ id: "multica:mul-1" }), makeItem({ id: "multica:mul-2" })]}
+        selectedId="multica:mul-2"
+        onSelect={vi.fn()}
+      />,
+    );
+
+    const rows = await screen.findAllByRole("option");
+    expect(rows[0]).toHaveAttribute("aria-selected", "false");
+    expect(rows[1]).toHaveAttribute("aria-selected", "true");
   });
 });

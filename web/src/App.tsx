@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
-import { DecisionList } from "./features/decisions/DecisionList";
+import { DecisionsView } from "./features/decisions/DecisionsView";
 import { EpicDetailView } from "./features/epics/EpicDetailView";
 import { EpicListView } from "./features/epics/EpicListView";
 import { DocEditor } from "./features/docs/DocEditor";
@@ -22,7 +22,7 @@ export function App() {
           <Link to="/fired">Fire History</Link>
         </nav>
         <Routes>
-          <Route path="/" element={<DecisionList />} />
+          <Route path="/" element={<DecisionsView />} />
           <Route path="/epics" element={<EpicListView />} />
           <Route path="/epics/:epic_id" element={<EpicDetailView />} />
           <Route path="/docs/:id" element={<DocEditor />} />
