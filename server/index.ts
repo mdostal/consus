@@ -12,6 +12,7 @@ import { registerDiagramRoutes } from "./routes/diagrams.js";
 import { registerEpicRoutes } from "./routes/epics.js";
 import { registerWorkflowRoutes } from "./routes/workflows.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
+import { scanRepo } from "./adapters/doc-scanner/index.js";
 import { HttpMulticaClient, type MulticaClient } from "./adapters/multica/client.js";
 import { createStorageAdapter, type StorageAdapter } from "./storage/index.js";
 import fastifyStatic from "@fastify/static";
@@ -110,6 +111,20 @@ export function buildServer({
   registerDiagramRoutes(app, { db, client, repos });
   registerEpicRoutes(app, { db, client, repos });
   registerWorkflowRoutes(app, { db });
+
+  // Populate the doc index from disk at startup so GET /api/docs surfaces the
+  // .pHive docs (planning/* and epics/<epic>/**). Idempotent upsert; re-runs on
+  // every boot so restarts pick up newly generated docs. Without this the
+  // doc_index table stays empty and /api/docs returns {"<repo>":{}}.
+  for (const [repoName, repoPath] of Object.entries(repos)) {
+    try {
+      scanRepo(db, { repoName, repoPath });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // eslint-disable-next-line no-console
+      console.warn(`[doc-scanner] startup scan failed for ${repoName} (${repoPath}): ${message}`);
+    }
+  }
 
   if (mode === "plugin") {
     app.addHook("onReady", async () => {
