@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runMigration } from "../db/migrate.js";
 import { registerDiagramRoutes } from "./diagrams.js";
-import { setCachedDiagram } from "../db/diagrams-cache.js";
+import { getCachedDiagram, setCachedDiagram } from "../db/diagrams-cache.js";
 import type { MulticaClient, MulticaIssue, MulticaListResult } from "../adapters/multica/client.js";
 
 function makeIssue(overrides: Partial<MulticaIssue> = {}): MulticaIssue {
@@ -162,5 +162,62 @@ describe("GET /api/diagrams/cascade", () => {
 
     expect(res.statusCode).toBe(502);
     expect(res.json().error).toContain("503");
+  });
+});
+
+describe("GET /api/diagrams/:repo", () => {
+  let repoDir: string;
+  let db: Database.Database;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    repoDir = mkdtempSync(join(tmpdir(), "consus-diagram-route-"));
+    mkdirSync(join(repoDir, "server"));
+    mkdirSync(join(repoDir, "web"));
+
+    db = new Database(":memory:");
+    runMigration(db);
+
+    const client = makeClient({ ok: true, issues: [] });
+    app = Fastify();
+    registerDiagramRoutes(app, { db, client, repos: { consus: repoDir } });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+    rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it("returns topLevel and fullComponent Mermaid markup for a known repo", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/diagrams/consus" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(typeof body.topLevel).toBe("string");
+    expect(typeof body.fullComponent).toBe("string");
+    expect(body.topLevel.startsWith("graph TD")).toBe(true);
+    expect(body.fullComponent.startsWith("graph TD")).toBe(true);
+  });
+
+  it("returns 404 if repo is not in the project registry", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/diagrams/unknown-repo" });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toContain("unknown-repo");
+  });
+
+  it("caches the generated diagrams so a second request reads from the diagrams cache", async () => {
+    const first = await app.inject({ method: "GET", url: "/api/diagrams/consus" });
+    expect(first.statusCode).toBe(200);
+
+    const cachedTop = getCachedDiagram(db, "consus", "topLevel");
+    const cachedFull = getCachedDiagram(db, "consus", "fullComponent");
+    expect(cachedTop?.mermaid_source).toBe(first.json().topLevel);
+    expect(cachedFull?.mermaid_source).toBe(first.json().fullComponent);
+
+    mkdirSync(join(repoDir, "new-dir-added-after-first-request"));
+    const second = await app.inject({ method: "GET", url: "/api/diagrams/consus" });
+    expect(second.json()).toEqual(first.json());
+    expect(second.json().topLevel).not.toContain("new-dir-added-after-first-request");
   });
 });

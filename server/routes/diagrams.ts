@@ -2,18 +2,22 @@ import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
 import { getCachedDiagram, setCachedDiagram } from "../db/diagrams-cache.js";
 import { buildCascadeTree, renderCascadeMermaid } from "../lib/cascade-tree-builder.js";
+import { generateDiagrams } from "../lib/diagram-generator.js";
 import type { MulticaClient } from "../adapters/multica/client.js";
 
 export interface DiagramRoutesOptions {
   db: Database.Database;
   client: MulticaClient;
-  /** repo name -> absolute path on disk, scanned for .pHive/epics/*\/epic.yaml */
+  /** repo name -> absolute path on disk, scanned for .pHive/epics/*\/epic.yaml and architecture diagrams */
   repos: Record<string, string>;
 }
 
 const CASCADE_DIAGRAM_TYPE = "cascade";
 /** Risk mitigation from this story's plan: Multica may be slow/unavailable, so the cascade is cached for 5 minutes and served stale on fetch error. */
 const CASCADE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+const TOP_LEVEL_TYPE = "topLevel";
+const FULL_COMPONENT_TYPE = "fullComponent";
 
 export function registerDiagramRoutes(app: FastifyInstance, { db, client, repos }: DiagramRoutesOptions): void {
   app.get("/api/diagrams/cascade", async (request, reply) => {
@@ -36,5 +40,25 @@ export function registerDiagramRoutes(app: FastifyInstance, { db, client, repos 
     const refreshed = getCachedDiagram(db, null, CASCADE_DIAGRAM_TYPE);
 
     return { mermaid, cached_at: refreshed?.cached_at ?? new Date().toISOString(), stale: false };
+  });
+
+  app.get<{ Params: { repo: string } }>("/api/diagrams/:repo", async (request, reply) => {
+    const { repo } = request.params;
+    const repoPath = repos[repo];
+    if (!repoPath) {
+      reply.code(404);
+      return { error: `unknown repo: ${repo}` };
+    }
+
+    const cachedTopLevel = getCachedDiagram(db, repo, TOP_LEVEL_TYPE);
+    const cachedFullComponent = getCachedDiagram(db, repo, FULL_COMPONENT_TYPE);
+    if (cachedTopLevel && cachedFullComponent) {
+      return { topLevel: cachedTopLevel.mermaid_source, fullComponent: cachedFullComponent.mermaid_source };
+    }
+
+    const { topLevel, fullComponent } = generateDiagrams(repoPath);
+    setCachedDiagram(db, repo, TOP_LEVEL_TYPE, topLevel);
+    setCachedDiagram(db, repo, FULL_COMPONENT_TYPE, fullComponent);
+    return { topLevel, fullComponent };
   });
 }
