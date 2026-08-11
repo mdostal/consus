@@ -40,7 +40,6 @@ interface GroupedDocs {
 }
 
 interface StoredDocRow extends DocIndexRow {
-  editable_content?: unknown;
   fired_at: string | null;
   multica_issue_id: string | null;
   multica_issue_url: string | null;
@@ -60,10 +59,13 @@ function getDocById(db: Database.Database, id: number): StoredDocRow | null {
   return db.prepare("SELECT * FROM doc_index WHERE id = ?").get(id) as StoredDocRow | undefined ?? null;
 }
 
-function contentForDoc(row: StoredDocRow, repoPath: string): string {
-  return typeof row.editable_content === "string" && row.editable_content.trim()
-    ? row.editable_content
-    : readDocContent(repoPath, row.file_path).content;
+/** Mirrors GET /api/docs/:id's edit lookup so a fired issue reflects the
+ *  latest SQLite-persisted edit (doc_edits), not a stale on-disk copy. */
+function contentForDoc(db: Database.Database, row: StoredDocRow, repoPath: string): string {
+  const edit = db
+    .prepare("SELECT content FROM doc_edits WHERE repo = ? AND file_path = ? ORDER BY created_at DESC LIMIT 1")
+    .get(row.repo, row.file_path) as { content: string } | undefined;
+  return edit ? edit.content : readDocContent(repoPath, row.file_path).content;
 }
 
 function docTitle(row: StoredDocRow, content: string): string {
@@ -269,7 +271,7 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos, client }: D
 
     let content: string;
     try {
-      content = contentForDoc(doc, repoPath);
+      content = contentForDoc(db, doc, repoPath);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return reply.code(500).send({ error: `failed to read doc content: ${message}` });

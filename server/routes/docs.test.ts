@@ -144,9 +144,10 @@ describe("GET /api/docs", () => {
     expect(res.json()).toEqual({ error: "Multica client not configured" });
   });
 
-  it("prefers editable_content when that dependent edit column exists", async () => {
-    db.exec("ALTER TABLE doc_index ADD COLUMN editable_content TEXT");
-    db.prepare("UPDATE doc_index SET editable_content = ? WHERE id = ?").run("# Edited PRD\n\noperator version", docId(db));
+  it("prefers the latest doc_edits row over on-disk content when firing", async () => {
+    db.prepare(
+      "INSERT INTO doc_edits (id, repo, file_path, content, edited_by) VALUES (?, ?, ?, ?, ?)",
+    ).run("e-test-1", "consus", join(".pHive", "planning", "prd.md"), "# Edited PRD\n\noperator version", "operator");
     await app.close();
     const createIssue = vi.fn().mockResolvedValue({
       ok: true,
