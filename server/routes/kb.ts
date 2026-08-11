@@ -1,10 +1,41 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
-import { decideItem, getAuditLog, createKbEntry, getKbVersions, saveKbDraft, getKbDraftVersions } from "../kb/store.js";
+import {
+  KB_COLLECTIONS,
+  decideItem,
+  getAuditLog,
+  createKbEntry,
+  getKbEntries,
+  getKbVersions,
+  saveKbDraft,
+  getKbDraftVersions,
+  type KbCollection,
+} from "../kb/store.js";
 import { triggerApprovalPipeline } from "../kb/pipeline.js";
 
 export interface KbRoutesOptions {
   db: Database.Database;
+}
+
+function parseCollectionParam(
+  collection: string | string[] | undefined,
+): { ok: true; collection?: KbCollection } | { ok: false; error: string } {
+  if (collection === undefined) {
+    return { ok: true };
+  }
+
+  if (Array.isArray(collection)) {
+    return { ok: false, error: "Expected a single collection query parameter." };
+  }
+
+  if (!KB_COLLECTIONS.includes(collection as KbCollection)) {
+    return {
+      ok: false,
+      error: `Invalid collection. Expected one of: ${KB_COLLECTIONS.join(", ")}.`,
+    };
+  }
+
+  return { ok: true, collection: collection as KbCollection };
 }
 
 export function registerKbRoutes(app: FastifyInstance, { db }: KbRoutesOptions): void {
@@ -32,38 +63,37 @@ export function registerKbRoutes(app: FastifyInstance, { db }: KbRoutesOptions):
   // entries) + direct edit, versioned like every other write.
   // REQ-27: optional ?project= scopes to one project's entries; omitted
   // returns every project's entries (the "global" cross-project case).
-  app.get<{ Querystring: { q?: string; project?: string } }>("/api/kb-entries", async (request) => {
-    const { q, project } = request.query;
+  app.get<{ Querystring: { q?: string; project?: string; collection?: string | string[] } }>(
+    "/api/kb-entries",
+    async (request, reply) => {
+      const { q, project, collection } = request.query;
+      const parsedCollection = parseCollectionParam(collection);
 
-    if (q) {
-      const params: string[] = [`%${q}%`, `%${q}%`];
-      let sql = `SELECT DISTINCT e.* FROM kb_entries e
-                 JOIN kb_versions v ON v.kb_entry_id = e.id
-                 WHERE v.state = 'published' AND (e.title LIKE ? OR v.content LIKE ?)`;
-      if (project) {
-        sql += " AND e.source_repo = ?";
-        params.push(project);
+      if (!parsedCollection.ok) {
+        return reply.code(400).send({ error: parsedCollection.error });
       }
-      sql += " ORDER BY e.created_at DESC";
-      return db.prepare(sql).all(...params);
-    }
 
-    if (project) {
-      return db.prepare("SELECT * FROM kb_entries WHERE source_repo = ? ORDER BY created_at DESC").all(project);
-    }
-    return db.prepare("SELECT * FROM kb_entries ORDER BY created_at DESC").all();
-  });
+      return getKbEntries(db, { q, project, collection: parsedCollection.collection });
+    },
+  );
 
-  app.put<{ Params: { id: string }; Body: { author: string; content: string } }>(
+  app.put<{
+    Params: { id: string };
+    Body: {
+      author: string;
+      content: string;
+      collection?: "marketing" | "boundary-decisions" | "plans" | "artifacts" | "general";
+    };
+  }>(
     "/api/kb-entries/:id",
     async (request) => {
       const { id } = request.params;
-      const { author, content } = request.body;
+      const { author, content, collection } = request.body;
       const existing = db.prepare("SELECT title FROM kb_entries WHERE id = ?").get(id) as
         | { title: string }
         | undefined;
 
-      createKbEntry(db, { id, title: existing?.title ?? id, author, content });
+      createKbEntry(db, { id, title: existing?.title ?? id, author, content, collection });
       return { ok: true };
     },
   );

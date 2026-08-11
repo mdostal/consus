@@ -19,6 +19,18 @@ export interface KbVersionRow {
   created_at: string;
 }
 
+export const KB_COLLECTIONS = ["marketing", "boundary-decisions", "plans", "artifacts", "general"] as const;
+export type KbCollection = (typeof KB_COLLECTIONS)[number];
+
+export interface KbEntryRow {
+  id: string;
+  title: string;
+  current_version_id: number | null;
+  created_at: string;
+  source_repo: string | null;
+  collection: KbCollection;
+}
+
 export interface DecideItemInput {
   itemId: string;
   actor: string;
@@ -68,6 +80,8 @@ export interface CreateKbEntryInput {
   content: string;
   /** Project/repo this entry belongs to (REQ-27) — nullable for backward compatibility. */
   sourceRepo?: string | null;
+  /** Collection bucket for KB grouping; defaults to general for backward compatibility. */
+  collection?: KbCollection;
 }
 
 export interface SaveKbDraftInput {
@@ -85,14 +99,14 @@ export interface SaveKbDraftInput {
  */
 export function createKbEntry(
   db: Database.Database,
-  { id, title, author, content, sourceRepo }: CreateKbEntryInput,
+  { id, title, author, content, sourceRepo, collection = "general" }: CreateKbEntryInput,
 ): void {
   const now = new Date().toISOString();
 
   const tx = db.transaction(() => {
     db.prepare(
-      "INSERT OR IGNORE INTO kb_entries (id, title, current_version_id, created_at, source_repo) VALUES (?, ?, NULL, ?, ?)",
-    ).run(id, title, now, sourceRepo ?? null);
+      "INSERT OR IGNORE INTO kb_entries (id, title, current_version_id, created_at, source_repo, collection) VALUES (?, ?, NULL, ?, ?, ?)",
+    ).run(id, title, now, sourceRepo ?? null, collection);
 
     const result = db
       .prepare("INSERT INTO kb_versions (kb_entry_id, content, author, state, created_at) VALUES (?, ?, ?, ?, ?)")
@@ -125,6 +139,47 @@ export function saveKbDraft(
     return db.prepare("SELECT * FROM kb_versions WHERE id = ?").get(result.lastInsertRowid) as KbVersionRow;
   });
   return tx();
+}
+
+export interface GetKbEntriesFilters {
+  project?: string;
+  q?: string;
+  collection?: KbCollection;
+}
+
+export function getKbEntries(
+  db: Database.Database,
+  { project, q, collection }: GetKbEntriesFilters = {},
+): KbEntryRow[] {
+  const params: string[] = [];
+  const where: string[] = [];
+  const joins = q ? "JOIN kb_versions v ON v.kb_entry_id = e.id" : "";
+
+  if (q) {
+    where.push("v.state = 'published'");
+    where.push("(e.title LIKE ? OR v.content LIKE ?)");
+    params.push(`%${q}%`, `%${q}%`);
+  }
+
+  if (project) {
+    where.push("e.source_repo = ?");
+    params.push(project);
+  }
+
+  if (collection) {
+    where.push("e.collection = ?");
+    params.push(collection);
+  }
+
+  const sql = [
+    `SELECT DISTINCT e.* FROM kb_entries e ${joins}`,
+    where.length ? `WHERE ${where.join(" AND ")}` : "",
+    "ORDER BY e.created_at DESC",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return db.prepare(sql).all(...params) as KbEntryRow[];
 }
 
 export function getKbVersions(db: Database.Database, kbEntryId: string): KbVersionRow[] {
