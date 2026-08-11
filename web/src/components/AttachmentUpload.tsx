@@ -5,16 +5,17 @@ import { UploadProgress } from './UploadProgress';
 import { SkeletonLoader } from './SkeletonLoader';
 
 export interface AttachmentUploadProps {
+  ticketId?: string;
   onUploadSuccess?: (attachment: any) => void;
 }
 
-export function AttachmentUpload({ onUploadSuccess }: AttachmentUploadProps) {
+export function AttachmentUpload({ ticketId, onUploadSuccess }: AttachmentUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [currentFile, setCurrentFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { upload, progress, isUploading, error: uploadError } = useFileUpload();
+  const { upload, progress, isUploading, error: uploadError } = useFileUpload({ ticketId });
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();

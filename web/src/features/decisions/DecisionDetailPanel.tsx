@@ -1,6 +1,7 @@
 import type { DecisionListItem } from "../../api/decisions";
 import { DecisionCard } from "./DecisionCard";
 import { DECISION_TYPE_LABELS, recommendationFor } from "./decisionPresentation";
+import { DecisionAttachments } from "./DecisionAttachments";
 
 export interface DecisionDetailPanelProps {
   item: DecisionListItem | undefined;
@@ -52,6 +53,8 @@ export function DecisionDetailPanel({ item }: DecisionDetailPanelProps) {
           ) : null}
         </article>
       )}
+
+      <DecisionAttachments itemId={item.id} />
     </div>
   );
 }

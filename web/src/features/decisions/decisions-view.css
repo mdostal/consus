@@ -47,6 +47,26 @@
   color: var(--consus-ink-muted);
 }
 
+.decision-attachments {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--consus-line);
+}
+
+.decision-attachments__title {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.decision-attachments__status {
+  margin: 0.75rem 0 0;
+  color: var(--consus-ink-muted);
+}
+
+.decision-attachments__status--error {
+  color: var(--consus-danger, #b42318);
+}
+
 @media (max-width: 768px) {
   .decisions-view {
     grid-template-columns: 1fr;
