@@ -138,17 +138,20 @@ function MermaidDiagram({ source, label }: { source: string; label: string }) {
     const container = containerRef.current;
     setRenderState("rendering");
 
+    const computedStyle = window.getComputedStyle(document.documentElement);
+    const getVar = (name: string) => computedStyle.getPropertyValue(name).trim() || '#ffffff';
+
     mermaid.initialize({
       startOnLoad: false,
       theme: "base",
       themeVariables: {
-        background: tokens.color.bg,
-        primaryColor: tokens.color.bgSubtle,
-        primaryTextColor: tokens.color.ink,
-        primaryBorderColor: tokens.color.line,
-        lineColor: tokens.color.accent,
-        secondaryColor: tokens.color.bg,
-        tertiaryColor: tokens.color.bgSubtle,
+        background: getVar('--consus-bg'),
+        primaryColor: getVar('--consus-bg-subtle'),
+        primaryTextColor: getVar('--consus-ink'),
+        primaryBorderColor: getVar('--consus-line'),
+        lineColor: getVar('--consus-accent'),
+        secondaryColor: getVar('--consus-bg'),
+        tertiaryColor: getVar('--consus-bg-subtle'),
       },
     });
 

@@ -1,0 +1,39 @@
+{
+  "id": "mock-epic-123",
+  "title": "[slice-2] Test Epic with Docs",
+  "status": "pending",
+  "repo_id": "test-repo",
+  "last_updated": "2026-08-10T00:00:00Z",
+  "docs": [
+    {
+      "kind": "design-discussion",
+      "title": "Design Discussion",
+      "content": "This is a mock design discussion for testing.",
+      "source": "multica",
+      "updated_at": "2026-08-10T00:00:00Z"
+    },
+    {
+      "kind": "research-brief",
+      "title": "Research Brief",
+      "content": "This is a mock research brief.",
+      "source": "phive",
+      "updated_at": "2026-08-09T00:00:00Z"
+    }
+  ],
+  "stories": [
+    {
+      "id": "story-1",
+      "title": "Story 1: Test Component",
+      "status": "done",
+      "dependencies": [],
+      "tracker_url": "https://multica.local/issues/story-1"
+    },
+    {
+      "id": "story-2",
+      "title": "Story 2: E2E Test",
+      "status": "in_progress",
+      "dependencies": ["story-1"],
+      "tracker_url": "https://multica.local/issues/story-2"
+    }
+  ]
+}
