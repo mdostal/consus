@@ -1,7 +1,7 @@
 {
   "name": "consus",
   "version": "0.3.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "description": "Consus — the Pantheon's rendered doc/decision surface",
   "bin": {

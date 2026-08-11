@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Consus - Pantheon Decision Surface</title>
+    <meta
+      name="description"
+      content="Consus renders Pantheon planning docs, questions, and decisions into a human review surface."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="Consus home">
+        <span class="brand-mark">C</span>
+        <span>Consus</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a href="#architecture">Architecture</a>
+        <a href="#quickstart">Quickstart</a>
+        <a href="#pantheon">Pantheon</a>
+        <a href="#oss">OSS</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Pantheon god repo</p>
+          <h1>Consus renders the decision loop.</h1>
+          <p class="lede">
+            Review generated docs, answer parked questions, approve work, and
+            preserve accepted decisions without reading swarm output in a shell.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="https://github.com/mdostal/consus">GitHub</a>
+            <a class="button secondary" href="./architecture.md">Architecture doc</a>
+          </div>
+        </div>
+        <div class="artifact-preview" aria-label="Consus decision surface preview">
+          <div class="preview-toolbar">
+            <span></span><span></span><span></span>
+          </div>
+          <div class="preview-grid">
+            <section>
+              <p class="panel-label">Open decision</p>
+              <h2>Ship v1 with the current KB boundary?</h2>
+              <p>Recommendation: approve the narrow slice, keep adapter expansion behind toggles.</p>
+            </section>
+            <section>
+              <p class="panel-label">Generated doc</p>
+              <h2>Architecture brief</h2>
+              <p>Rendered markdown, diagrams, tradeoffs, and linked source artifacts.</p>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="band summary">
+        <div>
+          <h2>What Consus does</h2>
+          <p>
+            Consus is the readable surface for Pantheon's ideation, planning,
+            question, and sign-off process.
+          </p>
+        </div>
+        <ul class="summary-list">
+          <li>Renders generated planning artifacts.</li>
+          <li>Surfaces human decisions and parked questions.</li>
+          <li>Preserves approved context as knowledgebase state.</li>
+          <li>Connects the review loop to Pantheon build lanes.</li>
+        </ul>
+      </section>
+
+      <section id="architecture" class="section">
+        <div class="section-heading">
+          <p class="eyebrow">Architecture</p>
+          <h2>Adapters feed a durable review surface.</h2>
+        </div>
+        <div class="diagram-shell">
+          <pre class="mermaid">
+flowchart LR
+  Human["Human operator"] --> Web["Consus web UI"]
+  Web --> API["Fastify API"]
+  API --> DB[("SQLite store")]
+  API --> Docs["Doc scanner"]
+  API --> Multica["Multica adapter"]
+  API --> Minerva["Minerva adapter"]
+  Docs --> Repos["Pantheon repos"]
+  Multica --> Issues["Issues and comments"]
+  Minerva --> Plans["Surveys and plans"]
+  API --> KB["Living docs + KB"]
+  KB --> Web
+          </pre>
+        </div>
+      </section>
+
+      <section id="quickstart" class="section split">
+        <div>
+          <p class="eyebrow">Quickstart</p>
+          <h2>Run Consus locally.</h2>
+          <p>
+            The app uses a Vite web UI, Fastify server, and SQLite persistence.
+            Node.js 24.x is the supported runtime.
+          </p>
+        </div>
+        <div class="terminal">
+          <code>npm ci</code>
+          <code>npm run dev</code>
+          <code>npm run build</code>
+          <code>npm test</code>
+        </div>
+      </section>
+
+      <section id="pantheon" class="section">
+        <div class="section-heading">
+          <p class="eyebrow">Role in Pantheon</p>
+          <h2>The human review point between planning and build.</h2>
+        </div>
+        <div class="role-grid">
+          <article>
+            <h3>Minerva</h3>
+            <p>Supplies surveys, plans, and parked questions that need a human answer.</p>
+          </article>
+          <article>
+            <h3>Multica</h3>
+            <p>Provides issue state, comments, assignment, and workflow coordination.</p>
+          </article>
+          <article>
+            <h3>Auriga</h3>
+            <p>Consumes approved work once the decision loop has produced a buildable story.</p>
+          </article>
+          <article>
+            <h3>Consus</h3>
+            <p>Renders the evidence, captures the answer, and keeps the accepted context readable.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="oss" class="band oss">
+        <div>
+          <p class="eyebrow">OSS ready</p>
+          <h2>Docs, license, funding, and contribution path are in place.</h2>
+          <p>
+            Final launch gate: flip the repository public and confirm GitHub
+            Pages is enabled for this <code>docs/</code> site.
+          </p>
+        </div>
+        <div class="oss-links">
+          <a href="https://github.com/mdostal/consus/blob/dev/LICENSE">MIT License</a>
+          <a href="https://github.com/mdostal/consus/blob/dev/CONTRIBUTING.md">Contributing</a>
+          <a href="https://github.com/mdostal/consus/issues">Support</a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>Consus</span>
+      <span>Rendered docs, decisions, and Pantheon sign-off.</span>
+    </footer>
+
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: "base",
+        themeVariables: {
+          primaryColor: "#f4f1ea",
+          primaryTextColor: "#17201b",
+          primaryBorderColor: "#0f766e",
+          lineColor: "#8a4b2f",
+          secondaryColor: "#e8f1ee",
+          tertiaryColor: "#f6d365"
+        }
+      });
+    </script>
+  </body>
+</html>
