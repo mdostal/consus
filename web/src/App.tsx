@@ -5,10 +5,7 @@ import { EpicListView } from "./features/epics/EpicListView";
 import { DocEditor } from "./features/docs/DocEditor";
 import { QuestionInbox } from "./features/questions/QuestionInbox";
 import { FiredHistoryView } from "./features/fired/FiredHistoryView";
-import { QuestionInbox } from "./features/questions/QuestionInbox";
-import { FiredHistoryView } from "./features/fired/FiredHistoryView";
 import { ThemeSwitcher } from "./components/ThemeProvider";
-import { QuestionsView } from "./views/QuestionsView";
 import { DocEditorView } from "./views/DocEditorView";
 
 export function App() {
@@ -23,9 +20,6 @@ export function App() {
           <Link to="/epics" style={{ marginRight: '1rem' }}>Epics</Link>
           <Link to="/questions" style={{ marginRight: '1rem' }}>Questions</Link>
           <Link to="/fired">Fire History</Link>
-          <Link to="/questions">Questions</Link>
-          <Link to="/questions">Questions</Link>
-          <Link to="/fired">Fire History</Link>
         </nav>
         <Routes>
           <Route path="/" element={<DecisionList />} />
@@ -34,12 +28,7 @@ export function App() {
           <Route path="/docs/:id" element={<DocEditor />} />
           <Route path="/questions" element={<QuestionInbox />} />
           <Route path="/fired" element={<FiredHistoryView />} />
-          <Route path="/questions" element={<QuestionsView />} />
           <Route path="/docs/:repo/*" element={<DocEditorView />} />
-          {/* A detail view stub for s2-05 */}
-          <Route path="/epics/:id" element={<div>Epic Detail View Stub</div>} />
-          <Route path="/questions" element={<QuestionInbox />} />
-          <Route path="/fired" element={<FiredHistoryView />} />
         </Routes>
       </main>
     </BrowserRouter>
