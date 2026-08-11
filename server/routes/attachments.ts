@@ -26,6 +26,36 @@ export function registerAttachmentRoutes(
     },
   });
 
+  // GET /api/tickets/:id/attachments
+  app.get(
+    "/api/tickets/:id/attachments",
+    async (
+      req: FastifyRequest<{ Params: { id: string } }>,
+      reply: FastifyReply
+    ) => {
+      const ticketId = req.params.id;
+
+      const ticketRow = db
+        .prepare("SELECT id FROM items WHERE id = ?")
+        .get(ticketId) as { id: string } | undefined;
+
+      if (!ticketRow) {
+        return reply.status(404).send({ error: "Ticket not found" });
+      }
+
+      const attachments = db
+        .prepare(
+          `SELECT id, item_id, file_name, mime_type, size, uploaded_by, created_at
+           FROM attachments
+           WHERE item_id = ? AND deleted_at IS NULL
+           ORDER BY created_at DESC`,
+        )
+        .all(ticketId);
+
+      return reply.send(attachments);
+    }
+  );
+
   // POST /api/tickets/:id/attachments
   app.post(
     "/api/tickets/:id/attachments",

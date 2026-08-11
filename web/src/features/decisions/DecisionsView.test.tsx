@@ -3,6 +3,7 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { DecisionsView } from "./DecisionsView";
 import * as decisionsApi from "../../api/decisions";
+import * as attachmentsApi from "../../api/attachments";
 import type { DecisionListItem } from "../../api/decisions";
 
 vi.mock("../../api/decisions", async () => {
@@ -10,7 +11,19 @@ vi.mock("../../api/decisions", async () => {
   return { ...actual, fetchDecisions: vi.fn() };
 });
 
+vi.mock("../../api/attachments", async () => {
+  const actual = await vi.importActual<typeof attachmentsApi>("../../api/attachments");
+  return {
+    ...actual,
+    fetchTicketAttachments: vi.fn(),
+    deleteAttachment: vi.fn(),
+    downloadAttachment: vi.fn(),
+  };
+});
+
 const fetchDecisionsMock = vi.mocked(decisionsApi.fetchDecisions);
+const fetchTicketAttachmentsMock = vi.mocked(attachmentsApi.fetchTicketAttachments);
+const deleteAttachmentMock = vi.mocked(attachmentsApi.deleteAttachment);
 
 function makeItem(overrides: Partial<DecisionListItem> = {}): DecisionListItem {
   return {
@@ -28,6 +41,10 @@ function makeItem(overrides: Partial<DecisionListItem> = {}): DecisionListItem {
 describe("DecisionsView", () => {
   beforeEach(() => {
     fetchDecisionsMock.mockReset();
+    fetchTicketAttachmentsMock.mockReset();
+    fetchTicketAttachmentsMock.mockResolvedValue([]);
+    deleteAttachmentMock.mockReset();
+    deleteAttachmentMock.mockResolvedValue();
   });
 
   it("renders a list pane and a detail pane, with the detail pane empty until a row is selected", async () => {
@@ -100,5 +117,55 @@ describe("DecisionsView", () => {
 
     const error = await screen.findByTestId("decision-list-error");
     expect(error).toHaveTextContent(/couldn't load decisions/i);
+  });
+
+  it("loads and renders attachments for the selected decision", async () => {
+    fetchDecisionsMock.mockResolvedValue([makeItem({ id: "ticket-1", title: "Choose the layout" })]);
+    fetchTicketAttachmentsMock.mockResolvedValue([
+      {
+        id: "attachment-1",
+        filename: "context.pdf",
+        url: "/api/attachments/attachment-1",
+        size: 1024,
+      },
+    ]);
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <DecisionsView />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByText("Choose the layout"));
+
+    expect(await screen.findByTestId("decision-attachments")).toBeInTheDocument();
+    expect(await screen.findByText("context.pdf")).toBeInTheDocument();
+    expect(fetchTicketAttachmentsMock).toHaveBeenCalledWith("ticket-1");
+  });
+
+  it("removes an attachment from the selected decision after delete confirmation", async () => {
+    fetchDecisionsMock.mockResolvedValue([makeItem({ id: "ticket-1", title: "Choose the layout" })]);
+    fetchTicketAttachmentsMock.mockResolvedValue([
+      {
+        id: "attachment-1",
+        filename: "context.pdf",
+        url: "/api/attachments/attachment-1",
+      },
+    ]);
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <DecisionsView />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByText("Choose the layout"));
+    expect(await screen.findByText("context.pdf")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle("Delete"));
+    fireEvent.click(screen.getByText("Delete", { selector: "button" }));
+
+    await waitFor(() => expect(deleteAttachmentMock).toHaveBeenCalledWith("attachment-1"));
+    await waitFor(() => expect(screen.queryByText("context.pdf")).not.toBeInTheDocument());
   });
 });

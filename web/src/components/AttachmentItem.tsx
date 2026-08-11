@@ -34,6 +34,7 @@ export function AttachmentItem({ attachment, onDownload, onDelete }: AttachmentI
 
   return (
     <div
+      className="attachment-item"
       style={{
         display: 'flex',
         alignItems: 'center',

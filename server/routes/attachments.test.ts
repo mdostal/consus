@@ -77,6 +77,42 @@ describe("Attachment Routes", () => {
     expect(row.file_name).toBe("test.txt");
   });
 
+  it("lists active attachments for a ticket", async () => {
+    db.prepare(
+      `INSERT INTO attachments (id, item_id, file_name, mime_type, size, uploaded_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run("attachment-1", "ticket-1", "notes.txt", "text/plain", 42, "user", "2026-08-11T00:00:00.000Z");
+    db.prepare(
+      `INSERT INTO attachments (id, item_id, file_name, mime_type, size, uploaded_by, created_at, deleted_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      "attachment-2",
+      "ticket-1",
+      "deleted.txt",
+      "text/plain",
+      12,
+      "user",
+      "2026-08-11T00:01:00.000Z",
+      "2026-08-11T00:02:00.000Z",
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/tickets/ticket-1/attachments",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.payload)).toEqual([
+      expect.objectContaining({
+        id: "attachment-1",
+        item_id: "ticket-1",
+        file_name: "notes.txt",
+        mime_type: "text/plain",
+        size: 42,
+      }),
+    ]);
+  });
+
   it("rejects disallowed file extensions", async () => {
     const form = new FormData();
     form.append("file", Buffer.from("malicious payload"), {

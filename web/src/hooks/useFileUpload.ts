@@ -8,10 +8,15 @@ export interface FileUploadHook {
   error: string | null;
 }
 
-export function useFileUpload(): FileUploadHook {
+export interface UseFileUploadOptions {
+  ticketId?: string;
+}
+
+export function useFileUpload(options: UseFileUploadOptions = {}): FileUploadHook {
   const [progress, setProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { ticketId } = options;
 
   const upload = useCallback((file: File) => {
     return new Promise((resolve, reject) => {
@@ -20,7 +25,9 @@ export function useFileUpload(): FileUploadHook {
       setError(null);
 
       const xhr = new XMLHttpRequest();
-      const url = `${API_BASE_URL}/api/attachments`;
+      const url = ticketId
+        ? `${API_BASE_URL}/api/tickets/${encodeURIComponent(ticketId)}/attachments`
+        : `${API_BASE_URL}/api/attachments`;
 
       xhr.upload.addEventListener('progress', (event) => {
         if (event.lengthComputable) {
@@ -72,7 +79,7 @@ export function useFileUpload(): FileUploadHook {
       formData.append('file', file);
       xhr.send(formData);
     });
-  }, []);
+  }, [ticketId]);
 
   return { upload, progress, isUploading, error };
 }
