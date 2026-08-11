@@ -1,0 +1,67 @@
+/* Two-pane Decisions layout (cua-11-detail-panel). Each pane scrolls in its
+   own containing box. min-height/min-width: 0 override the grid item default
+   of `auto` (= content's intrinsic size as a floor), which otherwise either
+   blocks the vertical scrollbar from ever engaging or blows the column out
+   past the viewport when a row's content is wide. */
+
+.decisions-view {
+  display: grid;
+  grid-template-columns: minmax(260px, 380px) 1fr;
+  gap: 1px;
+  height: 75vh;
+  min-height: 420px;
+  background: var(--consus-line);
+  border: 1px solid var(--consus-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.decisions-view__list-pane,
+.decisions-view__detail-pane {
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 1rem;
+  background: var(--consus-bg);
+}
+
+.decisions-view__detail-pane {
+  background: var(--consus-bg-subtle);
+}
+
+.decision-list__item {
+  border-radius: 6px;
+}
+
+.decision-list__item[role="option"] {
+  cursor: pointer;
+}
+
+.decision-list__item--selected {
+  outline: 2px solid var(--consus-accent);
+  outline-offset: 2px;
+}
+
+.decision-detail__empty {
+  color: var(--consus-ink-muted);
+}
+
+@media (max-width: 768px) {
+  .decisions-view {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    height: auto;
+    min-height: 0;
+  }
+
+  .decisions-view__list-pane,
+  .decisions-view__detail-pane {
+    overflow-y: visible;
+    max-height: none;
+  }
+
+  .decisions-view__detail-pane {
+    border-top: 1px solid var(--consus-line);
+  }
+}
