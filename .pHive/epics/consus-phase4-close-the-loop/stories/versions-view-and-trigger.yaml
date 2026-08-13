@@ -1,7 +1,9 @@
 id: versions-view-and-trigger
 epic: consus-phase4-close-the-loop
 title: "Fire-agent trigger + Versions comparison view (REQ-16 frontend)"
-status: complete
+status: shipped
+shipped_at: "2026-08-13T14:00:00Z"
+release_id: "v0.5.0"
 complexity: medium
 methodology: classic
 depends_on: [iterate-endpoint-and-log]

@@ -1,7 +1,9 @@
 id: iterate-endpoint-and-log
 epic: consus-phase4-close-the-loop
 title: "POST /api/decisions/:key/iterate + GET /api/log (REQ-16 backend)"
-status: complete
+status: shipped
+shipped_at: "2026-08-13T14:00:00Z"
+release_id: "v0.5.0"
 complexity: medium
 methodology: classic
 depends_on: []
