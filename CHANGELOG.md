@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-13
+
+### Added
+
+- **Phase 5 (`consus-phase5-live-and-interactive`):** the standalone loop is now real, not empty. `GET /api/decisions` syncs live from Multica on every read (classified via the existing `decision-request/v1` contract-first classifier, no per-item allowlists); the pre-cutover Multica archive (45 audit entries + 12 KB entries) is preserved and backfilled via a generic, reusable importer; KB entries can be grouped into collections (`marketing`/`boundary-decisions`/`plans`/`artifacts`/`general`), with tabs in the KB backlog browser.
+- A generalized **propose-a-change-and-fire-to-harness** mechanism (`POST /api/proposals`, `POST /api/proposals/:id/result`, `GET /api/proposals`): Consus never writes `.pHive`/repo content directly — a diff + description is dispatched via the Minerva adapter, a harness applies it, and the result comes back as an audit entry. One mechanism shared by diagrams and docs.
+- `GET /api/diagrams?repo=` renders each repo's real epic/story dependency tree from `.pHive/epics/` on disk, with an in-app viewer and a propose-a-change action.
+- Doc viewing gained a propose-a-change mode (`DocRenderer`), reusing the same UI shape as diagrams.
+- A shared audit-trail panel (`GET /api/items/:id/audit-trail`) merges plain decision history with fired proposals (pending/applied/failed) into one timeline, used identically across decisions, diagrams, and docs.
+- 10 stories, live-verified end to end against real Multica/archive data throughout (not just unit tests).
+
+### Changed
+
+- **`consus-phase5-live-and-interactive` release finalization.** Applied the planned `minor` version bump (`0.3.0` → `0.4.0`) for this epic's completion.
+
+## [0.3.0] - 2026-07-25
+
 ### Changed
 
 - **`consus-phase2-survey-kb-api` release finalization.** Applied the planned `minor` version bump (`0.2.0` → `0.3.0`) for this epic's completion.
