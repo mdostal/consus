@@ -1,0 +1,18 @@
+name: consus-phase6-standalone-onboarding
+title: Standalone onboarding + on-demand repo ingest
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: hybrid
+
+stories:
+  - id: s1-repo-ingest-endpoint
+    title: POST /api/projects/:project/ingest wires the existing doc scanner to an HTTP route
+    complexity: low
+    depends_on: []
+  - id: s2-project-overview-with-docs
+    title: Fold docs into the per-project view, with an Ingest repo button
+    complexity: medium
+    depends_on: [s1-repo-ingest-endpoint]
+  - id: s3-first-run-onboarding-screen
+    title: First-run onboarding screen replaces the default blank view
+    complexity: medium
+    depends_on: [s1-repo-ingest-endpoint]

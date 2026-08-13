@@ -26,6 +26,8 @@ build/
 !.pHive/epics/consus-phase4-close-the-loop/**
 !.pHive/epics/consus-phase5-live-and-interactive/
 !.pHive/epics/consus-phase5-live-and-interactive/**
+!.pHive/epics/consus-phase6-standalone-onboarding/
+!.pHive/epics/consus-phase6-standalone-onboarding/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/

@@ -1,0 +1,101 @@
+id: s1-repo-ingest-endpoint
+epic: consus-phase6-standalone-onboarding
+title: POST /api/projects/:project/ingest wires the existing doc scanner to an HTTP route
+status: pending
+complexity: low
+methodology: tdd
+depends_on: []
+
+description: |
+  Consus already has a working doc-scanner (`scanRepo`) that walks a repo's
+  `.pHive/planning/` and `.pHive/epics/**` for `.md`/`.html` files and
+  populates the `doc_index` SQLite table, idempotently. It is fully built
+  and tested but is currently only ever called from its own test file — no
+  HTTP route triggers it, which is why `GET /api/docs` returns an empty
+  object on a fresh install even when there's plenty on disk to show.
+
+  Add a new route, `POST /api/projects/:project/ingest`, that:
+  1. Looks up `:project` in the existing project registry (passed into
+     `registerDocRoutes`/friends as `repos: Record<string, string>` today —
+     this route needs the same map).
+  2. Returns 404 with `{ error: "unknown project: <name>" }` if the project
+     isn't registered.
+  3. Calls `scanRepo(db, { repoName: project, repoPath: repos[project] })`.
+  4. Returns `{ project, docsScanned: <count> }` — the count of doc_index
+     rows now present for that repo after the scan (query
+     `SELECT COUNT(*) FROM doc_index WHERE repo = ?` after the scan call).
+
+  This is the sole new backend capability in this epic — everything else
+  (diagrams, KB entries) already updates live off disk or off the existing
+  decision flow with no ingest step required.
+
+acceptance_criteria:
+  - "Given a registered project with docs under .pHive/planning and .pHive/epics on disk, when POST /api/projects/:project/ingest is called, then doc_index is populated and the response reports the correct docsScanned count."
+  - "Given the same project is ingested twice, when the second ingest runs, then doc_index does not duplicate rows (idempotent, matching scanRepo's existing content-hash behavior) and the response still reports the correct count."
+  - "Given an unregistered project name, when POST /api/projects/:project/ingest is called, then the response is 404 with an error message naming the unknown project."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Write vitest specs in a new server/routes/projects.test.ts covering the
+      three acceptance criteria above, using an in-memory better-sqlite3 db
+      and a temp directory with a fake .pHive/planning doc, mirroring the
+      existing pattern in server/features/living-docs/compose.test.ts (which
+      also drives scanRepo against a mkdtempSync'd repo dir).
+    agent: tester
+  - id: implement-route
+    description: >
+      Add server/routes/projects.ts exporting registerProjectRoutes(app,
+      {db, repos}), register it in server/index.ts's buildServer alongside
+      the other registerXRoutes calls, and make the failing tests pass
+      without modifying the tests.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: review
+    description: Review the route for correctness (404 handling, count accuracy, idempotency) and convention compliance with the other routes/*.ts files.
+    agent: reviewer
+    depends_on: [implement-route]
+  - id: integrate
+    description: Commit the route, its registration, and its tests.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: server/adapters/doc-scanner/index.ts
+      purpose: "Exports scanRepo(db, {repoName, repoPath}) — the function this route calls. Already idempotent and tested; do not modify its behavior."
+    - path: server/config/project-registry.ts
+      purpose: "loadProjectRegistry() builds the repos: Record<string,string> map this route needs to resolve :project to a filesystem path. Already defaults to { consus: cwd } with zero config."
+    - path: server/routes/docs.ts
+      purpose: "registerDocRoutes(app, {db, repos}) is the closest existing pattern for a route that takes the same repos map — follow its shape for registerProjectRoutes."
+    - path: server/index.ts
+      purpose: "buildServer() is where every other registerXRoutes(app, {db, ...}) call is wired in — add registerProjectRoutes there, passing the same repos already loaded for registerDocRoutes."
+    - path: server/features/living-docs/compose.test.ts
+      purpose: "Existing example of a test that drives scanRepo against a real mkdtempSync'd repo directory with a fake .pHive/planning file — the pattern to copy for this story's tests."
+
+files_to_modify:
+  - file: server/routes/projects.ts
+    change: "New file — registerProjectRoutes(app, {db, repos}) with the POST /api/projects/:project/ingest handler."
+  - file: server/routes/projects.test.ts
+    change: "New file — vitest specs for the three acceptance criteria."
+  - file: server/index.ts
+    change: "Import and call registerProjectRoutes(app, {db, repos}) in buildServer, next to the other route registrations."
+
+design_decisions:
+  - decision: "Route path is /api/projects/:project/ingest, not /api/ingest with a body param."
+    rationale: "Matches this codebase's existing REST-ish per-resource route style (e.g. /api/items/:id/comments, /api/docs/content?repo=...) rather than introducing a new flat-action-endpoint convention."
+  - decision: "Ingest is synchronous — the HTTP response only returns once the scan completes."
+    rationale: "scanRepo is fast at this project's current .pHive scale (see design-discussion.md risks section); no job queue or polling needed for this pass."
+
+risks:
+  - severity: low
+    description: "A very large .pHive/epics tree could make the synchronous scan slow enough to feel unresponsive."
+    mitigation: "Not a concern at current repo sizes. If it becomes one, this route's contract (call it, get a count back) doesn't need to change — only scanRepo's internals would need to become async, which is out of scope here."
+
+references:
+  - path: server/adapters/doc-scanner/index.ts
+    relevant_excerpt: |
+      export function scanRepo(db: Database.Database, { repoName, repoPath }: ScanOptions): void {
+        const now = new Date().toISOString();
+        // walks .pHive/planning and .pHive/epics/** for .md/.html files,
+        // upserts into doc_index keyed by (repo, file_path), content-hash guarded
