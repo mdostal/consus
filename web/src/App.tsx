@@ -17,6 +17,14 @@ import "./app.css";
 /* Types + shared helpers                                           */
 /* ---------------------------------------------------------------- */
 
+/** GET /api/docs (and its ?project= scoped form) always includes an entry
+ *  for every registered repo, even with zero docs indexed — e.g. `{consus:
+ *  {}}`, never a bare `{}`. So "any docs at all" means every repo's grouped
+ *  phase map is itself empty, not that the top-level object has no keys. */
+function docsAreEmpty(grouped: GroupedDocs): boolean {
+  return Object.values(grouped).every((byPhase) => Object.keys(byPhase).length === 0);
+}
+
 /** A decision as returned by GET /api/decisions (payload parsed server-side).
  *  decision_payload is null for an item with no fenced decision-request
  *  block — not every item carries one. */
@@ -475,7 +483,7 @@ function ProjectDocs({ repo, refreshToken }: { repo: string; refreshToken?: numb
   if (error) return <p className="state state--err">Could not load docs: {error}</p>;
   if (!grouped) return <p className="state">Loading docs…</p>;
 
-  const empty = Object.keys(grouped).length === 0;
+  const empty = docsAreEmpty(grouped);
 
   if (openDoc) {
     return (
@@ -626,7 +634,7 @@ function DocsSection() {
   if (error) return <p className="state state--err">Could not load docs: {error}</p>;
   if (!grouped) return <p className="state">Loading docs…</p>;
 
-  const empty = Object.keys(grouped).length === 0;
+  const empty = docsAreEmpty(grouped);
 
   if (openDoc) {
     return (
@@ -668,6 +676,74 @@ function DocsSection() {
 }
 
 /* ---------------------------------------------------------------- */
+/* First-run onboarding (s3, phase6)                                */
+/* ---------------------------------------------------------------- */
+
+/**
+ * s3 (phase6): shown instead of the normal tab shell when there's nothing
+ * ingested anywhere yet (no docs, no KB entries, no decisions) — a fresh
+ * install otherwise just shows empty tabs with no explanation.
+ */
+function OnboardingScreen({ onIngested }: { onIngested: () => void }) {
+  const [ingesting, setIngesting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function ingest() {
+    setIngesting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/projects/consus/ingest", { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      onIngested();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setIngesting(false);
+    }
+  }
+
+  return (
+    <div className="onboarding">
+      <span className="onboarding__mark">◈</span>
+      <h1>Consus</h1>
+      <p className="onboarding__lede">
+        A knowledgebase, graph, and file editor for this repo's own decisions, docs, and
+        architecture — plus a surface to work through them with an agent harness.
+      </p>
+
+      <section className="onboarding__step">
+        <h2>Ingest repo</h2>
+        <p>Pull this repo's generated docs, architecture, and diagrams into Consus's own store.</p>
+        <button type="button" onClick={ingest} disabled={ingesting}>
+          {ingesting ? "Ingesting…" : "Ingest repo to create initial knowledge base"}
+        </button>
+        {error ? <p className="dv__err">{error}</p> : null}
+      </section>
+
+      <section className="onboarding__step">
+        <h2>Install into harness</h2>
+        <p>
+          Any Claude-Code-compatible agent harness can read Consus's open-decision queue and
+          submit verdicts directly — see <code>skills/consus/SKILL.md</code> for the full
+          agent-facing contract.
+        </p>
+      </section>
+
+      <section className="onboarding__step">
+        <h2>Interact with plugin-hive</h2>
+        <p>
+          Deeper integration with plugin-hive's own planning and execution loop is on the
+          roadmap — for now, Consus stands entirely on its own.
+        </p>
+      </section>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- */
 /* App shell                                                        */
 /* ---------------------------------------------------------------- */
 
@@ -684,6 +760,7 @@ export function App() {
   const [tab, setTab] = useState<Tab>("decisions");
   const [decisions, setDecisions] = useState<DecisionItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [onboardingCheck, setOnboardingCheck] = useState<{ docsEmpty: boolean; kbEmpty: boolean } | null>(null);
 
   const reload = useCallback(() => {
     fetch("/api/decisions?all=1")
@@ -692,11 +769,57 @@ export function App() {
       .catch((e) => setError(e.message));
   }, []);
 
+  const checkOnboarding = useCallback(() => {
+    Promise.all([
+      fetch("/api/docs").then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))),
+      fetch("/api/kb-entries").then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))),
+    ])
+      .then(([docs, kbEntries]) => {
+        setOnboardingCheck({
+          docsEmpty: docsAreEmpty(docs as GroupedDocs),
+          kbEmpty: Array.isArray(kbEntries) ? kbEntries.length === 0 : true,
+        });
+      })
+      .catch(() => {
+        // best-effort — a failed check must never block the app; assume not first-run
+        setOnboardingCheck({ docsEmpty: false, kbEmpty: false });
+      });
+  }, []);
+
   useEffect(() => {
     reload();
-  }, [reload]);
+    checkOnboarding();
+  }, [reload, checkOnboarding]);
 
   const openCount = decisions?.filter((d) => !d.decided_at).length ?? 0;
+
+  const isFirstRun =
+    onboardingCheck !== null &&
+    decisions !== null &&
+    onboardingCheck.docsEmpty &&
+    onboardingCheck.kbEmpty &&
+    decisions.length === 0;
+
+  if (!error && (onboardingCheck === null || decisions === null)) {
+    return (
+      <div className="consus">
+        <p className="state">Loading…</p>
+      </div>
+    );
+  }
+
+  if (isFirstRun) {
+    return (
+      <div className="consus">
+        <OnboardingScreen
+          onIngested={() => {
+            reload();
+            checkOnboarding();
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="consus">
