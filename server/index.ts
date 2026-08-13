@@ -1,6 +1,8 @@
+import { existsSync } from "node:fs";
 import Fastify, { type FastifyInstance } from "fastify";
 import { openDb } from "./db/connection.js";
 import { runMigration } from "./db/migrate.js";
+import { importMulticaArchive } from "./db/import-multica-archive.js";
 import { registerDocRoutes } from "./routes/docs.js";
 import { registerKbRoutes } from "./routes/kb.js";
 import { registerArtifactLinkRoutes } from "./routes/artifact-links.js";
@@ -26,12 +28,30 @@ export interface BuildServerOptions {
   /** repo name -> absolute path on disk, scanned for generated docs */
   repos?: Record<string, string>;
   client?: MulticaClient;
+  /** One-time (idempotent) historical backfill — omit entirely for tests/other
+   *  installs; only this repo's own preserved archive should be passed here. */
+  archivePaths?: { auditPath: string; kbPath: string };
 }
 
-export function buildServer({ dbPath, repos = {}, client = NOOP_MULTICA_CLIENT }: BuildServerOptions): FastifyInstance {
+export function buildServer({
+  dbPath,
+  repos = {},
+  client = NOOP_MULTICA_CLIENT,
+  archivePaths,
+}: BuildServerOptions): FastifyInstance {
   const app = Fastify({ logger: false });
   const db = openDb(dbPath);
   runMigration(db);
+
+  if (archivePaths) {
+    const backfill = importMulticaArchive(db, archivePaths);
+    if (backfill.auditRowsImported > 0 || backfill.kbRowsImported > 0) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[archive-import] backfilled ${backfill.auditRowsImported} audit rows, ${backfill.kbRowsImported} KB rows`,
+      );
+    }
+  }
 
   registerDocRoutes(app, { db, repos });
   registerKbRoutes(app, { db });
@@ -73,7 +93,15 @@ if (isMain) {
     console.warn(`[multica] not configured — decisions queue will be local-only: ${message}`);
   }
 
-  const app = buildServer({ dbPath, repos, client });
+  // This repo's own preserved Multica archive only, per
+  // s2-historical-backfill-importer — skip silently when absent (other
+  // repos' Consus installs won't have this file).
+  const archiveDir = process.env.CONSUS_MULTICA_ARCHIVE_DIR ?? ".pHive/imports/multica-archive";
+  const auditPath = `${archiveDir}/delphi-audit.jsonl`;
+  const kbPath = `${archiveDir}/delphi-knowledgebase.jsonl`;
+  const archivePaths = existsSync(auditPath) && existsSync(kbPath) ? { auditPath, kbPath } : undefined;
+
+  const app = buildServer({ dbPath, repos, client, archivePaths });
   app.listen({ port, host: "0.0.0.0" }).then(() => {
     // eslint-disable-next-line no-console
     console.log(`Consus server listening on :${port} (db: ${dbPath})`);

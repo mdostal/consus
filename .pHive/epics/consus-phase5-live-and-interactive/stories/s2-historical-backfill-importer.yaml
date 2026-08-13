@@ -1,7 +1,7 @@
 id: s2-historical-backfill-importer
 epic: consus-phase5-live-and-interactive
 title: "Generic jsonl importer; run against this repo's archive only"
-status: pending
+status: complete
 complexity: medium
 methodology: tdd
 depends_on: [s0-preserve-historical-data, s1-multica-live-ingest]
