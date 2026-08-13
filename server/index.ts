@@ -8,6 +8,7 @@ import { registerKbRoutes } from "./routes/kb.js";
 import { registerArtifactLinkRoutes } from "./routes/artifact-links.js";
 import { registerDecisionRoutes } from "./routes/decisions.js";
 import { registerInteractionRoutes } from "./routes/interactions.js";
+import { registerProposalRoutes } from "./routes/proposals.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
 import {
   HttpMulticaClient,
@@ -15,6 +16,7 @@ import {
   resolveMulticaWorkspaceId,
   type MulticaClient,
 } from "./adapters/multica/client.js";
+import { StdioMinervaTransport, type MinervaTransport } from "./adapters/minerva/transport.js";
 
 /** Used when no client is supplied (tests, CI) — never throws, never makes a
  *  network call. Production wiring (isMain below) always supplies a real one. */
@@ -23,11 +25,19 @@ const NOOP_MULTICA_CLIENT: MulticaClient = {
   listIssues: async () => ({ ok: true, issues: [] }),
 };
 
+/** Used when no transport is supplied (tests, CI) — never spawns a process. */
+const NOOP_MINERVA_TRANSPORT: MinervaTransport = {
+  async invoke() {
+    return { ok: false, recoverable: false, code: "NO_ADAPTER" };
+  },
+};
+
 export interface BuildServerOptions {
   dbPath: string;
   /** repo name -> absolute path on disk, scanned for generated docs */
   repos?: Record<string, string>;
   client?: MulticaClient;
+  transport?: MinervaTransport;
   /** One-time (idempotent) historical backfill — omit entirely for tests/other
    *  installs; only this repo's own preserved archive should be passed here. */
   archivePaths?: { auditPath: string; kbPath: string };
@@ -37,6 +47,7 @@ export function buildServer({
   dbPath,
   repos = {},
   client = NOOP_MULTICA_CLIENT,
+  transport = NOOP_MINERVA_TRANSPORT,
   archivePaths,
 }: BuildServerOptions): FastifyInstance {
   const app = Fastify({ logger: false });
@@ -58,6 +69,7 @@ export function buildServer({
   registerArtifactLinkRoutes(app, { db });
   registerDecisionRoutes(app, { db, client });
   registerInteractionRoutes(app, { db });
+  registerProposalRoutes(app, { db, transport });
 
   app.get("/health", async () => {
     const row = db.prepare("SELECT 1 AS ok").get() as { ok: number } | undefined;
@@ -101,7 +113,16 @@ if (isMain) {
   const kbPath = `${archiveDir}/delphi-knowledgebase.jsonl`;
   const archivePaths = existsSync(auditPath) && existsSync(kbPath) ? { auditPath, kbPath } : undefined;
 
-  const app = buildServer({ dbPath, repos, client, archivePaths });
+  // s3-propose-dispatch-mechanism: no MINERVA_CLI_COMMAND-configured binary
+  // is required for the server to boot — an unreachable/unconfigured
+  // harness just resolves any fired proposal to 'failed' immediately
+  // (proposeChange's own dispatch-failure handling), never a crash.
+  const transport = new StdioMinervaTransport(
+    process.env.MINERVA_CLI_COMMAND ?? "minerva",
+    process.env.MINERVA_CLI_ARGS ? process.env.MINERVA_CLI_ARGS.split(",") : [],
+  );
+
+  const app = buildServer({ dbPath, repos, client, transport, archivePaths });
   app.listen({ port, host: "0.0.0.0" }).then(() => {
     // eslint-disable-next-line no-console
     console.log(`Consus server listening on :${port} (db: ${dbPath})`);

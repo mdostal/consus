@@ -121,6 +121,27 @@ export function runMigration(db: Database.Database): void {
       status TEXT NOT NULL DEFAULT 'open',
       created_at TEXT NOT NULL
     );
+
+    -- s3-propose-dispatch-mechanism: a change proposal (diff + description)
+    -- fired to a harness via the Minerva adapter. Consus never writes the
+    -- underlying content directly — the harness applies it and reports
+    -- back via POST /api/proposals/:id/result, which is what transitions
+    -- status out of 'pending' and (on 'applied') writes an audit_log entry.
+    CREATE TABLE IF NOT EXISTS proposals (
+      id TEXT PRIMARY KEY,
+      item_id TEXT NOT NULL REFERENCES items(id),
+      target_type TEXT NOT NULL,
+      diff TEXT NOT NULL,
+      description TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'applied', 'failed')),
+      requested_by TEXT NOT NULL,
+      requested_at TEXT NOT NULL,
+      resolved_at TEXT,
+      applied_diff TEXT,
+      failure_reason TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_proposals_item_id ON proposals(item_id);
   `);
 
   // Guarded ALTER TABLE for columns added after a table already existed on

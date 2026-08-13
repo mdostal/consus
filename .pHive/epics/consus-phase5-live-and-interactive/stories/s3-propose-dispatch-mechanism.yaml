@@ -1,7 +1,7 @@
 id: s3-propose-dispatch-mechanism
 epic: consus-phase5-live-and-interactive
 title: "Propose-a-change-and-fire-to-harness mechanism (via Minerva adapter)"
-status: pending
+status: complete
 complexity: high
 methodology: tdd
 depends_on: [s1-multica-live-ingest]
@@ -105,3 +105,17 @@ metric:
     ref: "SELECT status, count(*) FROM proposals GROUP BY status"
   verify_at: "2026-09-11T00:00:00Z"
   owner: developer
+
+implementation_notes: |
+  New `proposals` table (item_id FK, target_type, diff, description, status
+  pending/applied/failed, requested_by/at, resolved_at, applied_diff,
+  failure_reason). Dispatch failures (harness unreachable) resolve the
+  proposal to 'failed' immediately rather than leaving it pending forever
+  — verified live end-to-end through the real server with no `minerva` CLI
+  installed locally: POST /api/proposals correctly returned status=failed,
+  failure_reason="INTERNAL_ERROR: failed to spawn Minerva", no crash. A
+  real harness reports back via POST /api/proposals/:id/result. Wired into
+  server/index.ts via StdioMinervaTransport (MINERVA_CLI_COMMAND/
+  MINERVA_CLI_ARGS env vars); NOOP transport default for buildServer
+  keeps all other tests unaffected, matching the NOOP_MULTICA_CLIENT
+  pattern from s1.

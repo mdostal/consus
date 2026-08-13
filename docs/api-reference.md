@@ -119,6 +119,42 @@ Full version history for one entry, oldest first.
 
 **Response 200:** array of `{ id, kb_entry_id, content, author, created_at }`
 
+## Proposals (propose a change, fire it to a harness — s3)
+
+Consus never writes `.pHive`/repo content directly. Editing a diagram or a doc means composing
+a diff + description and firing it to an agent/harness via the Minerva adapter; the harness
+makes the real change and reports back. One route family shared by decisions, diagrams, and
+docs — `targetType` is a label, never branched on server-side.
+
+### `POST /api/proposals`
+Fires a new change proposal.
+
+**Request body:** `{ "itemId": string, "targetType": string, "diff": string, "description": string, "requestedBy": string }`
+
+**Response 201:** the created proposal row, `status: "pending"` — or already `"failed"` with a
+`failure_reason` if dispatch to the harness itself failed (e.g. Minerva unreachable).
+**404** if `itemId` doesn't reference an existing item.
+
+### `POST /api/proposals/:id/result`
+Called by the harness once it's actually applied (or failed to apply) the proposed change.
+
+**Request body:** `{ "status": "applied"|"failed", "appliedDiff"?: string, "reason"?: string }`
+
+On `"applied"`, writes an `audit_log` entry (`field: "proposal:<targetType>"`, `new_value` the
+applied diff). On `"failed"`, no audit_log entry.
+
+**Response 200:** the updated proposal row. **404** for an unknown proposal id.
+
+### `GET /api/proposals?itemId=<id>`
+Lists every proposal for an item, most recent first — pending, applied, and failed all included
+(this is what the audit-trail panel, s5, will surface).
+
+**Response 200:** array of proposal rows. **400** if `itemId` is omitted.
+
+**Minerva transport config:** `MINERVA_CLI_COMMAND` (default `minerva`), `MINERVA_CLI_ARGS`
+(comma-separated). No transport configured/reachable is not a startup error — a fired proposal
+just resolves to `"failed"` immediately with a clear reason.
+
 ## Artifact Links
 
 ### `POST /api/items/:id/artifact-links`
