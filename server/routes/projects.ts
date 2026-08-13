@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
 import { scanRepo } from "../adapters/doc-scanner/index.js";
+import { listProjects } from "../config/project-registry.js";
 
 export interface ProjectRoutesOptions {
   db: Database.Database;
@@ -16,6 +17,10 @@ export interface ProjectRoutesOptions {
  * flow — only doc_index needs this explicit trigger.
  */
 export function registerProjectRoutes(app: FastifyInstance, { db, repos }: ProjectRoutesOptions): void {
+  app.get("/api/projects", async () => {
+    return { projects: listProjects(repos) };
+  });
+
   app.post<{ Params: { project: string } }>("/api/projects/:project/ingest", async (request, reply) => {
     const { project } = request.params;
     const repoPath = repos[project];

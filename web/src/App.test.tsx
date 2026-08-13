@@ -47,6 +47,7 @@ describe("App — per-project view folds in docs + an Ingest repo action (phase6
         "/api/diagrams": DIAGRAM_RESPONSE,
         "/api/items/": [],
         "GET /api/docs?project=consus": DOCS_WITH_ENTRY,
+        "GET /api/projects": { projects: ["consus"] },
       }),
     );
   });
@@ -73,6 +74,7 @@ describe("App — per-project view folds in docs + an Ingest repo action (phase6
         "/api/diagrams": DIAGRAM_RESPONSE,
         "/api/items/": [],
         "GET /api/docs?project=consus": DOCS_EMPTY,
+        "GET /api/projects": { projects: ["consus"] },
       }),
     );
 
@@ -94,6 +96,7 @@ describe("App — per-project view folds in docs + an Ingest repo action (phase6
       if (method === "POST" && url.startsWith("/api/projects/consus/ingest")) {
         return Promise.resolve({ ok: true, json: async () => ({ project: "consus", docsScanned: 1 }) });
       }
+      if (url.startsWith("/api/projects")) return Promise.resolve({ ok: true, json: async () => ({ projects: ["consus"] }) });
       if (url.startsWith("/api/docs?project=consus")) {
         docsCallCount += 1;
         return Promise.resolve({ ok: true, json: async () => (docsCallCount === 1 ? DOCS_EMPTY : DOCS_WITH_ENTRY) });
@@ -125,6 +128,7 @@ describe("App — per-project view folds in docs + an Ingest repo action (phase6
       if (method === "POST" && url.startsWith("/api/projects/consus/ingest")) {
         return Promise.resolve({ ok: false, status: 500, json: async () => ({ error: "scan failed" }) });
       }
+      if (url.startsWith("/api/projects")) return Promise.resolve({ ok: true, json: async () => ({ projects: ["consus"] }) });
       if (url.startsWith("/api/docs?project=consus")) return Promise.resolve({ ok: true, json: async () => DOCS_EMPTY });
       if (url.startsWith("/api/decisions")) return Promise.resolve({ ok: true, json: async () => [] });
       if (url.startsWith("/api/kb-entries")) return Promise.resolve({ ok: true, json: async () => [KB_ENTRY] });
@@ -141,6 +145,26 @@ describe("App — per-project view folds in docs + an Ingest repo action (phase6
     fireEvent.click(screen.getByRole("button", { name: /ingest repo/i }));
 
     expect(await screen.findByText("scan failed")).toBeInTheDocument();
+  });
+
+  it("a registered project is selectable and shows its docs/diagram even with zero KB entries anywhere", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockFetchImpl({
+        "/api/decisions": [],
+        "/api/kb-entries": [],
+        "/api/diagrams": DIAGRAM_RESPONSE,
+        "/api/items/": [],
+        "GET /api/docs?project=consus": DOCS_WITH_ENTRY,
+        "GET /api/docs": DOCS_WITH_ENTRY,
+        "GET /api/projects": { projects: ["consus"] },
+      }),
+    );
+
+    render(<App />);
+    await openConsusProject();
+
+    expect(await screen.findByText("architecture.md")).toBeInTheDocument();
   });
 });
 
@@ -166,6 +190,7 @@ function firstRunFetchMock(overrides: {
       }
       return Promise.resolve({ ok: true, json: async () => ({ project: "consus", docsScanned: 1 }) });
     }
+    if (url.startsWith("/api/projects")) return Promise.resolve({ ok: true, json: async () => ({ projects: ["consus"] }) });
     if (url.startsWith("/api/docs")) {
       docsCallCount += 1;
       const body = docsCallCount === 1 ? docs : (overrides.docsAfterIngest ?? DOCS_WITH_ENTRY);

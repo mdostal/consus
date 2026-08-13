@@ -7,6 +7,31 @@ import Database from "better-sqlite3";
 import { runMigration } from "../db/migrate.js";
 import { registerProjectRoutes } from "./projects.js";
 
+describe("GET /api/projects", () => {
+  let db: Database.Database;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    runMigration(db);
+    app = Fastify();
+    registerProjectRoutes(app, { db, repos: { consus: "/tmp/consus", other: "/tmp/other" } });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+  });
+
+  it("lists every registered project, independent of KB entries or ingest state", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/projects" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ projects: ["consus", "other"] });
+  });
+});
+
 describe("POST /api/projects/:project/ingest", () => {
   let repoDir: string;
   let db: Database.Database;

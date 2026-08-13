@@ -284,6 +284,7 @@ function DecisionsSection({
 
 function ProjectsSection() {
   const [entries, setEntries] = useState<KbEntrySummary[] | null>(null);
+  const [projects, setProjects] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [project, setProject] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
@@ -300,6 +301,13 @@ function ProjectsSection() {
   useEffect(() => {
     loadEntries();
   }, [loadEntries]);
+
+  useEffect(() => {
+    fetch("/api/projects")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((body) => setProjects(body.projects))
+      .catch((e) => setError(e.message));
+  }, []);
 
   async function ingestRepo(repoName: string) {
     setIngesting(true);
@@ -320,22 +328,19 @@ function ProjectsSection() {
   }
 
   if (error) return <p className="state state--err">Could not load projects: {error}</p>;
-  if (!entries) return <p className="state">Loading projects…</p>;
-
-  const projects = [...new Set(entries.map((e) => e.source_repo ?? "unassigned"))];
+  if (!entries || !projects) return <p className="state">Loading projects…</p>;
 
   return (
     <div>
       <div className="consus__section-lead">
         <h1>Projects</h1>
-        <p>Every project's shared-truth KB — scope to one project or see the shape of things across all.</p>
+        <p>Every registered project — scope to one to see its diagrams, docs, and KB entries, or see the shape of things across all.</p>
       </div>
 
-      {entries.length === 0 ? (
+      {projects.length === 0 ? (
         <div className="empty">
-          <strong>No KB entries yet</strong>
-          Approved decisions and CBAs become durable, versioned KB entries here — grouped by project. Nothing has
-          been promoted to the KB store yet.
+          <strong>No projects registered</strong>
+          Configure at least one project (see .pHive/consus-projects.json) so there's a repo to select and ingest.
         </div>
       ) : (
         <>
@@ -357,7 +362,15 @@ function ProjectsSection() {
             ))}
           </div>
           {project === null ? (
-            <GlobalView entries={entries} onSelect={() => {}} />
+            entries.length === 0 ? (
+              <div className="empty">
+                <strong>No KB entries yet</strong>
+                Approved decisions and CBAs become durable, versioned KB entries here — grouped by project. Select a
+                project above to see its docs and diagrams even before anything's been approved.
+              </div>
+            ) : (
+              <GlobalView entries={entries} onSelect={() => {}} />
+            )
           ) : (
             <>
               <div className="project-actions">
