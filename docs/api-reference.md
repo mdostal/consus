@@ -84,8 +84,10 @@ missing/empty (nothing posted). **502** if the Multica issue fetch, comment writ
 update fails — no log entry is written on any of these paths, so the log never records a
 request that didn't actually go through.
 
-### `GET /api/log?limit=<n>`
-The iterate-request traceability log, most-recent-first. `limit` defaults to 100, capped at 1000.
+### `GET /api/log?limit=<n>&issueId=<id>`
+The iterate-request traceability log, most-recent-first. `limit` defaults to 100, capped at
+1000. Optional `issueId` scopes to one issue's requests — this is the Versions view's query
+(`versions-view-and-trigger`).
 
 **Response 200:** array of `{ log_id, timestamp, actor, issue: {id, identifier, title}, verdict: "iterate", prompt, scope, agent, comment_id, status_set, previous_status }`
 

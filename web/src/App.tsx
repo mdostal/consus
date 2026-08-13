@@ -11,6 +11,8 @@ import { BacklogBrowser, type BacklogEntry, type KbCollection } from "./features
 import { DocBrowser, type GroupedDocs } from "./features/docs/DocBrowser";
 import { DocRenderer } from "./features/docs/DocRenderer";
 import type { DecisionPayload, Verdict } from "./features/decisions/answer-shapes/types";
+import { FireAgentTrigger, type FireAgentInput, type FireAgentResult } from "./features/decisions/FireAgentTrigger";
+import { VersionsView, type DecisionLogEntry } from "./features/decisions/VersionsView";
 import "./theme/tokens.css";
 import "./app.css";
 
@@ -67,6 +69,9 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
   const [recorded, setRecorded] = useState<Verdict | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [auditEntries, setAuditEntries] = useState<AuditTrailEntry[]>([]);
+  const [versionsEntries, setVersionsEntries] = useState<DecisionLogEntry[]>([]);
+  const [fireAgentError, setFireAgentError] = useState<string | null>(null);
+  const [fireAgentResult, setFireAgentResult] = useState<FireAgentResult | null>(null);
 
   const loadComments = useCallback(async () => {
     try {
@@ -86,10 +91,41 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
     }
   }, [item.id]);
 
+  const loadVersions = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/log?issueId=${encodeURIComponent(item.id)}`);
+      if (res.ok) setVersionsEntries(await res.json());
+    } catch {
+      /* history is best-effort */
+    }
+  }, [item.id]);
+
   useEffect(() => {
     loadComments();
     loadAuditTrail();
-  }, [loadComments, loadAuditTrail]);
+    loadVersions();
+  }, [loadComments, loadAuditTrail, loadVersions]);
+
+  async function fireAgent(input: FireAgentInput) {
+    setFireAgentError(null);
+    try {
+      const res = await fetch(`/api/decisions/${encodeURIComponent(item.id)}/iterate`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setFireAgentError(body.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      setFireAgentResult({ log_id: body.log_id, comment_id: body.comment_id });
+      loadVersions();
+      loadAuditTrail();
+    } catch (e) {
+      setFireAgentError((e as Error).message);
+    }
+  }
 
   async function submitVerdict(verdict: Verdict) {
     setErr(null);
@@ -188,6 +224,16 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
       <section>
         <h3 className="dv__section-title">Discussion</h3>
         <CommentThread comments={comments} onSubmit={submitComment} />
+      </section>
+
+      <section>
+        <h3 className="dv__section-title">Iterate</h3>
+        <FireAgentTrigger onFire={fireAgent} error={fireAgentError} result={fireAgentResult} />
+      </section>
+
+      <section>
+        <h3 className="dv__section-title">Versions</h3>
+        <VersionsView originalContent={item.title} entries={versionsEntries} />
       </section>
 
       <section>

@@ -113,8 +113,8 @@ export function registerIterateRoutes(
     },
   );
 
-  app.get<{ Querystring: { limit?: string } }>("/api/log", async (request) => {
+  app.get<{ Querystring: { limit?: string; issueId?: string } }>("/api/log", async (request) => {
     const limit = request.query.limit ? Number(request.query.limit) : undefined;
-    return readDecisionLog(decisionLogPath, limit);
+    return readDecisionLog(decisionLogPath, limit, request.query.issueId);
   });
 }

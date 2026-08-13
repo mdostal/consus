@@ -175,7 +175,11 @@ describe("GET /api/log", () => {
     dir = mkdtempSync(join(tmpdir(), "consus-iterate-log-"));
     logPath = join(dir, "decision-log.jsonl");
     app = Fastify();
-    registerIterateRoutes(app, { db, client: fakeClient(), decisionLogPath: logPath });
+    registerIterateRoutes(app, {
+      db,
+      client: fakeClient({ getIssue: async (key) => ({ ok: true, issue: issue({ id: key }) }) }),
+      decisionLogPath: logPath,
+    });
     await app.ready();
   });
 
@@ -199,5 +203,15 @@ describe("GET /api/log", () => {
     const body = res.json();
     expect(body).toHaveLength(1);
     expect(body[0].prompt).toBe("second");
+  });
+
+  it("filters to one issue's requests via ?issueId= (the Versions view's query)", async () => {
+    await app.inject({ method: "POST", url: "/api/decisions/i-1/iterate", payload: { prompt: "for i-1" } });
+    await app.inject({ method: "POST", url: "/api/decisions/i-2/iterate", payload: { prompt: "for i-2" } });
+
+    const res = await app.inject({ method: "GET", url: "/api/log?issueId=i-1" });
+    const body = res.json();
+    expect(body).toHaveLength(1);
+    expect(body[0].prompt).toBe("for i-1");
   });
 });

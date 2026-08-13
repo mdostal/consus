@@ -68,8 +68,13 @@ export async function appendDecisionLog(
   return entry;
 }
 
-/** Most-recent-first, capped by limit (default 100, max 1000 — matches delphi's own bounds). */
-export async function readDecisionLog(logPath: string, limit = 100): Promise<DecisionLogEntry[]> {
+/** Most-recent-first, capped by limit (default 100, max 1000 — matches delphi's own bounds).
+ *  Optionally filtered to one issue's requests (versions-view-and-trigger). */
+export async function readDecisionLog(
+  logPath: string,
+  limit = 100,
+  issueId?: string,
+): Promise<DecisionLogEntry[]> {
   const cappedLimit = Math.min(Math.max(1, limit), 1000);
 
   let raw: string;
@@ -83,7 +88,8 @@ export async function readDecisionLog(logPath: string, limit = 100): Promise<Dec
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .map((line) => JSON.parse(line) as DecisionLogEntry);
+    .map((line) => JSON.parse(line) as DecisionLogEntry)
+    .filter((entry) => !issueId || entry.issue.id === issueId);
 
   return entries.reverse().slice(0, cappedLimit);
 }

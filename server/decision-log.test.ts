@@ -176,4 +176,31 @@ describe("appendDecisionLog / readDecisionLog", () => {
     const overCapped = await readDecisionLog(logPath, 5000);
     expect(overCapped).toHaveLength(5); // only 5 entries exist; clamp just bounds the cap, not a floor
   });
+
+  it("filters to a single issue's requests via issueId, for the Versions view", async () => {
+    await appendDecisionLog(logPath, {
+      actor: "mathew",
+      issue: { id: "i-1", identifier: null, title: "first" },
+      prompt: "p1",
+      scope: null,
+      agent: null,
+      commentId: "c-1",
+      statusSet: null,
+      previousStatus: null,
+    });
+    await appendDecisionLog(logPath, {
+      actor: "mathew",
+      issue: { id: "i-2", identifier: null, title: "other issue" },
+      prompt: "p2",
+      scope: null,
+      agent: null,
+      commentId: "c-2",
+      statusSet: null,
+      previousStatus: null,
+    });
+
+    const filtered = await readDecisionLog(logPath, 100, "i-1");
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].issue.id).toBe("i-1");
+  });
 });
