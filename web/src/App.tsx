@@ -450,7 +450,11 @@ function KbSection() {
 function DocsSection() {
   const [grouped, setGrouped] = useState<GroupedDocs | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [openDoc, setOpenDoc] = useState<{ format: "md" | "html"; content: string; path: string } | null>(null);
+  const [openDoc, setOpenDoc] = useState<
+    { format: "md" | "html"; content: string; path: string; repo: string; itemId: string } | null
+  >(null);
+  const [pendingProposalId, setPendingProposalId] = useState<string | null>(null);
+  const [proposalFailureReason, setProposalFailureReason] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/docs")
@@ -463,9 +467,40 @@ function DocsSection() {
     const res = await fetch(`/api/docs/content?repo=${encodeURIComponent(repo)}&path=${encodeURIComponent(filePath)}`);
     if (res.ok) {
       const data = await res.json();
-      setOpenDoc({ format: data.format, content: data.content, path: filePath });
+      setPendingProposalId(null);
+      setProposalFailureReason(null);
+      setOpenDoc({ format: data.format, content: data.content, path: filePath, repo, itemId: data.itemId });
     }
   }
+
+  const proposeChange = useCallback(
+    ({ diff, description }: { diff: string; description: string }) => {
+      if (!openDoc) return;
+      fetch("/api/proposals", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          itemId: openDoc.itemId,
+          targetType: "doc",
+          diff,
+          description,
+          requestedBy: "Mathew",
+        }),
+      })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .then((proposal) => {
+          if (proposal.status === "pending") {
+            setPendingProposalId(proposal.id);
+            setProposalFailureReason(null);
+          } else {
+            setPendingProposalId(null);
+            setProposalFailureReason(proposal.failure_reason ?? null);
+          }
+        })
+        .catch((e) => setProposalFailureReason(e.message));
+    },
+    [openDoc],
+  );
 
   if (error) return <p className="state state--err">Could not load docs: {error}</p>;
   if (!grouped) return <p className="state">Loading docs…</p>;
@@ -480,7 +515,13 @@ function DocsSection() {
             ← Back to docs
           </button>
         </div>
-        <DocRenderer format={openDoc.format} content={openDoc.content} />
+        <DocRenderer
+          format={openDoc.format}
+          content={openDoc.content}
+          onProposeChange={proposeChange}
+          pendingProposal={pendingProposalId !== null}
+          proposalFailureReason={proposalFailureReason}
+        />
       </div>
     );
   }

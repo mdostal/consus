@@ -67,4 +67,26 @@ describe("GET /api/docs", () => {
     expect(body.format).toBe("md");
     expect(body.content).toContain("hello world");
   });
+
+  it("upserts a target item for the doc so a propose-a-change action always has something to target (s5)", async () => {
+    const path = join(".pHive", "planning", "prd.md");
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/docs/content?repo=consus&path=${encodeURIComponent(path)}`,
+    });
+    const body = res.json();
+
+    expect(body.itemId).toBeTruthy();
+    const row = db.prepare("SELECT type, source_repo FROM items WHERE id = ?").get(body.itemId) as {
+      type: string;
+      source_repo: string;
+    };
+    expect(row.type).toBe("doc");
+    expect(row.source_repo).toBe("consus");
+
+    // idempotent — reopening doesn't duplicate the item
+    await app.inject({ method: "GET", url: `/api/docs/content?repo=consus&path=${encodeURIComponent(path)}` });
+    const count = db.prepare("SELECT COUNT(*) AS n FROM items WHERE id = ?").get(body.itemId) as { n: number };
+    expect(count.n).toBe(1);
+  });
 });

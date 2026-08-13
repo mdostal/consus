@@ -91,9 +91,12 @@ project (the global cross-project view, REQ-27); pass it to scope to one.
 ```
 
 ### `GET /api/docs/content?repo=<name>&path=<file_path>`
-Returns a specific doc's rendered content.
+Returns a specific doc's rendered content. Also upserts a target item (`itemId`, e.g.
+`doc:consus:docs/api-reference.md`) so the doc always has something to target a
+`POST /api/proposals` change proposal against (s5's "propose a change" mode, wired through s3)
+— Consus never writes to the doc's source directly.
 
-**Response 200:** `{ "repo": string, "path": string, "format": "md"|"html", "content": string }`
+**Response 200:** `{ "repo": string, "path": string, "format": "md"|"html", "content": string, "itemId": string }`
 
 ## Knowledgebase
 

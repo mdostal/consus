@@ -1,7 +1,7 @@
 id: s5-doc-editing-propose-ui
 epic: consus-phase5-live-and-interactive
 title: "Doc editing propose-a-change mode in DocRenderer"
-status: pending
+status: complete
 complexity: medium
 methodology: bdd
 depends_on: [s3-propose-dispatch-mechanism]
@@ -90,3 +90,15 @@ metric:
     ref: "SELECT count(*) FROM proposals WHERE target_type='doc'"
   verify_at: integrate
   owner: developer
+
+implementation_notes: |
+  Same propose-a-change UI shape as DiagramView (s4), reused rather than
+  reinvented, per that story's own design decision. Backend: GET
+  /api/docs/content now upserts a per-repo+path synthetic item
+  (doc:<repo>:<path>) on every open, mirroring the diagram route's
+  pattern. Live end-to-end smoke test against a real scanned doc
+  (docs/api-reference.md) confirmed: itemId resolves, proposal fires,
+  resolves correctly (NO_ADAPTER, since no transport was wired in the
+  smoke harness). Noted but out of scope: server/index.ts never actually
+  calls scanRepo() at boot, so the doc index is empty on a fresh server
+  in practice — a pre-existing gap, not introduced by this story.
