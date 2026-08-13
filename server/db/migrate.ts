@@ -59,7 +59,8 @@ export function runMigration(db: Database.Database): void {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       current_version_id INTEGER,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      collection TEXT NOT NULL DEFAULT 'general' CHECK(collection IN ('marketing', 'boundary-decisions', 'plans', 'artifacts', 'general'))
     );
 
     CREATE TABLE IF NOT EXISTS kb_versions (
@@ -133,4 +134,15 @@ export function runMigration(db: Database.Database): void {
   addColumnIfMissing(db, "human_requests", "survey_id", "INTEGER REFERENCES surveys(id)");
   addColumnIfMissing(db, "kb_entries", "source_repo", "TEXT");
   addColumnIfMissing(db, "audit_log", "chat_summary", "TEXT");
+  // REQ (kb-01): collection grouping for KB entries. Ported from
+  // hive:~/.review-bootstrap/consus-kb01 (feat/PAN-6478), re-derived
+  // against this build's current schema rather than cherry-picked.
+  addColumnIfMissing(
+    db,
+    "kb_entries",
+    "collection",
+    "TEXT NOT NULL DEFAULT 'general' CHECK(collection IN ('marketing', 'boundary-decisions', 'plans', 'artifacts', 'general'))",
+  );
+
+  db.exec("CREATE INDEX IF NOT EXISTS idx_kb_entries_collection ON kb_entries(collection)");
 }

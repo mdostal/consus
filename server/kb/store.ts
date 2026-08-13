@@ -71,6 +71,8 @@ export function getAuditLog(db: Database.Database, itemId: string): AuditLogRow[
     .all(itemId) as AuditLogRow[];
 }
 
+export type KbCollection = "marketing" | "boundary-decisions" | "plans" | "artifacts" | "general";
+
 export interface CreateKbEntryInput {
   id: string;
   title: string;
@@ -78,6 +80,8 @@ export interface CreateKbEntryInput {
   content: string;
   /** Project/repo this entry belongs to (REQ-27) — nullable for backward compatibility. */
   sourceRepo?: string | null;
+  /** Collection bucket for KB grouping (kb-01); defaults to 'general'. */
+  collection?: KbCollection;
 }
 
 /**
@@ -86,14 +90,22 @@ export interface CreateKbEntryInput {
  */
 export function createKbEntry(
   db: Database.Database,
-  { id, title, author, content, sourceRepo }: CreateKbEntryInput,
+  { id, title, author, content, sourceRepo, collection = "general" }: CreateKbEntryInput,
 ): void {
   const now = new Date().toISOString();
 
   const tx = db.transaction(() => {
+    // ON CONFLICT DO NOTHING (not "INSERT OR IGNORE") — IGNORE would also
+    // silently swallow a CHECK constraint violation on `collection`
+    // (confirmed: it does, per SQLite's ON CONFLICT-clause semantics for
+    // the legacy OR IGNORE form), turning a bad value into a confusing
+    // downstream FK error on the kb_versions insert below instead of a
+    // clear failure here. DO NOTHING only suppresses the id conflict.
     db.prepare(
-      "INSERT OR IGNORE INTO kb_entries (id, title, current_version_id, created_at, source_repo) VALUES (?, ?, NULL, ?, ?)",
-    ).run(id, title, now, sourceRepo ?? null);
+      `INSERT INTO kb_entries (id, title, current_version_id, created_at, source_repo, collection)
+       VALUES (?, ?, NULL, ?, ?, ?)
+       ON CONFLICT(id) DO NOTHING`,
+    ).run(id, title, now, sourceRepo ?? null, collection);
 
     const result = db
       .prepare("INSERT INTO kb_versions (kb_entry_id, content, author, created_at) VALUES (?, ?, ?, ?)")

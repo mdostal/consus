@@ -97,11 +97,14 @@ Returns a specific doc's rendered content.
 
 ## Knowledgebase
 
-### `GET /api/kb-entries?project=<name>&q=<search>`
-Lists KB entries. Both params optional and combinable: omit `project` for every project
-(global view); omit `q` for no text filter (searches title + every version's content).
+### `GET /api/kb-entries?project=<name>&q=<search>&collection=<name>`
+Lists KB entries. All params optional and combinable: omit `project` for every project
+(global view); omit `q` for no text filter (searches title + every version's content); omit
+`collection` for every collection. `collection` must be one of `marketing`,
+`boundary-decisions`, `plans`, `artifacts`, `general` (`general` is the default for entries
+created without one) — an unrecognized value returns `400`, not `500` or an empty/wrong result.
 
-**Response 200:** array of `{ id, title, current_version_id, created_at, source_repo }`
+**Response 200:** array of `{ id, title, current_version_id, created_at, source_repo, collection }`
 
 ### `PUT /api/kb-entries/:id`
 Creates or edits a KB entry directly (outside the comment/decide flow) — every call appends a
