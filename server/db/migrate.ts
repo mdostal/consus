@@ -125,6 +125,7 @@ export function runMigration(db: Database.Database): void {
   // Guarded ALTER TABLE for columns added after a table already existed on
   // some deployment — CREATE TABLE IF NOT EXISTS alone won't add these to a
   // pre-existing items table.
+  addColumnIfMissing(db, "items", "source_body", "TEXT");
   addColumnIfMissing(db, "items", "decided_at", "TEXT");
   addColumnIfMissing(db, "items", "decision_payload", "TEXT");
   addColumnIfMissing(db, "items", "decision_type", "TEXT");

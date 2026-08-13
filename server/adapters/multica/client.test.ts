@@ -113,6 +113,143 @@ describe("HttpMulticaClient", () => {
       vi.useRealTimers();
     }
   });
+
+  describe("listIssues", () => {
+    // listIssues shells out to the `multica` CLI (`issue list --output json`)
+    // rather than REST — confirmed live during this story that the assumed
+    // `${serverUrl}/issues` REST endpoint 404s; the CLI is the verified
+    // integration point. execImpl is injectable so these tests never spawn
+    // a real process.
+
+    it("normalizes a page of issues from the CLI's snake_case JSON shape", async () => {
+      const execMock = vi.fn().mockResolvedValue({
+        stdout: JSON.stringify({
+          issues: [
+            {
+              id: "i-1",
+              identifier: "DOS-1",
+              title: "Ship it?",
+              description: "body text",
+              status: "todo",
+              priority: "p1",
+              labels: [{ name: "decision" }],
+              updated_at: "2026-08-01T00:00:00Z",
+              created_at: "2026-07-01T00:00:00Z",
+              parent_issue_id: null,
+            },
+          ],
+        }),
+        stderr: "",
+      });
+      const client = new HttpMulticaClient({
+        serverUrl: "https://api.example.com",
+        workspaceId: "ws-1",
+        token: "tok-1",
+        execImpl: execMock,
+      });
+
+      const result = await client.listIssues();
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.issues).toEqual([
+          {
+            id: "i-1",
+            identifier: "DOS-1",
+            title: "Ship it?",
+            description: "body text",
+            status: "todo",
+            priority: "p1",
+            labels: ["decision"],
+            updatedAt: "2026-08-01T00:00:00Z",
+            createdAt: "2026-07-01T00:00:00Z",
+            parentId: null,
+          },
+        ]);
+      }
+      expect(execMock).toHaveBeenCalledWith(
+        "multica",
+        expect.arrayContaining(["issue", "list", "--output", "json"]),
+      );
+    });
+
+    it("passes status and project filters through as CLI flags", async () => {
+      const execMock = vi.fn().mockResolvedValue({ stdout: JSON.stringify({ issues: [] }), stderr: "" });
+      const client = new HttpMulticaClient({
+        serverUrl: "https://api.example.com",
+        workspaceId: "ws-1",
+        token: "tok-1",
+        execImpl: execMock,
+      });
+
+      await client.listIssues({ status: "todo", project: "proj-123" });
+
+      expect(execMock).toHaveBeenCalledWith(
+        "multica",
+        expect.arrayContaining(["--status", "todo", "--project", "proj-123"]),
+      );
+    });
+
+    it("drops entries missing a required field (id/title/status) instead of throwing", async () => {
+      const execMock = vi.fn().mockResolvedValue({
+        stdout: JSON.stringify({ issues: [{ id: "i-1" }, { id: "i-2", title: "ok", status: "todo" }] }),
+        stderr: "",
+      });
+      const client = new HttpMulticaClient({
+        serverUrl: "https://api.example.com",
+        workspaceId: "ws-1",
+        token: "tok-1",
+        execImpl: execMock,
+      });
+
+      const result = await client.listIssues();
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.issues.map((i) => i.id)).toEqual(["i-2"]);
+      }
+    });
+
+    it("paginates until a short page signals the end", async () => {
+      const page1 = Array.from({ length: 100 }, (_, i) => ({
+        id: `i-${i}`,
+        title: `t${i}`,
+        status: "todo",
+      }));
+      const page2 = [{ id: "i-100", title: "last", status: "todo" }];
+      const execMock = vi
+        .fn()
+        .mockResolvedValueOnce({ stdout: JSON.stringify({ issues: page1 }), stderr: "" })
+        .mockResolvedValueOnce({ stdout: JSON.stringify({ issues: page2 }), stderr: "" });
+      const client = new HttpMulticaClient({
+        serverUrl: "https://api.example.com",
+        workspaceId: "ws-1",
+        token: "tok-1",
+        execImpl: execMock,
+      });
+
+      const result = await client.listIssues({ limit: 200 });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.issues).toHaveLength(101);
+      expect(execMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("surfaces a clear failure when the CLI errors rather than returning an empty list silently", async () => {
+      const execMock = vi.fn().mockRejectedValue(new Error("multica: not authenticated"));
+      const client = new HttpMulticaClient({
+        serverUrl: "https://api.example.com",
+        workspaceId: "ws-1",
+        token: "tok-1",
+        execImpl: execMock,
+      });
+
+      const result = await client.listIssues();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toContain("not authenticated");
+    });
+  });
 });
 
 describe("resolveMulticaToken", () => {

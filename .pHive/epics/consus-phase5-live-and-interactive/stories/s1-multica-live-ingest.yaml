@@ -1,7 +1,7 @@
 id: s1-multica-live-ingest
 epic: consus-phase5-live-and-interactive
 title: "Wire GET /api/decisions to live Multica, classified into decision-request/v1"
-status: pending
+status: complete
 complexity: high
 methodology: tdd
 depends_on: []
@@ -106,3 +106,19 @@ metric:
     ref: "GET /api/decisions response, manually checked against Multica's own issue count"
   verify_at: integrate
   owner: developer
+
+implementation_notes: |
+  Deviation from plan: the assumed `${MULTICA_SERVER_URL}/issues` REST endpoint
+  (client.ts's original, never-verified guess) returns 404 against the real
+  server — confirmed live during this story. Multica's only verified,
+  versioned read surface is the `multica` CLI (`issue list --output json`).
+  listIssues() now shells out to it (execFile, injectable for tests);
+  writeComment() is untouched (separate, already-flagged REST risk in
+  architecture.md, out of this story's scope). Live-verified end-to-end
+  against the real "Consus" Multica project (63 issues,
+  project id 282343e2-b741-4438-bc80-b93c34819a96) via GET /api/decisions —
+  see METRICS entry above. Notably surfaced that
+  consus-phase4-close-the-loop's iterate-endpoint-and-log ticket is marked
+  "done" on Multica (built on hive's now-superseded rebuild) even though
+  this Mac's build doesn't have that endpoint yet — story YAML status here
+  was stale before this run; phase4 execution should account for that.

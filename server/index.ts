@@ -7,14 +7,28 @@ import { registerArtifactLinkRoutes } from "./routes/artifact-links.js";
 import { registerDecisionRoutes } from "./routes/decisions.js";
 import { registerInteractionRoutes } from "./routes/interactions.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
+import {
+  HttpMulticaClient,
+  resolveMulticaServerUrl,
+  resolveMulticaWorkspaceId,
+  type MulticaClient,
+} from "./adapters/multica/client.js";
+
+/** Used when no client is supplied (tests, CI) — never throws, never makes a
+ *  network call. Production wiring (isMain below) always supplies a real one. */
+const NOOP_MULTICA_CLIENT: MulticaClient = {
+  writeComment: async () => ({ ok: false, error: "Multica client not configured" }),
+  listIssues: async () => ({ ok: true, issues: [] }),
+};
 
 export interface BuildServerOptions {
   dbPath: string;
   /** repo name -> absolute path on disk, scanned for generated docs */
   repos?: Record<string, string>;
+  client?: MulticaClient;
 }
 
-export function buildServer({ dbPath, repos = {} }: BuildServerOptions): FastifyInstance {
+export function buildServer({ dbPath, repos = {}, client = NOOP_MULTICA_CLIENT }: BuildServerOptions): FastifyInstance {
   const app = Fastify({ logger: false });
   const db = openDb(dbPath);
   runMigration(db);
@@ -22,7 +36,7 @@ export function buildServer({ dbPath, repos = {} }: BuildServerOptions): Fastify
   registerDocRoutes(app, { db, repos });
   registerKbRoutes(app, { db });
   registerArtifactLinkRoutes(app, { db });
-  registerDecisionRoutes(app, { db });
+  registerDecisionRoutes(app, { db, client });
   registerInteractionRoutes(app, { db });
 
   app.get("/health", async () => {
@@ -46,7 +60,20 @@ if (isMain) {
   const dbPath = process.env.CONSUS_DB_PATH ?? ".pHive/consus.sqlite";
   const projectsConfigPath = process.env.CONSUS_PROJECTS_CONFIG ?? ".pHive/consus-projects.json";
   const repos = loadProjectRegistry(projectsConfigPath, process.cwd());
-  const app = buildServer({ dbPath, repos });
+
+  let client: MulticaClient = NOOP_MULTICA_CLIENT;
+  try {
+    client = new HttpMulticaClient({
+      serverUrl: resolveMulticaServerUrl(),
+      workspaceId: resolveMulticaWorkspaceId(),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // eslint-disable-next-line no-console
+    console.warn(`[multica] not configured — decisions queue will be local-only: ${message}`);
+  }
+
+  const app = buildServer({ dbPath, repos, client });
   app.listen({ port, host: "0.0.0.0" }).then(() => {
     // eslint-disable-next-line no-console
     console.log(`Consus server listening on :${port} (db: ${dbPath})`);

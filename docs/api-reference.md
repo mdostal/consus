@@ -21,17 +21,26 @@ Confirms the server and SQLite connection are up.
 ## Decisions (the queue an agent harness reads)
 
 ### `GET /api/decisions`
-Lists every open, undecided item carrying a `decision_payload` (`dostal:decision-request/v1`
-shape — see `server/decision-contract/parser.ts`). Excludes already-decided items (the
-decided-store amnesia fix — REQ-08) so a harness never re-surfaces something already resolved.
+On every call, first syncs live issues from Multica (`s1-multica-live-ingest`) into the local
+store, then lists every open, undecided item that either carries a `decision_payload`
+(`dostal:decision-request/v1` shape — see `server/decision-contract/parser.ts`) **or** was
+ingested from Multica (`id LIKE 'multica:%'`) — most real tickets don't carry the fenced
+decision-request block, so both are included or the queue would show almost nothing.
+`decision_type`/`triage_bucket` come from the heuristic classifier when there's no payload.
+Excludes already-decided items (the decided-store amnesia fix — REQ-08) so a harness never
+re-surfaces something already resolved. Returns `503` if the Multica sync itself fails, rather
+than silently serving a stale/empty queue.
 
 **Response 200:** array of
 ```json
 {
-  "id": "human_request:q-1",
-  "type": "human_request",
+  "id": "multica:i-1",
+  "type": "multica_issue",
   "title": "Ship v1 with the flex-scope KB backlog cut?",
-  "status": "open",
+  "status": "todo",
+  "source_body": "raw ticket description",
+  "decision_type": "choose",
+  "triage_bucket": "open_question",
   "decision_payload": {
     "version": "dostal:decision-request/v1",
     "title": "...", "context": "...",
@@ -40,6 +49,17 @@ decided-store amnesia fix — REQ-08) so a harness never re-surfaces something a
   }
 }
 ```
+`decision_payload` is `null` for a raw Multica issue with no fenced decision-request block.
+
+**Multica connection config** (env vars, all optional — fall back to `~/.multica/config.json`,
+the same file the `multica` CLI itself writes):
+- `MULTICA_SERVER_URL` — REST base URL (used by the write-comment path only)
+- `MULTICA_WORKSPACE_ID`
+- `MULTICA_TOKEN`
+- `MULTICA_PROJECT_ID` — scopes the sync to one Multica project (`multica project list` shows
+  ids). Unset syncs the whole workspace, which is almost always too broad — set this per
+  deployment. No config-file fallback; a workspace has many projects and there's no universal
+  default.
 
 ### `POST /api/items/:id/decide`
 Submits a verdict on any item (not just human_requests — any item with a `decision_payload`,
