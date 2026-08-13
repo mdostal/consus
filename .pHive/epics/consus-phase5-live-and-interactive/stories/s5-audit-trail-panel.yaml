@@ -1,7 +1,7 @@
 id: s5-audit-trail-panel
 epic: consus-phase5-live-and-interactive
 title: "Per-item audit trail panel (audit_log + fired/pending/applied proposals)"
-status: pending
+status: complete
 complexity: medium
 methodology: bdd
 depends_on: [s3-propose-dispatch-mechanism, s4-diagram-viewer-and-propose-ui, s5-doc-editing-propose-ui]
@@ -98,3 +98,16 @@ metric:
     ref: "Manually verified across a decision, a diagram, and a doc item after this story ships"
   verify_at: integrate
   owner: developer
+
+implementation_notes: |
+  Scope correction: the plan named DecisionCard.tsx/KBBrowser.tsx as an
+  integration point, but discovered during this story that neither is
+  actually rendered anywhere in App.tsx — dead code from a prior planning
+  pass, never wired into the live app. Integrated the shared AuditPanel
+  into the three REAL live per-item views instead: DecisionView (main
+  decisions queue), ProjectDiagram (s4), and DocsSection (s5's own doc
+  view) — all fetch GET /api/items/:id/audit-trail and refresh it after
+  firing a proposal. Live end-to-end verified: fired a diagram proposal,
+  confirmed it appears in its audit-trail with kind=proposal,
+  status=failed, and the failure reason. This closes
+  consus-phase5-live-and-interactive — all 10 stories complete.

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { marked } from "marked";
+import { AuditPanel, type AuditTrailEntry } from "../audit/AuditPanel";
 import "../../theme/tokens.css";
 
 export interface ProposeChangeInput {
@@ -14,6 +15,9 @@ export interface DocRendererProps {
   onProposeChange?: (input: ProposeChangeInput) => void;
   pendingProposal?: boolean;
   proposalFailureReason?: string | null;
+  /** s5: history for this doc's item (audit_log + proposals), via the
+   *  shared AuditPanel. Omit to keep the panel hidden. */
+  auditEntries?: AuditTrailEntry[];
 }
 
 /**
@@ -33,6 +37,7 @@ export function DocRenderer({
   onProposeChange,
   pendingProposal,
   proposalFailureReason,
+  auditEntries,
 }: DocRendererProps) {
   const html = useMemo(() => (format === "md" ? (marked.parse(content, { async: false }) as string) : content), [
     format,
@@ -86,6 +91,13 @@ export function DocRenderer({
       ) : null}
 
       <div data-testid="doc-html" className="doc-renderer" dangerouslySetInnerHTML={{ __html: html }} />
+
+      {auditEntries ? (
+        <div className="doc-renderer__history">
+          <h4>History</h4>
+          <AuditPanel entries={auditEntries} />
+        </div>
+      ) : null}
     </div>
   );
 }

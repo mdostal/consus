@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { AuditPanel, type AuditTrailEntry } from "../audit/AuditPanel";
 
 export interface DiagramStory {
   id: string;
@@ -24,6 +25,9 @@ export interface DiagramViewProps {
   /** Present when a proposal was fired and hasn't resolved yet. */
   pendingProposal?: boolean;
   onProposeChange: (input: ProposeChangeInput) => void;
+  /** s5: history for this diagram's item (audit_log + proposals), via the
+   *  shared AuditPanel. Omit to keep the panel hidden. */
+  auditEntries?: AuditTrailEntry[];
 }
 
 /**
@@ -33,7 +37,7 @@ export interface DiagramViewProps {
  * design (see architecture.md: a graphical DAG/diagram engine is explicitly
  * deferred, not this story's scope).
  */
-export function DiagramView({ repo, epics, pendingProposal, onProposeChange }: DiagramViewProps) {
+export function DiagramView({ repo, epics, pendingProposal, onProposeChange, auditEntries }: DiagramViewProps) {
   const [composing, setComposing] = useState(false);
   const [diff, setDiff] = useState("");
   const [description, setDescription] = useState("");
@@ -99,6 +103,13 @@ export function DiagramView({ repo, epics, pendingProposal, onProposeChange }: D
           ))}
         </ul>
       )}
+
+      {auditEntries ? (
+        <div className="diagram-view__history">
+          <h4>History</h4>
+          <AuditPanel entries={auditEntries} />
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { QAQueue, type QueuedQuestion } from "./features/minerva/QAQueue";
 import { GlobalView, type KbEntrySummary } from "./features/projects/GlobalView";
 import { ProjectView } from "./features/projects/ProjectView";
 import { DiagramView, type DiagramEpic } from "./features/projects/DiagramView";
+import { AuditPanel, type AuditTrailEntry } from "./features/audit/AuditPanel";
 import { BacklogBrowser, type BacklogEntry, type KbCollection } from "./features/kb/BacklogBrowser";
 import { DocBrowser, type GroupedDocs } from "./features/docs/DocBrowser";
 import { DocRenderer } from "./features/docs/DocRenderer";
@@ -65,6 +66,7 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
   const [comments, setComments] = useState<Comment[]>([]);
   const [recorded, setRecorded] = useState<Verdict | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [auditEntries, setAuditEntries] = useState<AuditTrailEntry[]>([]);
 
   const loadComments = useCallback(async () => {
     try {
@@ -75,9 +77,19 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
     }
   }, [item.id]);
 
+  const loadAuditTrail = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/items/${item.id}/audit-trail`);
+      if (res.ok) setAuditEntries(await res.json());
+    } catch {
+      /* history is best-effort */
+    }
+  }, [item.id]);
+
   useEffect(() => {
     loadComments();
-  }, [loadComments]);
+    loadAuditTrail();
+  }, [loadComments, loadAuditTrail]);
 
   async function submitVerdict(verdict: Verdict) {
     setErr(null);
@@ -85,6 +97,7 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
       await postVerdict(item.id, verdict);
       setRecorded(verdict);
       loadComments();
+      loadAuditTrail();
       onDecided();
     } catch (e) {
       setErr(`Could not record decision: ${(e as Error).message}`);
@@ -175,6 +188,11 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
       <section>
         <h3 className="dv__section-title">Discussion</h3>
         <CommentThread comments={comments} onSubmit={submitComment} />
+      </section>
+
+      <section>
+        <h3 className="dv__section-title">History</h3>
+        <AuditPanel entries={auditEntries} />
       </section>
     </article>
   );
@@ -351,14 +369,27 @@ function ProjectDiagram({ repo }: { repo: string }) {
   const [data, setData] = useState<{ itemId: string; epics: DiagramEpic[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingProposalId, setPendingProposalId] = useState<string | null>(null);
+  const [auditEntries, setAuditEntries] = useState<AuditTrailEntry[]>([]);
+
+  const loadAuditTrail = useCallback((itemId: string) => {
+    fetch(`/api/items/${encodeURIComponent(itemId)}/audit-trail`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(setAuditEntries)
+      .catch(() => {
+        /* history is best-effort */
+      });
+  }, []);
 
   useEffect(() => {
     setData(null);
     fetch(`/api/diagrams?repo=${encodeURIComponent(repo)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then(setData)
+      .then((body) => {
+        setData(body);
+        loadAuditTrail(body.itemId);
+      })
       .catch((e) => setError(e.message));
-  }, [repo]);
+  }, [repo, loadAuditTrail]);
 
   const proposeChange = useCallback(
     ({ diff, description }: { diff: string; description: string }) => {
@@ -375,10 +406,13 @@ function ProjectDiagram({ repo }: { repo: string }) {
         }),
       })
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-        .then((proposal) => setPendingProposalId(proposal.status === "pending" ? proposal.id : null))
+        .then((proposal) => {
+          setPendingProposalId(proposal.status === "pending" ? proposal.id : null);
+          loadAuditTrail(data.itemId);
+        })
         .catch((e) => setError(e.message));
     },
-    [data],
+    [data, loadAuditTrail],
   );
 
   if (error) return <p className="state state--err">Could not load the diagram: {error}</p>;
@@ -390,6 +424,7 @@ function ProjectDiagram({ repo }: { repo: string }) {
       epics={data.epics}
       pendingProposal={pendingProposalId !== null}
       onProposeChange={proposeChange}
+      auditEntries={auditEntries}
     />
   );
 }
@@ -455,12 +490,22 @@ function DocsSection() {
   >(null);
   const [pendingProposalId, setPendingProposalId] = useState<string | null>(null);
   const [proposalFailureReason, setProposalFailureReason] = useState<string | null>(null);
+  const [auditEntries, setAuditEntries] = useState<AuditTrailEntry[]>([]);
 
   useEffect(() => {
     fetch("/api/docs")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(setGrouped)
       .catch((e) => setError(e.message));
+  }, []);
+
+  const loadAuditTrail = useCallback((itemId: string) => {
+    fetch(`/api/items/${encodeURIComponent(itemId)}/audit-trail`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(setAuditEntries)
+      .catch(() => {
+        /* history is best-effort */
+      });
   }, []);
 
   async function open(repo: string, filePath: string) {
@@ -470,6 +515,7 @@ function DocsSection() {
       setPendingProposalId(null);
       setProposalFailureReason(null);
       setOpenDoc({ format: data.format, content: data.content, path: filePath, repo, itemId: data.itemId });
+      loadAuditTrail(data.itemId);
     }
   }
 
@@ -496,10 +542,11 @@ function DocsSection() {
             setPendingProposalId(null);
             setProposalFailureReason(proposal.failure_reason ?? null);
           }
+          loadAuditTrail(openDoc.itemId);
         })
         .catch((e) => setProposalFailureReason(e.message));
     },
-    [openDoc],
+    [openDoc, loadAuditTrail],
   );
 
   if (error) return <p className="state state--err">Could not load docs: {error}</p>;
@@ -521,6 +568,7 @@ function DocsSection() {
           onProposeChange={proposeChange}
           pendingProposal={pendingProposalId !== null}
           proposalFailureReason={proposalFailureReason}
+          auditEntries={auditEntries}
         />
       </div>
     );

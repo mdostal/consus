@@ -188,6 +188,23 @@ action, wired through s3). One item per repo's diagram, not per epic/story node.
 }
 ```
 
+## Audit Trail (s5 — the shared history panel's data source)
+
+### `GET /api/items/:id/audit-trail`
+Every history entry for an item — plain `audit_log` writes (accept/mix/reject verdicts, KB
+decides) merged with `proposals` (s3, any status: pending/applied/failed) — most recent first.
+One route for decisions, diagrams, and docs alike; no branching by item type. Each entry carries
+a `kind: "audit" | "proposal"` so a caller never has to guess which kind of record it's looking
+at from shape alone.
+
+**Response 200:** array of
+```json
+[
+  { "kind": "audit", "id": 1, "actor": "mathew", "field": "status", "old_value": "open", "new_value": "approved", "timestamp": "..." },
+  { "kind": "proposal", "id": "uuid", "target_type": "diagram", "description": "...", "status": "applied", "requested_by": "mathew", "timestamp": "...", "applied_diff": "...", "failure_reason": null }
+]
+```
+
 ## Artifact Links
 
 ### `POST /api/items/:id/artifact-links`
