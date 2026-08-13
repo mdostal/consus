@@ -2,7 +2,16 @@
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-08-13
+## [0.5.0] - 2026-08-13
+
+### Added
+
+- **Phase 4 (`consus-phase4-close-the-loop`, REQ-16 — fire-agents-to-iterate):** `POST /api/decisions/:key/iterate` ports Delphi's real fire-agent-to-iterate feature — composes a comment with an `[@agentName](mention://agent/<id>)` mention line (the real Multica dispatch trigger, omitted entirely without both `agentId`+`agentName`), posts it through the existing single Multica-write path, optionally flips the issue to `in_progress`, and logs every request to a local traceability log (`GET /api/log`, filterable by issue). A "Fire agent to iterate" trigger and a Versions view (iterate-request history alongside the original content — not a diff UI, that's separate scope) are wired into the decision surface.
+- `HttpMulticaClient` gained `getIssue()`/`updateIssueStatus()` (CLI-based, same as `listIssues()`). `writeCommentAndCache()` gained an optional `cacheItemId`, fixing a real correctness gap where the Multica-side write and the local cache row needed different ids.
+
+### Changed
+
+- **`consus-phase4-close-the-loop` release finalization.** Applied the planned `minor` version bump (`0.4.0` → `0.5.0`) for this epic's completion.
 
 ### Added
 

@@ -250,6 +250,75 @@ describe("HttpMulticaClient", () => {
       if (!result.ok) expect(result.error).toContain("not authenticated");
     });
   });
+
+  describe("getIssue", () => {
+    it("fetches and normalizes a single issue via the CLI", async () => {
+      const execMock = vi.fn().mockResolvedValue({
+        stdout: JSON.stringify({ id: "i-1", title: "Ship it?", status: "todo" }),
+        stderr: "",
+      });
+      const client = new HttpMulticaClient({
+        serverUrl: "https://api.example.com",
+        workspaceId: "ws-1",
+        token: "tok-1",
+        execImpl: execMock,
+      });
+
+      const result = await client.getIssue("i-1");
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.issue.id).toBe("i-1");
+      expect(execMock).toHaveBeenCalledWith("multica", ["issue", "get", "i-1", "--output", "json"]);
+    });
+
+    it("surfaces a clear failure rather than throwing when the CLI errors", async () => {
+      const execMock = vi.fn().mockRejectedValue(new Error("issue not found"));
+      const client = new HttpMulticaClient({
+        serverUrl: "https://api.example.com",
+        workspaceId: "ws-1",
+        token: "tok-1",
+        execImpl: execMock,
+      });
+
+      const result = await client.getIssue("nope");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toContain("issue not found");
+    });
+  });
+
+  describe("updateIssueStatus", () => {
+    it("updates an issue's status via the CLI", async () => {
+      const execMock = vi.fn().mockResolvedValue({ stdout: "", stderr: "" });
+      const client = new HttpMulticaClient({
+        serverUrl: "https://api.example.com",
+        workspaceId: "ws-1",
+        token: "tok-1",
+        execImpl: execMock,
+      });
+
+      const result = await client.updateIssueStatus("i-1", "in_progress");
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.status).toBe("in_progress");
+      expect(execMock).toHaveBeenCalledWith("multica", ["issue", "status", "i-1", "in_progress"]);
+    });
+
+    it("surfaces a clear failure rather than throwing when the CLI errors", async () => {
+      const execMock = vi.fn().mockRejectedValue(new Error("invalid status"));
+      const client = new HttpMulticaClient({
+        serverUrl: "https://api.example.com",
+        workspaceId: "ws-1",
+        token: "tok-1",
+        execImpl: execMock,
+      });
+
+      const result = await client.updateIssueStatus("i-1", "bogus");
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toContain("invalid status");
+    });
+  });
 });
 
 describe("resolveMulticaToken", () => {

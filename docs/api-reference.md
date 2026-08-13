@@ -69,6 +69,28 @@ or without one). Writes an append-only `audit_log` entry and marks the item deci
 
 **Response 200:** `{ "item": <full item row>, "auditLog": [<audit_log rows for this item>] }`
 
+### `POST /api/decisions/:key/iterate` (REQ-16 — fire-agent-to-iterate)
+Dispatches an agent to redo/extend the work on a Multica issue: composes a comment (with an
+`[@agentName](mention://agent/<agentId>)` mention line when both `agentId` and `agentName` are
+given — this is what actually triggers Multica's own dispatch), posts it via the same
+`writeCommentAndCache` path every other comment write uses (never a second Multica-write path),
+and logs the request to a local JSONL traceability log. `:key` accepts either a bare Multica
+issue id or this build's `multica:<id>` namespaced item id (the prefix is stripped).
+
+**Request body:** `{ "prompt": string, "agentId"?: string, "agentName"?: string, "scope"?: { "section"?: string, "diagram"?: string }, "setInProgress"?: boolean, "actor"?: string }`
+
+**Response 200:** `{ "ok": true, "log_id": string, "comment_id": string }`. **400** if `prompt` is
+missing/empty (nothing posted). **502** if the Multica issue fetch, comment write, or status
+update fails — no log entry is written on any of these paths, so the log never records a
+request that didn't actually go through.
+
+### `GET /api/log?limit=<n>&issueId=<id>`
+The iterate-request traceability log, most-recent-first. `limit` defaults to 100, capped at
+1000. Optional `issueId` scopes to one issue's requests — this is the Versions view's query
+(`versions-view-and-trigger`).
+
+**Response 200:** array of `{ log_id, timestamp, actor, issue: {id, identifier, title}, verdict: "iterate", prompt, scope, agent, comment_id, status_set, previous_status }`
+
 **Response 404:** `{ "error": "item not found: <id>" }`
 
 > Note: the client-side verdict model (Accept/Option Chosen/Mix/Reject-iterate — see

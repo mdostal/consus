@@ -9,6 +9,8 @@ import type { MulticaClient } from "../adapters/multica/client.js";
 const NOOP_CLIENT: MulticaClient = {
   writeComment: async () => ({ ok: false, error: "unused" }),
   listIssues: async () => ({ ok: true, issues: [] }),
+  getIssue: async () => ({ ok: false, error: "unused" }),
+  updateIssueStatus: async () => ({ ok: false, error: "unused" }),
 };
 
 function insertItem(db: Database.Database, id: string, payload: string | null, decided = false) {

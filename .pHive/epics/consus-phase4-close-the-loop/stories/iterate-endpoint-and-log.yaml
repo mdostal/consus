@@ -1,7 +1,7 @@
 id: iterate-endpoint-and-log
 epic: consus-phase4-close-the-loop
 title: "POST /api/decisions/:key/iterate + GET /api/log (REQ-16 backend)"
-status: pending
+status: complete
 complexity: medium
 methodology: classic
 depends_on: []
@@ -99,3 +99,28 @@ references:
     relevant_excerpt: "REQ-16: Fire-Agents-to-Iterate. From any item... dispatch an agent to redo/extend the work; results return as a NEW version... Posts an iterate-request comment via Multica dispatch; logged for traceability."
   - path: .pHive/epics/consus-phase4-close-the-loop/docs/design-discussion.md
     relevant_excerpt: "Composes a markdown comment... the mention line is what actually triggers Multica's own dispatch to that agent. This is directly, freshly confirmed tonight."
+
+implementation_notes: |
+  Ported per plan. Extended HttpMulticaClient with getIssue()/updateIssueStatus()
+  — both via the multica CLI (multica issue get / multica issue status),
+  same rationale as s1's listIssues: the REST endpoints are unverified and
+  the CLI is the confirmed real interface. Extended writeCommentAndCache
+  (not replaced) with an optional cacheItemId so the local comments-table
+  row can use our multica:<id> namespaced item id while the actual Multica
+  write still uses the bare issue id it requires (a real correctness gap
+  in the original single-id design, caught while porting hive's reference
+  implementation, which had the same split for the same reason).
+  writeCommentAndCache also now returns commentId on success (previously
+  {ok:true} only, unused by any caller since this function was never
+  wired into a route before this story).
+
+  Standing operator directive (recorded 2026-07-26, this epic's stories):
+  hold ALL outbound (no push, no PR) until explicitly lifted. Respected —
+  this story is committed locally only, not pushed.
+
+  Testing note: 9 route tests cover every acceptance criterion via a
+  mocked Multica client (no real comment ever posted, no real dispatch
+  ever triggered — deliberately, since a wrong test could mention a real
+  agent). Live-verified only the safe, read-only half: getIssue() against
+  the real Multica API (confirmed working). writeComment/updateIssueStatus
+  were NOT live-tested — those have real side effects on production data.

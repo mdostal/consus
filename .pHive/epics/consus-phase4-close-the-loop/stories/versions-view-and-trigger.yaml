@@ -1,7 +1,7 @@
 id: versions-view-and-trigger
 epic: consus-phase4-close-the-loop
 title: "Fire-agent trigger + Versions comparison view (REQ-16 frontend)"
-status: pending
+status: complete
 complexity: medium
 methodology: classic
 depends_on: [iterate-endpoint-and-log]
@@ -92,3 +92,21 @@ risks:
 references:
   - path: .pHive/epics/consus-phase4-close-the-loop/docs/design-discussion.md
     relevant_excerpt: "This epic's Versions view is therefore scoped down to exactly what REQ-16 itself requires... not a general-purpose multi-source version comparison system."
+
+implementation_notes: |
+  Backend: GET /api/log gained an ?issueId= filter (readDecisionLog's
+  filter param) — the prior story's version had limit-only, as flagged
+  by this story's own research step. Frontend: FireAgentTrigger.tsx +
+  VersionsView.tsx, integrated into DecisionCard.tsx (per plan, optional
+  props — omitted keeps existing plain behavior) AND into the live
+  DecisionView in App.tsx (DecisionCard itself is still not rendered
+  anywhere in App.tsx — same orphaned-component situation found during
+  s5 — so wiring only DecisionCard would not have been reachable from
+  the running app). Scope held to the plan: no diff/sectional-comparison
+  UI, verified by a dedicated test asserting no .diff/[data-diff] element
+  renders. 261 tests passing, build clean.
+
+  Standing operator directive (2026-07-26): committed locally only, not
+  pushed. consus-phase4-close-the-loop is now feature-complete (both
+  stories done) but held from /ship's push/PR steps until the directive
+  is explicitly lifted.

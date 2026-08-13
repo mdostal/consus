@@ -20,6 +20,8 @@ function fakeClient(listResult: MulticaListResult = { ok: true, issues: [] }): M
   return {
     writeComment: async () => ({ ok: false, error: "unused in these tests" }),
     listIssues: async () => listResult,
+    getIssue: async () => ({ ok: false, error: "unused in these tests" }),
+    updateIssueStatus: async () => ({ ok: false, error: "unused in these tests" }),
   };
 }
 

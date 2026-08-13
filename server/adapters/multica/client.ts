@@ -159,9 +159,19 @@ export type MulticaListResult =
   | { ok: true; issues: MulticaIssue[] }
   | { ok: false; error: string };
 
+export type MulticaGetIssueResult =
+  | { ok: true; issue: MulticaIssue }
+  | { ok: false; error: string };
+
+export type MulticaStatusUpdateResult =
+  | { ok: true; status: string }
+  | { ok: false; error: string };
+
 export interface MulticaClient {
   writeComment(input: WriteCommentInput): Promise<MulticaWriteResult>;
   listIssues(input?: ListIssuesInput): Promise<MulticaListResult>;
+  getIssue(key: string): Promise<MulticaGetIssueResult>;
+  updateIssueStatus(issueId: string, status: string): Promise<MulticaStatusUpdateResult>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -293,6 +303,30 @@ export class HttpMulticaClient implements MulticaClient {
       }
 
       return { ok: true, issues: collected.slice(0, limit) };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: message };
+    }
+  }
+
+  /** `multica issue get <id> --output json` — same CLI-not-REST rationale as listIssues. */
+  async getIssue(key: string): Promise<MulticaGetIssueResult> {
+    try {
+      const { stdout } = await this.execImpl("multica", ["issue", "get", key, "--output", "json"]);
+      const issue = normalizeIssue(JSON.parse(stdout));
+      if (!issue) return { ok: false, error: "Multica returned an invalid issue payload" };
+      return { ok: true, issue };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: message };
+    }
+  }
+
+  /** `multica issue status <id> <status>` — same CLI-not-REST rationale as listIssues. */
+  async updateIssueStatus(issueId: string, status: string): Promise<MulticaStatusUpdateResult> {
+    try {
+      await this.execImpl("multica", ["issue", "status", issueId, status]);
+      return { ok: true, status };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return { ok: false, error: message };

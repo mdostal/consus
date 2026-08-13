@@ -1,7 +1,14 @@
 import type Database from "better-sqlite3";
 import type { MulticaClient, WriteCommentInput } from "./client.js";
 
-export type WriteCommentAndCacheResult = { ok: true } | { ok: false; error: string };
+export type WriteCommentAndCacheResult = { ok: true; commentId: string } | { ok: false; error: string };
+
+export interface WriteCommentAndCacheInput extends WriteCommentInput {
+  /** Local item id to cache the comment under, if different from the
+   *  Multica-side `itemId` (e.g. our `multica:<id>` namespaced item id vs
+   *  the bare id Multica's own API expects). Defaults to `itemId`. */
+  cacheItemId?: string;
+}
 
 /**
  * REQ-07: comment writes go through Multica, not a Consus-private store.
@@ -13,7 +20,7 @@ export type WriteCommentAndCacheResult = { ok: true } | { ok: false; error: stri
 export async function writeCommentAndCache(
   db: Database.Database,
   client: MulticaClient,
-  input: WriteCommentInput,
+  { cacheItemId, ...input }: WriteCommentAndCacheInput,
 ): Promise<WriteCommentAndCacheResult> {
   const result = await client.writeComment(input);
   if (!result.ok) {
@@ -22,7 +29,7 @@ export async function writeCommentAndCache(
 
   db.prepare(
     "INSERT INTO comments (item_id, author, body, created_at, multica_comment_id) VALUES (?, ?, ?, ?, ?)",
-  ).run(input.itemId, input.author, input.body, new Date().toISOString(), result.multicaCommentId);
+  ).run(cacheItemId ?? input.itemId, input.author, input.body, new Date().toISOString(), result.multicaCommentId);
 
-  return { ok: true };
+  return { ok: true, commentId: result.multicaCommentId };
 }
