@@ -11,6 +11,7 @@ import { registerInteractionRoutes } from "./routes/interactions.js";
 import { registerProposalRoutes } from "./routes/proposals.js";
 import { registerDiagramRoutes } from "./routes/diagrams.js";
 import { registerAuditTrailRoutes } from "./routes/audit-trail.js";
+import { registerIterateRoutes } from "./routes/iterate.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
 import {
   HttpMulticaClient,
@@ -25,6 +26,8 @@ import { StdioMinervaTransport, type MinervaTransport } from "./adapters/minerva
 const NOOP_MULTICA_CLIENT: MulticaClient = {
   writeComment: async () => ({ ok: false, error: "Multica client not configured" }),
   listIssues: async () => ({ ok: true, issues: [] }),
+  getIssue: async () => ({ ok: false, error: "Multica client not configured" }),
+  updateIssueStatus: async () => ({ ok: false, error: "Multica client not configured" }),
 };
 
 /** Used when no transport is supplied (tests, CI) — never spawns a process. */
@@ -74,6 +77,7 @@ export function buildServer({
   registerProposalRoutes(app, { db, transport });
   registerDiagramRoutes(app, { db, repos });
   registerAuditTrailRoutes(app, { db });
+  registerIterateRoutes(app, { db, client });
 
   app.get("/health", async () => {
     const row = db.prepare("SELECT 1 AS ok").get() as { ok: number } | undefined;

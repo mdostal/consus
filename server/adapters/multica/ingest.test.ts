@@ -108,6 +108,8 @@ describe("syncMulticaQueue", () => {
     return {
       writeComment: async () => ({ ok: false, error: "unused" }),
       listIssues: async () => result,
+      getIssue: async () => ({ ok: false, error: "unused" }),
+      updateIssueStatus: async () => ({ ok: false, error: "unused" }),
     };
   }
 

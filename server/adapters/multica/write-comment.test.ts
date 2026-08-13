@@ -28,17 +28,55 @@ describe("writeCommentAndCache", () => {
       async listIssues() {
         return { ok: true, issues: [] };
       },
+      async getIssue() {
+        return { ok: false, error: "unused" };
+      },
+      async updateIssueStatus() {
+        return { ok: false, error: "unused" };
+      },
     };
 
     const result = await writeCommentAndCache(db, client, { itemId: "item-1", author: "mathew", body: "hi" });
 
     expect(result.ok).toBe(true);
+    if (result.ok) expect(result.commentId).toBe("mc-1");
     const row = db.prepare("SELECT * FROM comments WHERE item_id = ?").get("item-1") as {
       multica_comment_id: string;
       body: string;
     };
     expect(row.multica_comment_id).toBe("mc-1");
     expect(row.body).toBe("hi");
+  });
+
+  it("caches under a different local item id (cacheItemId) than the id sent to Multica", async () => {
+    insertItem(db, "multica:item-1");
+    const client: MulticaClient = {
+      async writeComment(input) {
+        expect(input.itemId).toBe("item-1"); // the bare Multica-side id, not our namespaced local id
+        return { ok: true, multicaCommentId: "mc-2" };
+      },
+      async listIssues() {
+        return { ok: true, issues: [] };
+      },
+      async getIssue() {
+        return { ok: false, error: "unused" };
+      },
+      async updateIssueStatus() {
+        return { ok: false, error: "unused" };
+      },
+    };
+
+    await writeCommentAndCache(db, client, {
+      itemId: "item-1",
+      cacheItemId: "multica:item-1",
+      author: "mathew",
+      body: "hi",
+    });
+
+    const row = db.prepare("SELECT * FROM comments WHERE item_id = ?").get("multica:item-1") as
+      | { multica_comment_id: string }
+      | undefined;
+    expect(row?.multica_comment_id).toBe("mc-2");
   });
 
   it("surfaces a clear failure and does NOT write locally when Multica is unreachable", async () => {
@@ -48,6 +86,12 @@ describe("writeCommentAndCache", () => {
       },
       async listIssues() {
         return { ok: true, issues: [] };
+      },
+      async getIssue() {
+        return { ok: false, error: "unused" };
+      },
+      async updateIssueStatus() {
+        return { ok: false, error: "unused" };
       },
     };
 
