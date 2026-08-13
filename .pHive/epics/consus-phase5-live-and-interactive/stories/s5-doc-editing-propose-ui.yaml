@@ -1,0 +1,92 @@
+id: s5-doc-editing-propose-ui
+epic: consus-phase5-live-and-interactive
+title: "Doc editing propose-a-change mode in DocRenderer"
+status: pending
+complexity: medium
+methodology: bdd
+depends_on: [s3-propose-dispatch-mechanism]
+
+description: |
+  DocRenderer.tsx is currently render-only. Add a "propose a change" mode:
+  compose an edit as a diff + description, fire it through s3's dispatch
+  mechanism. Consus never writes to the doc's source file directly in this
+  epic — the harness applies the change and reports back.
+
+acceptance_criteria:
+  - "Given a doc is open in DocRenderer, when 'propose a change' is selected, then an edit surface appears for composing the change + description"
+  - "Given a proposal is fired, then DocRenderer shows a pending-change indicator on that doc"
+  - "Given a fired proposal comes back applied, then DocRenderer reflects the updated content (re-fetches/re-renders) and the change appears in the audit panel (s5-audit-trail-panel)"
+  - "Given a fired proposal comes back failed, then the reason is shown, not silently dropped"
+
+steps:
+  - id: research
+    description: Read current DocRenderer.tsx render-only implementation and s3's proposal API shape
+    agent: researcher
+  - id: behavior-spec
+    description: "Write Given/When/Then specs for: propose mode appears, compose+fire works, pending/applied/failed states reflect correctly"
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: Add propose-a-change mode to DocRenderer, wired to s3's proposal endpoints
+    agent: developer
+    depends_on: [behavior-spec]
+  - id: test
+    description: Derive test cases from behavior specs and verify they pass
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm DocRenderer has no direct-write code path anywhere
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feature branch
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  tech_stack:
+    languages: [typescript]
+    frameworks: [react, vite]
+  key_files:
+    - path: web/src/features/docs/DocRenderer.tsx
+      purpose: target component — currently render-only
+    - path: web/src/features/docs/DocRenderer.test.tsx
+      purpose: existing test pattern to follow
+
+files_to_modify:
+  - file: web/src/features/docs/DocRenderer.tsx
+    change: add propose-a-change mode
+  - file: web/src/features/docs/DocRenderer.test.tsx
+    change: new behavior-spec-derived tests
+
+design_decisions:
+  - decision: Reuse the same propose-a-change UI shape as the diagram viewer (s4) rather than inventing a second pattern
+    rationale: Both ride the same s3 mechanism; consistent UI reduces cognitive load
+
+risks:
+  - severity: low
+    description: Doc content re-render after an applied proposal could flash/jump if not handled carefully
+    mitigation: review step checks the re-fetch/re-render path explicitly
+
+references:
+  - path: web/src/features/decisions/DecisionCard.tsx
+    relevant_excerpt: "existing accept/mix/reject action pattern this story's propose action should feel consistent with"
+
+cross_cutting:
+  - concern: documentation
+    action: "Document the propose-a-change interaction pattern once in .pHive/CONTEXT.md, referenced by both this story and s4"
+
+metric:
+  applies: true
+  name: docs.proposals_fired
+  direction: up
+  unit: proposals
+  baseline: 0
+  target: ">0 within first week of use"
+  window: next-7-days
+  source:
+    kind: sql
+    ref: "SELECT count(*) FROM proposals WHERE target_type='doc'"
+  verify_at: integrate
+  owner: developer

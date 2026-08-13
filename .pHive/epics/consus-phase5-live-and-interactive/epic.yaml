@@ -1,0 +1,83 @@
+name: consus-phase5-live-and-interactive
+title: "Consus Phase 5 — Live Data + Interactive Standalone Loop"
+description: >
+  Closes the standalone Consus loop end to end: live Multica-backed decisions
+  (not an empty queue), historical backfill of the only surviving decision/KB
+  archive, the KB-01 collection schema, diagram viewing, and a
+  propose-a-change-and-fire-to-a-harness mechanism that both diagram and doc
+  editing ride on (Consus never writes .pHive repo files directly — it
+  dispatches the change to an agent/harness and shows the applied diff).
+  Grounded in the same-session "Consus Reunification Map" reconciliation
+  survey. Sequences alongside consus-phase4-close-the-loop (decision
+  iterate/versions) rather than duplicating it. Explicitly excludes Janus
+  L2 plugin-mode integration and the Delphi UX ports — future epics.
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: hybrid   # BDD for UI stories, TDD for backend stories — see hive.config.yaml developer.notes; per-story methodology field is authoritative
+version_bump: minor
+sidecar_retention: committed
+
+git_flow:
+  base_branch: main
+  branch_strategy: per-epic
+
+source_docs:
+  - .pHive/epics/consus-phase5-live-and-interactive/docs/research-brief.md
+  - .pHive/epics/consus-phase5-live-and-interactive/docs/design-discussion.md
+  - .pHive/epics/consus-phase5-live-and-interactive/docs/vertical-plan.md
+
+planning_team:
+  note: >
+    Condensed single-pass planning (same approach as consus-phase2 and
+    consus-phase4) — orchestrator-authored design discussion and vertical
+    slice plan, grounded in direct SSH research across 9 repos/worktrees on
+    dostal@hive plus this build's own source, rather than a from-scratch
+    multi-persona dispatch. Scope and 3 open design questions were confirmed
+    directly with the operator before story decomposition.
+  matched_tags: [multi-system, data-migration, scoped-port, large]
+  confidence: "medium -- single orchestrator pass, not the real planning-classification/routing skills' multi-persona dispatch."
+  gate_decisions:
+    scale_assessment: large
+    hv_gate: "vertical plan presented and revised per operator feedback (2 of 3 open questions resolved with scope changes)"
+    structured_outline: "not run — condensed pass; vertical-plan.md carries the slice-level detail instead"
+
+stories:
+  - id: s0-preserve-historical-data
+    title: "Copy ~/.multica/delphi-*.jsonl off hive to durable storage"
+    complexity: low
+    depends_on: []
+  - id: s1-multica-live-ingest
+    title: "Wire GET /api/decisions to live Multica, classified into decision-request/v1"
+    complexity: high
+    depends_on: []
+  - id: s2-historical-backfill-importer
+    title: "Generic jsonl importer; run against this repo's archive only"
+    complexity: medium
+    depends_on: [s0-preserve-historical-data, s1-multica-live-ingest]
+  - id: s2-kb01-collection-schema-port
+    title: "Re-implement KB-01 collection schema + API against current kb/store.ts"
+    complexity: medium
+    depends_on: [s1-multica-live-ingest]
+  - id: s2-kb01-collection-tabs-ui
+    title: "KB collection tabs UI"
+    complexity: medium
+    depends_on: [s2-kb01-collection-schema-port]
+  - id: s3-propose-dispatch-mechanism
+    title: "Propose-a-change-and-fire-to-harness mechanism (via Minerva adapter)"
+    complexity: high
+    depends_on: [s1-multica-live-ingest]
+  - id: s4-diagram-route
+    title: "GET /api/diagrams (cascade org-tree, per-repo)"
+    complexity: medium
+    depends_on: [s1-multica-live-ingest]
+  - id: s4-diagram-viewer-and-propose-ui
+    title: "Diagram viewer tab + propose-a-change action"
+    complexity: high
+    depends_on: [s4-diagram-route, s3-propose-dispatch-mechanism]
+  - id: s5-doc-editing-propose-ui
+    title: "Doc editing propose-a-change mode in DocRenderer"
+    complexity: medium
+    depends_on: [s3-propose-dispatch-mechanism]
+  - id: s5-audit-trail-panel
+    title: "Per-item audit trail panel (audit_log + fired/pending/applied proposals)"
+    complexity: medium
+    depends_on: [s3-propose-dispatch-mechanism, s4-diagram-viewer-and-propose-ui, s5-doc-editing-propose-ui]

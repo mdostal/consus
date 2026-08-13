@@ -1,0 +1,71 @@
+id: s0-preserve-historical-data
+epic: consus-phase5-live-and-interactive
+title: "Copy ~/.multica/delphi-*.jsonl off hive to durable storage"
+status: pending
+complexity: low
+methodology: classic
+depends_on: []
+
+description: |
+  The entire live decision/KB history exists only as two jsonl files on
+  dostal@hive: ~/.multica/delphi-audit.jsonl (45 entries) and
+  ~/.multica/delphi-knowledgebase.jsonl (12 entries). Not derivable from any
+  git repo. Copy both to this Mac (and ideally one more durable location)
+  before any other story in this epic touches related code — this is the
+  one genuinely unrecoverable asset in the whole reconciliation effort.
+
+acceptance_criteria:
+  - "Given the two source files on hive, when copied, then both land on this Mac with matching line counts (45 and 12 respectively)"
+  - "Given the copy completes, then the originals on hive remain untouched (never delete/move at the source)"
+  - "Given the copy completes, then a checksum (e.g. sha256) of both files is recorded alongside the copy for later parity verification in s2"
+
+steps:
+  - id: implement
+    description: "scp/rsync both files from dostal@hive:~/.multica/ to a durable local path (e.g. .pHive/imports/multica-archive/), record sha256 + line counts"
+    agent: developer
+  - id: review
+    description: "Verify line counts (45 / 12) and checksums match source; confirm source files on hive are unmodified"
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit the imported archive location (not the raw jsonl if it contains anything sensitive — confirm before committing) and a short README noting provenance
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  tech_stack: {}
+  key_files:
+    - path: .pHive/imports/multica-archive/
+      purpose: destination for the preserved jsonl files (new directory)
+
+files_to_modify:
+  - file: .pHive/imports/multica-archive/delphi-audit.jsonl
+    change: copied from hive, unmodified
+  - file: .pHive/imports/multica-archive/delphi-knowledgebase.jsonl
+    change: copied from hive, unmodified
+  - file: .pHive/imports/multica-archive/README.md
+    change: "provenance note: source path on hive, copy date, sha256, line counts"
+
+design_decisions:
+  - decision: Copy, never move or delete the source
+    rationale: Zero-risk-tolerance for the only copy of this data; source stays as a fallback until s2's import is verified
+
+risks:
+  - severity: high
+    description: Accidental deletion or overwrite of the hive source before a verified copy exists
+    mitigation: Copy-then-verify-checksum before any cleanup conversation happens; this story never deletes anything on hive
+
+references:
+  - path: hive:~/.multica/delphi-audit.jsonl
+    relevant_excerpt: "45 lines, last modified 2026-07-29"
+  - path: hive:~/.multica/delphi-knowledgebase.jsonl
+    relevant_excerpt: "12 lines, last modified 2026-07-21"
+
+cross_cutting:
+  - concern: documentation
+    action: "Note the new .pHive/imports/ directory and its provenance in .pHive/CONTEXT.md key paths"
+
+metric:
+  applies: false
+  justification: "One-time data-preservation copy; no observable product surface to measure — success is binary (checksums match) and verified in acceptance criteria, not tracked as a trend."

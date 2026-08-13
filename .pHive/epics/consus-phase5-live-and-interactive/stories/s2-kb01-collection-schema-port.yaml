@@ -1,0 +1,90 @@
+id: s2-kb01-collection-schema-port
+epic: consus-phase5-live-and-interactive
+title: "Re-implement KB-01 collection schema + API against current kb/store.ts"
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: [s1-multica-live-ingest]
+
+description: |
+  hive:~/.review-bootstrap/consus-kb01 (branch feat/PAN-6478-kb-01-collection-schema,
+  commit bc16eb4) has a complete, tested KB collection-schema slice — but it
+  was written against an older server/kb/store.ts shape and is not reachable
+  from any dev history. Treat it as a spec/reference, not a patch: re-derive
+  the schema migration, store functions, and route changes against this
+  build's current kb/store.ts and decision-request/v1-aware items model.
+
+acceptance_criteria:
+  - "Given the KB-01 reference implementation's migration (server/db/migrate.ts diff), when adapted, then collections can be created and KB entries assigned to them via the current schema"
+  - "Given server/routes/kb.ts's current shape, when extended, then collection CRUD is reachable via the API without breaking existing KB routes/tests"
+  - "Given the reference implementation's tests, when re-derived against current code, then they pass against this build's actual store.ts, not the reference's old one"
+
+steps:
+  - id: research
+    description: "git show the KB-01 branch's migrate.ts/store.ts/kb.ts diffs (already captured in the reconciliation survey) and compare field-by-field against current server/kb/store.ts"
+    agent: researcher
+  - id: test-spec
+    description: Write failing tests for collection CRUD against current store.ts, adapted from KB-01's reference tests
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: Add the collection schema migration and store/route functions
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: Confirm no regression in existing KB routes/tests; confirm migration is additive/idempotent per project convention
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit and push to feature branch
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  tech_stack:
+    languages: [typescript]
+    frameworks: [fastify, better-sqlite3]
+  key_files:
+    - path: server/kb/store.ts
+      purpose: current KB store — target for the port, not the reference's old version
+    - path: server/routes/kb.ts
+      purpose: current KB routes — extend with collection endpoints
+    - path: server/db/migrate.ts
+      purpose: additive/idempotent migration convention (CREATE TABLE IF NOT EXISTS)
+
+files_to_modify:
+  - file: server/db/migrate.ts
+    change: add collection schema migration, additive
+  - file: server/kb/store.ts
+    change: add collection CRUD functions
+  - file: server/routes/kb.ts
+    change: add collection endpoints
+
+code_examples:
+  - title: KB-01 reference migration entry point (for shape reference only, not a direct patch)
+    file: "hive:~/.review-bootstrap/consus-kb01/server/db/migrate.ts"
+    snippet: |
+      // Reference shape only — re-derive against current migrate.ts's
+      // actual CREATE TABLE IF NOT EXISTS convention, don't copy verbatim.
+
+design_decisions:
+  - decision: Treat KB-01 as spec, not patch
+    rationale: Written against an older store.ts shape; a direct cherry-pick risks silently reverting since-added fields/behavior
+
+risks:
+  - severity: low
+    description: KB-01's old schema conflicts with fields added to items/kb_entries since bc16eb4
+    mitigation: research step diffs field-by-field before writing the new migration
+
+references:
+  - path: "hive:~/.review-bootstrap/consus-kb01 (.pHive/epics/consus-living-doc-kb/)"
+    relevant_excerpt: "18 files, 1771 insertions — design-discussion, horizontal/vertical plan, 3 stories (kb-01/02/03), plus server/db/migrate.ts, server/kb/store.ts, server/routes/kb.ts + tests"
+
+cross_cutting:
+  - concern: documentation
+    action: "Update docs/api-reference.md with the new collection endpoints"
+
+metric:
+  applies: false
+  justification: "Schema/API port with no standalone user-facing surface until s2-kb01-collection-tabs-ui lands the UI — the metric belongs on that story, not this backend groundwork."

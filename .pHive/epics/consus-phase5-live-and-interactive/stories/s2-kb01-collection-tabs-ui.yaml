@@ -1,0 +1,92 @@
+id: s2-kb01-collection-tabs-ui
+epic: consus-phase5-live-and-interactive
+title: "KB collection tabs UI"
+status: pending
+complexity: medium
+methodology: bdd
+depends_on: [s2-kb01-collection-schema-port]
+
+description: |
+  Surface KB-01's collection concept in web/src/features/kb/ — KB entries
+  grouped into collections, browsable as tabs, alongside the existing
+  KBBrowser/BacklogBrowser. Reference: KB-01's own tabs-UI story
+  (kb-03-collection-tabs-ui.yaml) for the interaction shape, adapted to
+  this build's current component patterns.
+
+acceptance_criteria:
+  - "Given collections exist (from s2-kb01-collection-schema-port), when KBBrowser loads, then collections render as tabs"
+  - "Given a collection tab is selected, then only KB entries assigned to that collection are shown"
+  - "Given no collections exist yet, then KBBrowser falls back to its current ungrouped view (no broken empty state)"
+
+steps:
+  - id: research
+    description: Read current web/src/features/kb/KBBrowser.tsx and the KB-01 reference tabs-UI story for the interaction shape
+    agent: researcher
+  - id: behavior-spec
+    description: "Write Given/When/Then specs for: tabs render when collections exist, filtering works, fallback when none exist"
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: Add collection tabs to KBBrowser, wired to the new collection endpoints
+    agent: developer
+    depends_on: [behavior-spec]
+  - id: test
+    description: Derive test cases from behavior specs and verify they pass
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Verify no regression to BacklogBrowser or ungrouped KBBrowser behavior
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feature branch
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  tech_stack:
+    languages: [typescript]
+    frameworks: [react, vite]
+  key_files:
+    - path: web/src/features/kb/KBBrowser.tsx
+      purpose: target component for the collection tabs
+    - path: web/src/features/kb/KBBrowser.test.tsx
+      purpose: existing test pattern to follow (vitest + testing-library, per project convention)
+
+files_to_modify:
+  - file: web/src/features/kb/KBBrowser.tsx
+    change: add collection tabs + filtering
+  - file: web/src/features/kb/KBBrowser.test.tsx
+    change: new behavior-spec-derived tests
+
+design_decisions:
+  - decision: Graceful fallback to ungrouped view when no collections exist
+    rationale: This feature is additive; existing KB browsing must not regress for repos/data without collections yet
+
+risks:
+  - severity: low
+    description: Tab UI conflicts visually with existing BacklogBrowser toggle
+    mitigation: review step explicitly checks both views render correctly together
+
+references:
+  - path: "hive:~/code/consus (feat/consus-consolidation... not applicable; reference is consus-kb01's kb-03-collection-tabs-ui.yaml)"
+    relevant_excerpt: "KB collection tabs — interaction shape reference only, re-implemented against current component patterns"
+
+cross_cutting:
+  - concern: documentation
+    action: "None — UI-only change, no workflow/schema/config doc references this behavior yet"
+
+metric:
+  applies: true
+  name: kb.collection_tab_adoption
+  direction: up
+  unit: collections_viewed
+  baseline: 0
+  target: ">0 within first week of use"
+  window: next-7-days
+  source:
+    kind: manual
+    ref: "Manually confirmed by using the KB browser after this story ships"
+  verify_at: integrate
+  owner: developer

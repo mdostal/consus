@@ -1,0 +1,93 @@
+id: s4-diagram-viewer-and-propose-ui
+epic: consus-phase5-live-and-interactive
+title: "Diagram viewer tab + propose-a-change action"
+status: pending
+complexity: high
+methodology: bdd
+depends_on: [s4-diagram-route, s3-propose-dispatch-mechanism]
+
+description: |
+  Add a diagram view to the per-repo ProjectView tab (rendering s4-diagram-route's
+  cascade org-tree), plus a "propose a change" action that composes a diff +
+  description and fires it through s3's dispatch mechanism. In-place editing
+  happens via the fired proposal being applied by a harness and the result
+  reflecting back — not via Consus mutating the diagram data directly.
+
+acceptance_criteria:
+  - "Given a repo tab is open, when the diagram view is selected, then the cascade org-tree renders"
+  - "Given the diagram viewer, when 'propose a change' is used, then a diff + description can be composed and fired via s3's mechanism"
+  - "Given a fired proposal is still pending, then the diagram view shows a pending-change indicator, not a silently-stale view"
+  - "Given a fired proposal comes back applied, then the diagram view reflects the new state and the change is visible in the audit panel (s5)"
+
+steps:
+  - id: research
+    description: Read s4-diagram-route's response shape and s3's proposal API; check existing ProjectView.tsx tab pattern
+    agent: researcher
+  - id: behavior-spec
+    description: "Write Given/When/Then specs for: tree renders, propose flow composes+fires, pending indicator shows, applied state reflects"
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: Add the diagram viewer component + propose-a-change UI, wired to s4-diagram-route and s3's proposal endpoints
+    agent: developer
+    depends_on: [behavior-spec]
+  - id: test
+    description: Derive test cases from behavior specs and verify they pass
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Verify no direct diagram-data mutation path exists outside the propose/fire mechanism
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feature branch
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  tech_stack:
+    languages: [typescript]
+    frameworks: [react, vite]
+  key_files:
+    - path: web/src/features/projects/ProjectView.tsx
+      purpose: per-repo tab — the diagram view's natural home, alongside docs/KB
+    - path: web/src/features/decisions/DecisionCard.tsx
+      purpose: existing accept/mix/reject interaction pattern to draw from for the propose-a-change action's UI shape
+
+files_to_modify:
+  - file: web/src/features/projects/DiagramView.tsx
+    change: "new file — cascade org-tree renderer + propose-a-change action"
+  - file: web/src/features/projects/ProjectView.tsx
+    change: add a diagram tab
+
+design_decisions:
+  - decision: In-place editing means the propose/fire loop, not direct data mutation
+    rationale: "Consistent with s3's foundation — Consus never writes .pHive files directly"
+
+risks:
+  - severity: medium
+    description: Rendering an arbitrary cascade org-tree as an interactive diagram is non-trivial UI work
+    mitigation: start with a simple nested-list/tree rendering before investing in a graphical diagram library; scope confirmed as read+propose, not a rich diagram editor
+
+references:
+  - path: hive:~/code/consus routes/diagrams.ts
+    relevant_excerpt: "cascade org-tree response shape this component consumes"
+
+cross_cutting:
+  - concern: documentation
+    action: "None yet — UI-only; will be covered when the propose-a-change interaction pattern is documented for docs (s5) too"
+
+metric:
+  applies: true
+  name: diagrams.proposals_fired
+  direction: up
+  unit: proposals
+  baseline: 0
+  target: ">0 within first week of use"
+  window: next-7-days
+  source:
+    kind: sql
+    ref: "SELECT count(*) FROM proposals WHERE target_type='diagram'"
+  verify_at: integrate
+  owner: developer

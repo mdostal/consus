@@ -1,0 +1,100 @@
+id: s5-audit-trail-panel
+epic: consus-phase5-live-and-interactive
+title: "Per-item audit trail panel (audit_log + fired/pending/applied proposals)"
+status: pending
+complexity: medium
+methodology: bdd
+depends_on: [s3-propose-dispatch-mechanism, s4-diagram-viewer-and-propose-ui, s5-doc-editing-propose-ui]
+
+description: |
+  The audit_log table already exists in the schema (architecture.md data
+  model) but has no UI. Add a per-item history panel — reusing the existing
+  comment-thread UI pattern — that surfaces both audit_log entries (accept/
+  mix/reject actions) and s3's proposal records (pending/applied/failed),
+  since both are structurally old-value/new-value diffs. This closes the
+  "audit" half of the original ask and is the integration point where all
+  three propose-a-change surfaces (decisions, diagrams, docs) become
+  visible in one place.
+
+acceptance_criteria:
+  - "Given an item has audit_log entries, when its audit panel opens, then each entry shows actor/field/old_value/new_value/timestamp"
+  - "Given an item has proposals in any status (pending/applied/failed), then they appear in the same panel, clearly distinguished from plain audit_log entries"
+  - "Given an item has neither audit entries nor proposals, then the panel shows an empty state, not an error"
+  - "Given the panel is open on a decision, diagram, or doc item, then it renders identically (one component, not three)"
+
+steps:
+  - id: research
+    description: Read the existing comment-thread UI pattern (web/src/features/comments/CommentThread.tsx) and the audit_log schema
+    agent: researcher
+  - id: behavior-spec
+    description: "Write Given/When/Then specs for: audit entries render, proposals render with status, empty state, cross-item-type consistency"
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: Add the audit trail panel component, wired to audit_log + proposals endpoints, integrated into DecisionCard/DiagramView/DocRenderer
+    agent: developer
+    depends_on: [behavior-spec]
+  - id: test
+    description: Derive test cases from behavior specs and verify they pass
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm the panel is one shared component used by all three item types, not three copies
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feature branch
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  tech_stack:
+    languages: [typescript]
+    frameworks: [react, vite]
+  key_files:
+    - path: web/src/features/comments/CommentThread.tsx
+      purpose: existing UI pattern to reuse for the audit panel's list rendering
+    - path: server/routes/decisions.ts
+      purpose: where audit_log entries are currently written on accept/mix/reject
+
+files_to_modify:
+  - file: web/src/features/audit/AuditPanel.tsx
+    change: "new file — shared audit + proposal history panel"
+  - file: web/src/features/decisions/DecisionCard.tsx
+    change: integrate AuditPanel
+  - file: web/src/features/projects/DiagramView.tsx
+    change: integrate AuditPanel
+  - file: web/src/features/docs/DocRenderer.tsx
+    change: integrate AuditPanel
+
+design_decisions:
+  - decision: One shared component across all three item types
+    rationale: This is explicitly the integration point of the whole epic — a decision, diagram, and doc should feel like the same product, not three bolted-together features
+
+risks:
+  - severity: low
+    description: Mixing audit_log entries and proposal records in one list could be confusing if not visually distinguished
+    mitigation: behavior-spec explicitly requires clear status/type distinction (acceptance criteria #2)
+
+references:
+  - path: .pHive/planning/architecture.md
+    relevant_excerpt: "audit_log id, item_id FK, actor, field, old_value, new_value, timestamp -- append-only, REQ-08"
+
+cross_cutting:
+  - concern: documentation
+    action: "Update docs/api-reference.md if a combined audit+proposals endpoint is added; note the shared AuditPanel pattern in .pHive/CONTEXT.md"
+
+metric:
+  applies: true
+  name: audit_panel.items_with_visible_history
+  direction: up
+  unit: items
+  baseline: 0
+  target: "100% of items with audit_log or proposal records show them in the panel"
+  window: story-integrate
+  source:
+    kind: manual
+    ref: "Manually verified across a decision, a diagram, and a doc item after this story ships"
+  verify_at: integrate
+  owner: developer

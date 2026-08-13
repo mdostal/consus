@@ -1,0 +1,108 @@
+id: s1-multica-live-ingest
+epic: consus-phase5-live-and-interactive
+title: "Wire GET /api/decisions to live Multica, classified into decision-request/v1"
+status: pending
+complexity: high
+methodology: tdd
+depends_on: []
+
+description: |
+  Right now GET /api/decisions returns whatever's in the local SQLite items
+  table, which is empty in practice — Consus has never been wired to live
+  Multica data. Extend server/adapters/multica/client.ts to poll/fetch live
+  issues, run them through server/decision-contract/classifier.ts to assign
+  decision_type/triage_bucket, validate against the existing
+  decision-request/v1 parser (server/decision-contract/parser.ts), and
+  upsert into the items table via a new sync path in
+  server/routes/decisions.ts. This is a port of proven logic (hive's
+  ~/code/consus@dev commits PAN-7773/7776/7775, and before that
+  Claud-ometer's review-queue.ts/decided-store.ts/verified-buckets.ts) —
+  not a from-scratch design — adapted to this build's contract-first model.
+
+acceptance_criteria:
+  - "Given a live Multica issue reachable via the configured client, when sync runs, then it appears in GET /api/decisions with a classified decision_type and triage_bucket"
+  - "Given a Multica issue whose payload fails decision-request/v1 validation, when sync runs, then it is quarantined (not inserted, logged) rather than crashing the sync or corrupting an item row"
+  - "Given the same Multica issue is synced twice, then it upserts (no duplicate item rows) — reuses source_repo/source_ref as the natural key, matching the existing items schema"
+  - "Given sync fails (Multica unreachable, auth failure), then GET /api/decisions still returns whatever's already in the local store rather than erroring the whole endpoint"
+
+steps:
+  - id: research
+    description: Read hive's server/routes/decisions.ts + server/adapters/multica/ingest.ts (PAN-7773/7776 commits) and Claud-ometer's review-queue.ts/decided-store.ts as reference; confirm what maps directly vs needs adaptation to decision-request/v1
+    agent: researcher
+  - id: test-spec
+    description: "Write failing tests: classify() assigns type/triage from a raw Multica issue fixture; sync upserts by natural key; malformed payload quarantines instead of throwing"
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: Extend client.ts (fetch/poll), classifier.ts (classify from raw issue shape), add sync path in decisions.ts; make the failing tests pass
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: Verify no direct writes bypass the parser validation gate; confirm quarantine path is logged and inspectable
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit and push to feature branch
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  tech_stack:
+    languages: [typescript]
+    frameworks: [fastify, better-sqlite3]
+  key_files:
+    - path: server/adapters/multica/client.ts
+      purpose: existing Multica client — extend, do not replace
+    - path: server/decision-contract/classifier.ts
+      purpose: where decision_type/triage_bucket assignment logic lands
+    - path: server/decision-contract/parser.ts
+      purpose: the decision-request/v1 validation gate every ingested item must pass
+    - path: server/routes/decisions.ts
+      purpose: add the sync endpoint/path here, alongside existing routes
+
+files_to_modify:
+  - file: server/adapters/multica/client.ts
+    change: add a fetch/poll method for live issues
+  - file: server/decision-contract/classifier.ts
+    change: add classify-from-raw-multica-issue logic (port from Claud-ometer's review-queue.ts pattern)
+  - file: server/routes/decisions.ts
+    change: add a sync path that classifies, validates, and upserts
+
+design_decisions:
+  - decision: Quarantine malformed payloads rather than reject-the-whole-sync
+    rationale: One bad Multica issue shouldn't block visibility into all the others
+  - decision: Upsert by source_repo/source_ref, not a new sync-specific ID
+    rationale: Matches the existing items schema; avoids a second identity system
+
+risks:
+  - severity: high
+    description: Classifier port drifts from decision-request/v1, producing items DecisionCard can't render
+    mitigation: Every ingested item passes through the existing parser before insert; test-spec step covers this explicitly
+  - severity: medium
+    description: Multica schema drift vs what client.ts was written against
+    mitigation: Pin to the current Multica CLI profile (dostal); add a schema-shape test against a live fixture
+
+references:
+  - path: hive:~/code/consus (server/routes/decisions.ts, commits 99f5d57/3e99853/c4ddca3)
+    relevant_excerpt: "PAN-7773 batch-fetch + decided-store filtering; PAN-7776 wire GET /api/decisions to live feed; PAN-7775 verify write-back"
+  - path: hive:~/Documents/work/dostal/code/Claud-ometer/src/lib/delphi/review-queue.ts
+    relevant_excerpt: "proven classifier logic Claud-ometer used for the same source data"
+
+cross_cutting:
+  - concern: documentation
+    action: "Update docs/api-reference.md if the /api/decisions response shape gains new fields from classification"
+
+metric:
+  applies: true
+  name: decisions.live_item_count
+  direction: up
+  unit: items
+  baseline: 0
+  target: ">0 (matches live Multica queue depth)"
+  window: story-integrate
+  source:
+    kind: manual
+    ref: "GET /api/decisions response, manually checked against Multica's own issue count"
+  verify_at: integrate
+  owner: developer
