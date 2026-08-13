@@ -20,15 +20,20 @@ import "./app.css";
 /* Types + shared helpers                                           */
 /* ---------------------------------------------------------------- */
 
-/** A decision as returned by GET /api/decisions (payload parsed server-side). */
+/** A decision as returned by GET /api/decisions (payload parsed server-side).
+ *  decision_payload is null for a raw Multica issue with no fenced
+ *  decision-request block (s1) — most real tickets don't carry one. */
 interface DecisionItem {
   id: string;
   type: string;
   title: string;
   status: string;
   source_repo: string | null;
+  source_body?: string | null;
+  decision_type?: string | null;
+  triage_bucket?: string | null;
   decided_at: string | null;
-  decision_payload: DecisionPayload & { previews?: Record<string, string> };
+  decision_payload: (DecisionPayload & { previews?: Record<string, string> }) | null;
 }
 
 function verdictLabel(v: Verdict): string {
@@ -62,8 +67,8 @@ async function postVerdict(itemId: string, verdict: Verdict): Promise<void> {
 function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () => void }) {
   const payload = item.decision_payload;
   const contextHtml = useMemo(
-    () => marked.parse(payload.context ?? "", { async: false }) as string,
-    [payload.context],
+    () => marked.parse(payload?.context ?? "", { async: false }) as string,
+    [payload?.context],
   );
   const [comments, setComments] = useState<Comment[]>([]);
   const [recorded, setRecorded] = useState<Verdict | null>(null);
@@ -153,7 +158,7 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
     }
   }
 
-  const recommendedTitle = payload.options.find((o) => o.id === payload.recommended)?.title;
+  const recommendedTitle = payload?.options.find((o) => o.id === payload.recommended)?.title;
   const isDecided = Boolean(item.decided_at);
 
   return (
@@ -162,13 +167,19 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
         <div className="dv__pills">
           <span className={`dv__pill ${isDecided ? "dv__pill--done" : ""}`}>{item.status}</span>
           {item.source_repo ? <span className="dv__pill">{item.source_repo}</span> : null}
+          {!payload && item.decision_type ? <span className="dv__pill">{item.decision_type}</span> : null}
+          {!payload && item.triage_bucket ? <span className="dv__pill">{item.triage_bucket}</span> : null}
         </div>
         <h2>{item.title}</h2>
       </header>
 
-      <div className="dv__context" dangerouslySetInnerHTML={{ __html: contextHtml }} />
+      {payload ? (
+        <div className="dv__context" dangerouslySetInnerHTML={{ __html: contextHtml }} />
+      ) : item.source_body ? (
+        <p className="dv__context">{item.source_body}</p>
+      ) : null}
 
-      {payload.previews ? (
+      {payload?.previews ? (
         <section>
           <h3 className="dv__section-title">Previews — the {payload.options.length} directions</h3>
           <div className="dv__gallery">
@@ -208,15 +219,33 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
             verdict re-records it.
           </p>
         ) : null}
-        <p className="dv__hint">
-          Recommended: <b>{payload.recommended}</b> — {recommendedTitle}. Click <b>Choose</b> under an option to
-          pick it, <b>Accept</b> to take the recommendation, <b>Mix</b> to combine, or <b>Reject</b> to send it
-          back with notes.
-        </p>
-        {recorded ? (
-          <div className="dv__recorded">✓ Recorded: {verdictLabel(recorded)}</div>
+        {payload ? (
+          <>
+            <p className="dv__hint">
+              Recommended: <b>{payload.recommended}</b> — {recommendedTitle}. Click <b>Choose</b> under an option to
+              pick it, <b>Accept</b> to take the recommendation, <b>Mix</b> to combine, or <b>Reject</b> to send it
+              back with notes.
+            </p>
+            {recorded ? (
+              <div className="dv__recorded">✓ Recorded: {verdictLabel(recorded)}</div>
+            ) : (
+              <AnswerControl payload={payload} onVerdict={submitVerdict} />
+            )}
+          </>
         ) : (
-          <AnswerControl payload={payload} onVerdict={submitVerdict} />
+          <>
+            <p className="dv__hint">
+              No structured decision-request on this ticket — a plain Multica item. Accept to mark it reviewed, or
+              use Discussion below.
+            </p>
+            {recorded ? (
+              <div className="dv__recorded">✓ Recorded: {verdictLabel(recorded)}</div>
+            ) : (
+              <button type="button" onClick={() => submitVerdict({ kind: "accepted" })}>
+                Accept
+              </button>
+            )}
+          </>
         )}
         {err ? <p className="dv__err">{err}</p> : null}
       </section>
