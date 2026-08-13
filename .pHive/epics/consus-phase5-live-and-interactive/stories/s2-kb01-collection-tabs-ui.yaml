@@ -1,7 +1,7 @@
 id: s2-kb01-collection-tabs-ui
 epic: consus-phase5-live-and-interactive
 title: "KB collection tabs UI"
-status: pending
+status: complete
 complexity: medium
 methodology: bdd
 depends_on: [s2-kb01-collection-schema-port]
@@ -90,3 +90,13 @@ metric:
     ref: "Manually confirmed by using the KB browser after this story ships"
   verify_at: integrate
   owner: developer
+
+implementation_notes: |
+  Scope correction from plan: the story targeted `KBBrowser.tsx`, but that
+  component is a single-item detail view (DecisionCard + version history +
+  audit log for one item), not the list/search-across-all-entries
+  component. `BacklogBrowser.tsx` is the actual "browse all KB entries"
+  component (REQ-09) and is where collection tabs belong. Implemented
+  there instead, wired end-to-end through App.tsx's KbSection (tab click
+  -> ?collection= query param -> GET /api/kb-entries?collection=...).
+  KBBrowser.tsx is untouched.

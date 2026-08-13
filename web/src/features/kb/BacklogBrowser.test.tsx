@@ -32,4 +32,69 @@ describe("BacklogBrowser", () => {
 
     expect(onSelect).toHaveBeenCalledWith("kb-1");
   });
+
+  it("falls back to the plain ungrouped view when onSelectCollection is not supplied", () => {
+    render(<BacklogBrowser entries={ENTRIES} onSearch={vi.fn()} onSelect={vi.fn()} />);
+
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(screen.getByText("Adopt React Flow")).toBeInTheDocument();
+  });
+});
+
+describe("BacklogBrowser — collection tabs (kb-01)", () => {
+  it("renders a tab per known collection plus an All tab", () => {
+    render(
+      <BacklogBrowser entries={ENTRIES} onSearch={vi.fn()} onSelect={vi.fn()} onSelectCollection={vi.fn()} />,
+    );
+
+    expect(screen.getByRole("tab", { name: /all/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /general/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /marketing/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /boundary decisions/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /plans/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /artifacts/i })).toBeInTheDocument();
+  });
+
+  it("marks the active collection tab as selected, defaulting to All", () => {
+    render(
+      <BacklogBrowser entries={ENTRIES} onSearch={vi.fn()} onSelect={vi.fn()} onSelectCollection={vi.fn()} />,
+    );
+
+    expect(screen.getByRole("tab", { name: /all/i })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /general/i })).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("reflects the activeCollection prop as the selected tab", () => {
+    render(
+      <BacklogBrowser
+        entries={ENTRIES}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        onSelectCollection={vi.fn()}
+        activeCollection="marketing"
+      />,
+    );
+
+    expect(screen.getByRole("tab", { name: /marketing/i })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /all/i })).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("calls onSelectCollection with the collection id when a tab is clicked, and null for All", () => {
+    const onSelectCollection = vi.fn();
+    render(
+      <BacklogBrowser
+        entries={ENTRIES}
+        onSearch={vi.fn()}
+        onSelect={vi.fn()}
+        onSelectCollection={onSelectCollection}
+        activeCollection="marketing"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: /plans/i }));
+    expect(onSelectCollection).toHaveBeenCalledWith("plans");
+
+    fireEvent.click(screen.getByRole("tab", { name: /all/i }));
+    expect(onSelectCollection).toHaveBeenCalledWith(null);
+  });
 });

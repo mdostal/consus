@@ -5,7 +5,7 @@ import { CommentThread, type Comment } from "./features/comments/CommentThread";
 import { QAQueue, type QueuedQuestion } from "./features/minerva/QAQueue";
 import { GlobalView, type KbEntrySummary } from "./features/projects/GlobalView";
 import { ProjectView } from "./features/projects/ProjectView";
-import { BacklogBrowser, type BacklogEntry } from "./features/kb/BacklogBrowser";
+import { BacklogBrowser, type BacklogEntry, type KbCollection } from "./features/kb/BacklogBrowser";
 import { DocBrowser, type GroupedDocs } from "./features/docs/DocBrowser";
 import { DocRenderer } from "./features/docs/DocRenderer";
 import type { DecisionPayload, Verdict } from "./features/decisions/answer-shapes/types";
@@ -345,9 +345,14 @@ function ProjectsSection() {
 function KbSection() {
   const [entries, setEntries] = useState<BacklogEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [collection, setCollection] = useState<KbCollection | null>(null);
 
-  const load = useCallback((query: string) => {
-    const url = query ? `/api/kb-entries?q=${encodeURIComponent(query)}` : "/api/kb-entries";
+  const load = useCallback((nextQuery: string, nextCollection: KbCollection | null) => {
+    const params = new URLSearchParams();
+    if (nextQuery) params.set("q", nextQuery);
+    if (nextCollection) params.set("collection", nextCollection);
+    const url = params.toString() ? `/api/kb-entries?${params.toString()}` : "/api/kb-entries";
     fetch(url)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(setEntries)
@@ -355,8 +360,8 @@ function KbSection() {
   }, []);
 
   useEffect(() => {
-    load("");
-  }, [load]);
+    load(query, collection);
+  }, [load, query, collection]);
 
   return (
     <div>
@@ -365,7 +370,13 @@ function KbSection() {
         <p>Browse and search every KB entry — the durable, versioned record of what's been decided.</p>
       </div>
       {error ? <p className="state state--err">Could not load the KB: {error}</p> : null}
-      <BacklogBrowser entries={entries ?? []} onSearch={load} onSelect={() => {}} />
+      <BacklogBrowser
+        entries={entries ?? []}
+        onSearch={setQuery}
+        onSelect={() => {}}
+        activeCollection={collection}
+        onSelectCollection={setCollection}
+      />
       {entries && entries.length === 0 ? (
         <div className="empty">
           <strong>The backlog is empty</strong>
