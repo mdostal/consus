@@ -15,6 +15,10 @@ Consus is the Pantheon's rendered doc/decision surface — see `docs/north-star.
 - `server/db/migrate.ts` — idempotent schema migration, safe to run on every boot.
 - `web/` — React + Vite SPA.
 - `.pHive/consus.sqlite` (dev) — the local SQLite KB store file (gitignored).
+- `.pHive/imports/multica-archive/` — preserved historical decision/KB data
+  (45 + 12 entries) pulled from the old hive-hosted Claud-ometer surface
+  before it went fully offline; see its README.md for provenance/checksums.
+  Consumed by story `s2-historical-backfill-importer`.
 
 ## Conventions
 

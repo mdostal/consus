@@ -1,7 +1,8 @@
 project_name: "consus"
-type: greenfield
+type: brownfield
 discovered: "2026-07-25"
-source: "kickoff elicitation + docs/north-star.md + docs/consus-definition.md"
+last_discovery_refresh: "2026-08-12"
+source: "kickoff elicitation + docs/north-star.md + docs/consus-definition.md; refreshed 2026-08-12 via brownfield discovery over the implemented codebase (server/, web/, skills/, .github/)"
 
 project_type: consumer-app
 has_ui: true
@@ -17,6 +18,173 @@ ship_target:
     status back and forth) plus its own storage/state to track long-lived
     decisions, docs, and living diagrams across many projects (one tab per
     codebase, plus a high-level/global view).
+
+claude_md_summary: |
+  No CLAUDE.md exists at the project root. Conventions are instead sourced from
+  .pHive/CONTEXT.md (domain glossary: "item" as the base KB unit, key paths,
+  migration conventions), .pHive/planning/architecture.md (tech stack and key
+  decisions with alternatives), and hive.config.yaml -> developer (BDD for UI
+  work / TDD for backend work, single-commit PRs, medium commit granularity,
+  thorough review depth).
+
+tech_stack:
+  languages: [typescript, javascript]
+  frameworks: [react, vite, fastify]
+  build_tools: [vite, typescript]
+  package_managers: [npm]
+  versions:
+    node: ">=22 (developed against v22.12.0)"
+    typescript: "^5.6.3"
+    react: "^18.3.1"
+    vite: "^5.4.10"
+    fastify: "^5.0.0"
+    vitest: "^2.1.4"
+    better-sqlite3: "^11.3.0"
+
+structure:
+  modules:
+    - name: server
+      purpose: >
+        Fastify HTTP API + WebSocket gateway; owns all writes to the SQLite KB
+        store; adapters to Minerva, Multica, Auriga, Vesta, Votem, and a doc
+        scanner live under server/adapters/.
+      source: server/
+      tests: server/**/*.test.ts (co-located with source)
+    - name: web
+      purpose: >
+        React + Vite SPA. Feature folders: comments, decisions (DecisionCard,
+        answer-shapes), docs (DocBrowser, DocRenderer, ArtifactLink), kb
+        (KBBrowser, BacklogBrowser), minerva (QAQueue, SurveyGroup), projects
+        (ProjectView, GlobalView).
+      source: web/src/
+      tests: web/src/**/*.test.tsx (co-located with source)
+    - name: skills/consus
+      purpose: >
+        Agent-facing Skill definition (Claude Code-style) so a multi-agent
+        harness can read the queue and post answers via the HTTP API.
+      source: skills/consus/SKILL.md
+  entry_points:
+    - server/index.ts (Fastify server; PORT env var, default 8722)
+    - web/src/main.tsx (Vite SPA entry)
+    - scripts/start.sh
+
+architecture:
+  pattern: >
+    Layered SPA + API: the React SPA talks to the Fastify server over an
+    /api proxy; the server is the only component allowed to write to the
+    single SQLite KB store; every external system (Minerva, Multica, Auriga,
+    Vesta, Votem) is reached exclusively through a server/adapters/* module.
+  di_framework: "manual — no DI framework; explicit factory functions (e.g. buildServer({dbPath, repos}))"
+  state_management: "React local/component state per feature folder; no global store library detected"
+  navigation: "Single-page app; no router library detected — feature areas composed directly in App.tsx"
+  data_layer: >
+    better-sqlite3 (embedded SQLite) via server/db/connection.ts; idempotent
+    migrations (CREATE TABLE IF NOT EXISTS) in server/db/migrate.ts run on
+    every server boot — see .pHive/CONTEXT.md conventions.
+
+conventions:
+  naming: "kebab-case directories, PascalCase React components, camelCase TypeScript"
+  file_organization: >
+    Feature-folder structure mirrored on both sides: server/{adapters,routes,kb,
+    decision-contract,features}, web/src/features/{comments,decisions,docs,kb,
+    minerva,projects}.
+  branching: "feat/*, fix/*, docs/*, chore/* branches merged via PR; dev -> main promotion automated by promote.yml"
+  commit_messages: >
+    Conventional-ish prefixes (fix(scope):, chore(release):, ci:, docs:) plus
+    ticket refs (REQ-##) and phase tags ([wave-N], [plan]); one commit per PR
+    via GitHub's "Merge pull request" — matches hive.config.yaml
+    developer.pr_style: single-commit.
+
+test_infrastructure:
+  unit:
+    framework: "Vitest (jsdom environment; @testing-library/react + jest-dom for web)"
+    location: "co-located *.test.ts / *.test.tsx next to source, both server/ and web/src/"
+    count: "33 test files (21 server, 12 web)"
+    coverage_tool: "none detected"
+  integration: >
+    No separately identified integration suite — server tests build the real
+    Fastify app (buildServer) against a real SQLite file rather than mocking it.
+  e2e:
+    framework: "none detected"
+    location: ""
+    count: "0"
+  mocking: "vitest built-ins (vi.fn / vi.mock); no separate mocking library"
+  test_commands:
+    - "npm test"
+    - "npm run test:watch"
+
+ci_cd:
+  platform: "GitHub Actions"
+  workflows:
+    - "ci.yml — stack-auto-detect install/build/test gate on PRs into dev/main/master"
+    - "promote.yml — auto-opens a dev -> main promotion PR on push to dev; does not auto-merge, so ci.yml always gates the final merge"
+  gating: "ci.yml is the required gate on PRs (THE gate); promote.yml intentionally does not bypass it"
+
+documentation_found:
+  - path: README.md
+    content_summary: "OSS-facing overview, architecture diagram, what/why"
+  - path: VISION.md
+    content_summary: "Product vision"
+  - path: docs/north-star.md
+    content_summary: "North-star goal/audience/scale/pain-points source doc"
+  - path: docs/consus-definition.md
+    content_summary: "Definition doc used during kickoff elicitation"
+  - path: docs/prior-art.md
+    content_summary: "Inventory of prior Delphi/Claud-ometer implementations this build reconciles against"
+  - path: docs/delphi-lineage-inventory.md
+    content_summary: "Full Delphi lineage scrape + phased post-v1 roadmap"
+  - path: docs/api-reference.md
+    content_summary: "Per-route API reference (method/path/body/response) backing the agent-facing skill"
+  - path: .pHive/planning/architecture.md
+    content_summary: "Tech stack, components, data model, API contracts, key decisions with alternatives"
+  - path: .pHive/planning/prd.md
+    content_summary: "Detailed requirements REQ-01..REQ-28 with acceptance criteria"
+  - path: .pHive/planning/product-brief.md
+    content_summary: "Problem, target users, core features, success metrics, scope boundaries"
+  - path: .pHive/planning/product-discovery-brief.md
+    content_summary: "Structured 7-area greenfield discovery output"
+  - path: .pHive/planning/roadmap.md
+    content_summary: "Post-v1 phased roadmap"
+  - path: .pHive/CONTEXT.md
+    content_summary: "Domain glossary — item, key paths, conventions, canonical references"
+
+existing_knowledge:
+  mcp_servers: []   # no project-level .claude/settings.json; MCP servers in this session are user-scoped, not project-declared
+  existing_skills: [skills/consus/SKILL.md]
+  existing_hooks: []
+
+code_quality:
+  linters: []
+  formatters: []
+  pre_commit:
+    framework: null
+    hooks: []
+  code_snippets:
+    - path: server/index.ts
+      pattern: fastify-factory
+      annotation: >
+        buildServer({dbPath, repos}) factory wires db open + migration + route
+        registration + health check; an isMain guard separates the library
+        export from the process entry point.
+      lines: "1-54"
+    - path: web/src/features/decisions/DecisionCard.test.tsx
+      pattern: react-testing-library-component-test
+      annotation: >
+        describe/it imported explicitly (no globals) with render/screen/
+        fireEvent from Testing Library; asserts on accessible roles/testids
+        rather than implementation details.
+      lines: "1-40"
+  test_first_signals:
+    co_located_tests: true
+    test_before_source: inconclusive
+    test_runner_in_precommit: false
+    bdd_keywords: false
+    test_absence: false
+
+project_maturity: >
+  Active development. v1 core loop and phase2 (survey batching / KB project
+  views / agent-harness API) epics shipped; phase4 (close-the-loop) epic in
+  progress; OSS launch docs (README, VISION) published; CI/CD gate live.
 
 integrations:
   cli_tools:
@@ -35,13 +203,6 @@ integrations:
     qdrant-nomic: detected
   vaults:
     obsidian: detected   # ~/.obsidian-cli.sock + md.obsidian.plist present
-
-tech_stack:
-  languages: [typescript, javascript]
-  frameworks: [react, vite, fastify]
-  build_tools: [vite]
-  package_managers: [npm]
-  versions: {}   # not yet pinned — project not scaffolded
 
 north_star:
   goal: >

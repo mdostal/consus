@@ -19,6 +19,12 @@ interface GroupedDocs {
   };
 }
 
+/** The item id a doc's propose-a-change proposals target (s5). One item per
+ *  repo+path, mirroring diagrams' one-item-per-repo-diagram approach. */
+export function docItemIdFor(repo: string, path: string): string {
+  return `doc:${repo}:${path}`;
+}
+
 export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutesOptions): void {
   app.get<{ Querystring: { project?: string } }>("/api/docs", async (request) => {
     const { project } = request.query;
@@ -48,6 +54,18 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutes
       return reply.code(404).send({ error: `unknown repo: ${repo}` });
     }
     const { content, format } = readDocContent(repoPath, path);
-    return { repo, path, format, content };
+
+    // Ensure a target item exists before the caller can propose a change to
+    // this doc (s3's proposeChange requires a real item row) — upserted on
+    // every open, matching the diagram route's pattern (s4).
+    const itemId = docItemIdFor(repo, path);
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO items (id, type, title, status, source_repo, source_ref, created_at, updated_at)
+       VALUES (?, 'doc', ?, 'active', ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
+    ).run(itemId, path, repo, path, now, now);
+
+    return { repo, path, format, content, itemId };
   });
 }

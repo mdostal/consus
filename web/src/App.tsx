@@ -5,7 +5,9 @@ import { CommentThread, type Comment } from "./features/comments/CommentThread";
 import { QAQueue, type QueuedQuestion } from "./features/minerva/QAQueue";
 import { GlobalView, type KbEntrySummary } from "./features/projects/GlobalView";
 import { ProjectView } from "./features/projects/ProjectView";
-import { BacklogBrowser, type BacklogEntry } from "./features/kb/BacklogBrowser";
+import { DiagramView, type DiagramEpic } from "./features/projects/DiagramView";
+import { AuditPanel, type AuditTrailEntry } from "./features/audit/AuditPanel";
+import { BacklogBrowser, type BacklogEntry, type KbCollection } from "./features/kb/BacklogBrowser";
 import { DocBrowser, type GroupedDocs } from "./features/docs/DocBrowser";
 import { DocRenderer } from "./features/docs/DocRenderer";
 import type { DecisionPayload, Verdict } from "./features/decisions/answer-shapes/types";
@@ -64,6 +66,7 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
   const [comments, setComments] = useState<Comment[]>([]);
   const [recorded, setRecorded] = useState<Verdict | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [auditEntries, setAuditEntries] = useState<AuditTrailEntry[]>([]);
 
   const loadComments = useCallback(async () => {
     try {
@@ -74,9 +77,19 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
     }
   }, [item.id]);
 
+  const loadAuditTrail = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/items/${item.id}/audit-trail`);
+      if (res.ok) setAuditEntries(await res.json());
+    } catch {
+      /* history is best-effort */
+    }
+  }, [item.id]);
+
   useEffect(() => {
     loadComments();
-  }, [loadComments]);
+    loadAuditTrail();
+  }, [loadComments, loadAuditTrail]);
 
   async function submitVerdict(verdict: Verdict) {
     setErr(null);
@@ -84,6 +97,7 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
       await postVerdict(item.id, verdict);
       setRecorded(verdict);
       loadComments();
+      loadAuditTrail();
       onDecided();
     } catch (e) {
       setErr(`Could not record decision: ${(e as Error).message}`);
@@ -174,6 +188,11 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
       <section>
         <h3 className="dv__section-title">Discussion</h3>
         <CommentThread comments={comments} onSubmit={submitComment} />
+      </section>
+
+      <section>
+        <h3 className="dv__section-title">History</h3>
+        <AuditPanel entries={auditEntries} />
       </section>
     </article>
   );
@@ -326,15 +345,87 @@ function ProjectsSection() {
           {project === null ? (
             <GlobalView entries={entries} onSelect={() => {}} />
           ) : (
-            <ProjectView
-              project={project}
-              entries={entries.filter((e) => (e.source_repo ?? "unassigned") === project)}
-              onSelect={() => {}}
-            />
+            <>
+              <ProjectView
+                project={project}
+                entries={entries.filter((e) => (e.source_repo ?? "unassigned") === project)}
+                onSelect={() => {}}
+              />
+              <ProjectDiagram repo={project} />
+            </>
           )}
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * s4: fetches a repo's epic/story diagram and wires the propose-a-change
+ * action through POST /api/proposals (s3) — fire, then poll once for a
+ * result so "pending" doesn't hang silently forever in the UI.
+ */
+function ProjectDiagram({ repo }: { repo: string }) {
+  const [data, setData] = useState<{ itemId: string; epics: DiagramEpic[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingProposalId, setPendingProposalId] = useState<string | null>(null);
+  const [auditEntries, setAuditEntries] = useState<AuditTrailEntry[]>([]);
+
+  const loadAuditTrail = useCallback((itemId: string) => {
+    fetch(`/api/items/${encodeURIComponent(itemId)}/audit-trail`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(setAuditEntries)
+      .catch(() => {
+        /* history is best-effort */
+      });
+  }, []);
+
+  useEffect(() => {
+    setData(null);
+    fetch(`/api/diagrams?repo=${encodeURIComponent(repo)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((body) => {
+        setData(body);
+        loadAuditTrail(body.itemId);
+      })
+      .catch((e) => setError(e.message));
+  }, [repo, loadAuditTrail]);
+
+  const proposeChange = useCallback(
+    ({ diff, description }: { diff: string; description: string }) => {
+      if (!data) return;
+      fetch("/api/proposals", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          itemId: data.itemId,
+          targetType: "diagram",
+          diff,
+          description,
+          requestedBy: "Mathew",
+        }),
+      })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .then((proposal) => {
+          setPendingProposalId(proposal.status === "pending" ? proposal.id : null);
+          loadAuditTrail(data.itemId);
+        })
+        .catch((e) => setError(e.message));
+    },
+    [data, loadAuditTrail],
+  );
+
+  if (error) return <p className="state state--err">Could not load the diagram: {error}</p>;
+  if (!data) return <p className="state">Loading diagram…</p>;
+
+  return (
+    <DiagramView
+      repo={repo}
+      epics={data.epics}
+      pendingProposal={pendingProposalId !== null}
+      onProposeChange={proposeChange}
+      auditEntries={auditEntries}
+    />
   );
 }
 
@@ -345,9 +436,14 @@ function ProjectsSection() {
 function KbSection() {
   const [entries, setEntries] = useState<BacklogEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [collection, setCollection] = useState<KbCollection | null>(null);
 
-  const load = useCallback((query: string) => {
-    const url = query ? `/api/kb-entries?q=${encodeURIComponent(query)}` : "/api/kb-entries";
+  const load = useCallback((nextQuery: string, nextCollection: KbCollection | null) => {
+    const params = new URLSearchParams();
+    if (nextQuery) params.set("q", nextQuery);
+    if (nextCollection) params.set("collection", nextCollection);
+    const url = params.toString() ? `/api/kb-entries?${params.toString()}` : "/api/kb-entries";
     fetch(url)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(setEntries)
@@ -355,8 +451,8 @@ function KbSection() {
   }, []);
 
   useEffect(() => {
-    load("");
-  }, [load]);
+    load(query, collection);
+  }, [load, query, collection]);
 
   return (
     <div>
@@ -365,7 +461,13 @@ function KbSection() {
         <p>Browse and search every KB entry — the durable, versioned record of what's been decided.</p>
       </div>
       {error ? <p className="state state--err">Could not load the KB: {error}</p> : null}
-      <BacklogBrowser entries={entries ?? []} onSearch={load} onSelect={() => {}} />
+      <BacklogBrowser
+        entries={entries ?? []}
+        onSearch={setQuery}
+        onSelect={() => {}}
+        activeCollection={collection}
+        onSelectCollection={setCollection}
+      />
       {entries && entries.length === 0 ? (
         <div className="empty">
           <strong>The backlog is empty</strong>
@@ -383,7 +485,12 @@ function KbSection() {
 function DocsSection() {
   const [grouped, setGrouped] = useState<GroupedDocs | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [openDoc, setOpenDoc] = useState<{ format: "md" | "html"; content: string; path: string } | null>(null);
+  const [openDoc, setOpenDoc] = useState<
+    { format: "md" | "html"; content: string; path: string; repo: string; itemId: string } | null
+  >(null);
+  const [pendingProposalId, setPendingProposalId] = useState<string | null>(null);
+  const [proposalFailureReason, setProposalFailureReason] = useState<string | null>(null);
+  const [auditEntries, setAuditEntries] = useState<AuditTrailEntry[]>([]);
 
   useEffect(() => {
     fetch("/api/docs")
@@ -392,13 +499,55 @@ function DocsSection() {
       .catch((e) => setError(e.message));
   }, []);
 
+  const loadAuditTrail = useCallback((itemId: string) => {
+    fetch(`/api/items/${encodeURIComponent(itemId)}/audit-trail`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(setAuditEntries)
+      .catch(() => {
+        /* history is best-effort */
+      });
+  }, []);
+
   async function open(repo: string, filePath: string) {
     const res = await fetch(`/api/docs/content?repo=${encodeURIComponent(repo)}&path=${encodeURIComponent(filePath)}`);
     if (res.ok) {
       const data = await res.json();
-      setOpenDoc({ format: data.format, content: data.content, path: filePath });
+      setPendingProposalId(null);
+      setProposalFailureReason(null);
+      setOpenDoc({ format: data.format, content: data.content, path: filePath, repo, itemId: data.itemId });
+      loadAuditTrail(data.itemId);
     }
   }
+
+  const proposeChange = useCallback(
+    ({ diff, description }: { diff: string; description: string }) => {
+      if (!openDoc) return;
+      fetch("/api/proposals", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          itemId: openDoc.itemId,
+          targetType: "doc",
+          diff,
+          description,
+          requestedBy: "Mathew",
+        }),
+      })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .then((proposal) => {
+          if (proposal.status === "pending") {
+            setPendingProposalId(proposal.id);
+            setProposalFailureReason(null);
+          } else {
+            setPendingProposalId(null);
+            setProposalFailureReason(proposal.failure_reason ?? null);
+          }
+          loadAuditTrail(openDoc.itemId);
+        })
+        .catch((e) => setProposalFailureReason(e.message));
+    },
+    [openDoc, loadAuditTrail],
+  );
 
   if (error) return <p className="state state--err">Could not load docs: {error}</p>;
   if (!grouped) return <p className="state">Loading docs…</p>;
@@ -413,7 +562,14 @@ function DocsSection() {
             ← Back to docs
           </button>
         </div>
-        <DocRenderer format={openDoc.format} content={openDoc.content} />
+        <DocRenderer
+          format={openDoc.format}
+          content={openDoc.content}
+          onProposeChange={proposeChange}
+          pendingProposal={pendingProposalId !== null}
+          proposalFailureReason={proposalFailureReason}
+          auditEntries={auditEntries}
+        />
       </div>
     );
   }

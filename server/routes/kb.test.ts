@@ -136,3 +136,65 @@ describe("KB backlog — search/filter + direct edit (REQ-09, P1)", () => {
     expect(versionBodies[1].content).toBe("revised decision content");
   });
 });
+
+describe("KB collections (kb-01)", () => {
+  let db: Database.Database;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    runMigration(db);
+    createKbEntry(db, { id: "kb-general", title: "General entry", author: "mathew", content: "c" });
+    createKbEntry(db, {
+      id: "kb-marketing",
+      title: "Marketing entry",
+      author: "mathew",
+      content: "c",
+      collection: "marketing",
+    });
+    createKbEntry(db, {
+      id: "kb-plans",
+      title: "Plans entry",
+      author: "mathew",
+      content: "c",
+      collection: "plans",
+    });
+
+    app = Fastify();
+    registerKbRoutes(app, { db });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+  });
+
+  it("defaults new entries to the 'general' collection", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/kb-entries?collection=general" });
+    const body = res.json();
+    expect(body.map((e: { id: string }) => e.id)).toEqual(["kb-general"]);
+  });
+
+  it("filters entries by ?collection=", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/kb-entries?collection=marketing" });
+    const body = res.json();
+    expect(body.map((e: { id: string }) => e.id)).toEqual(["kb-marketing"]);
+  });
+
+  it("combines ?collection= with ?q= search scoping", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/kb-entries?collection=plans&q=Plans" });
+    const body = res.json();
+    expect(body.map((e: { id: string }) => e.id)).toEqual(["kb-plans"]);
+  });
+
+  it("returns every collection when ?collection= is omitted", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/kb-entries" });
+    expect(res.json()).toHaveLength(3);
+  });
+
+  it("rejects an invalid ?collection= value with a 400, not a 500", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/kb-entries?collection=not-real" });
+    expect(res.statusCode).toBe(400);
+  });
+});

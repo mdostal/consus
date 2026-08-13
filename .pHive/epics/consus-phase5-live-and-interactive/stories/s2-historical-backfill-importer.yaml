@@ -1,0 +1,94 @@
+id: s2-historical-backfill-importer
+epic: consus-phase5-live-and-interactive
+title: "Generic jsonl importer; run against this repo's archive only"
+status: complete
+complexity: medium
+methodology: tdd
+depends_on: [s0-preserve-historical-data, s1-multica-live-ingest]
+
+description: |
+  Build a generic (reusable-shape) importer for the delphi-audit.jsonl /
+  delphi-knowledgebase.jsonl archive format, so it can be pointed at other
+  repos' archives later without a rewrite — but this pass runs it only
+  against this repo's own preserved archive (s0's output). No cross-repo
+  aggregation: other repos get their own Consus install later, each with
+  its own indexed filesystem and store, per the operator's explicit
+  direction. Verify count parity (45 audit entries, 12 KB entries) before
+  and after import.
+
+acceptance_criteria:
+  - "Given the preserved delphi-audit.jsonl (45 entries), when imported, then 45 corresponding rows exist in items/audit_log (exact mapping TBD at implement time based on entry shape)"
+  - "Given the preserved delphi-knowledgebase.jsonl (12 entries), when imported, then 12 corresponding rows exist in kb_entries"
+  - "Given the importer runs twice against the same archive, then it does not duplicate rows (idempotent, matching the migration convention in server/db/migrate.ts)"
+  - "Given the importer is invoked with a different repo's archive path, then it runs without code changes (parameterized by path, not hardcoded to this repo's filename)"
+
+steps:
+  - id: research
+    description: Inspect the actual jsonl entry shape in both preserved files to design the mapping into items/kb_entries
+    agent: researcher
+  - id: test-spec
+    description: "Write failing tests: import produces exact row counts; re-running is idempotent; malformed entry doesn't abort the whole import"
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: Write the importer (parameterized by archive path) and run it once against this repo's preserved archive
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: Verify count parity against s0's recorded checksums/line counts; spot-check a few imported rows against source entries
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit and push to feature branch
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  tech_stack:
+    languages: [typescript]
+    frameworks: [better-sqlite3]
+  key_files:
+    - path: server/db/migrate.ts
+      purpose: existing idempotent-migration convention to follow for the importer's own idempotency
+    - path: .pHive/imports/multica-archive/
+      purpose: source archive location from s0
+
+files_to_modify:
+  - file: server/db/import-multica-archive.ts
+    change: "new file — generic jsonl importer, parameterized by archive path"
+  - file: server/db/import-multica-archive.test.ts
+    change: new tests
+
+design_decisions:
+  - decision: Parameterize by path, not hardcode this repo's archive filename
+    rationale: "Explicit operator direction — generic importer, single-repo run for now"
+  - decision: Idempotent by natural key, matching migrate.ts's CREATE TABLE IF NOT EXISTS convention
+    rationale: consistency with the one existing migration convention documented in .pHive/CONTEXT.md
+
+risks:
+  - severity: medium
+    description: jsonl entry shape doesn't map cleanly onto items/kb_entries schema
+    mitigation: research step reads actual entries before designing the mapping, not assumed from the design doc alone
+
+references:
+  - path: .pHive/imports/multica-archive/README.md
+    relevant_excerpt: "provenance + checksums from s0, used as the parity check target"
+
+cross_cutting:
+  - concern: documentation
+    action: "Document the importer's usage (path param) in .pHive/CONTEXT.md so a future repo's backfill knows how to invoke it"
+
+metric:
+  applies: true
+  name: kb.historical_rows_imported
+  direction: up
+  unit: rows
+  baseline: 0
+  target: "57 (45 audit + 12 kb)"
+  window: story-integrate
+  source:
+    kind: sql
+    ref: "SELECT count(*) FROM items WHERE source='multica-archive-import' UNION ALL SELECT count(*) FROM kb_entries WHERE source='multica-archive-import'"
+  verify_at: integrate
+  owner: developer

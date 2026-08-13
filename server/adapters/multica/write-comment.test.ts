@@ -25,6 +25,9 @@ describe("writeCommentAndCache", () => {
       async writeComment() {
         return { ok: true, multicaCommentId: "mc-1" };
       },
+      async listIssues() {
+        return { ok: true, issues: [] };
+      },
     };
 
     const result = await writeCommentAndCache(db, client, { itemId: "item-1", author: "mathew", body: "hi" });
@@ -42,6 +45,9 @@ describe("writeCommentAndCache", () => {
     const client: MulticaClient = {
       async writeComment() {
         return { ok: false, error: "ECONNREFUSED" };
+      },
+      async listIssues() {
+        return { ok: true, issues: [] };
       },
     };
 

@@ -1,0 +1,121 @@
+id: s3-propose-dispatch-mechanism
+epic: consus-phase5-live-and-interactive
+title: "Propose-a-change-and-fire-to-harness mechanism (via Minerva adapter)"
+status: complete
+complexity: high
+methodology: tdd
+depends_on: [s1-multica-live-ingest]
+
+description: |
+  The foundation both diagram editing (s4) and doc editing (s5) ride on.
+  Consus never writes to .pHive repo files directly — it composes a change
+  proposal (a diff + a human-readable description, e.g. "Diagram 12 — added
+  X, removed Y — removed load balancers for direct traffic through...") and
+  fires it to an agent/harness via the existing server/adapters/minerva/
+  adapter, extended with a new request shape. The harness executes the real
+  file change and reports back; Consus records the applied diff as a new
+  version and an audit_log entry. This is step one of the capability, per
+  the operator — get the propose/fire/receive loop working generically
+  (not scoped to one content type), not a full diff-editor UI. Shares its
+  underlying shape with consus-phase4-close-the-loop's iterate mechanism
+  (fire an agent, get a version back) but is not the same code path — that
+  epic's mechanism is Multica-comment-specific to decisions; this one is
+  general enough to carry a doc/diagram proposal via Minerva.
+
+acceptance_criteria:
+  - "Given a change proposal (target item, diff, description), when fired, then it dispatches through the Minerva adapter and the proposal is recorded with status=pending"
+  - "Given a harness reports a proposal as applied (with the actual resulting diff), then the proposal's status updates to applied and an audit_log entry is written (old_value/new_value shaped from the diff)"
+  - "Given a harness reports a proposal as failed/rejected, then the proposal's status updates accordingly and the reason is visible (not silently dropped)"
+  - "Given the same mechanism is invoked from a decision item, a diagram, or a doc, then it works identically — no content-type-specific branching in the dispatch path itself"
+
+steps:
+  - id: research
+    description: Read server/adapters/minerva/index.ts's existing request/response shape and stdio dispatch pattern; read consus-phase4-close-the-loop's iterate-endpoint-and-log.yaml for the conceptual shape to avoid duplicating (not reusing) its Multica-comment-specific mechanism
+    agent: researcher
+  - id: test-spec
+    description: "Write failing tests: propose() records pending; a mocked harness response transitions to applied/failed; audit_log entry shape matches old_value/new_value"
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: Extend the Minerva adapter with the new proposal request shape; add the propose/receive-result path and audit_log write
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: Verify no direct file writes exist anywhere in this path; confirm status transitions are exhaustive (pending/applied/failed, no stuck states)
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit and push to feature branch
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  tech_stack:
+    languages: [typescript]
+    frameworks: [fastify]
+  key_files:
+    - path: server/adapters/minerva/index.ts
+      purpose: existing stdio JSON-RPC-shaped adapter — extend with a new proposal request type rather than building a second dispatch path
+    - path: .pHive/epics/consus-phase4-close-the-loop/stories/iterate-endpoint-and-log.yaml
+      purpose: conceptually related sibling mechanism (Multica-comment-based) — read for shape, do not merge code paths
+
+files_to_modify:
+  - file: server/adapters/minerva/index.ts
+    change: add a proposeChange request/response shape
+  - file: server/routes/proposals.ts
+    change: "new file — propose/status endpoints"
+  - file: server/kb/store.ts
+    change: add proposal status tracking + audit_log write on applied/failed
+
+design_decisions:
+  - decision: Generalize via Minerva adapter rather than extending phase4's Multica-comment iterate path
+    rationale: "Operator's own framing: 'fire back to a harness through skills, plugins etc in a harness' — general harness dispatch, and 'pairs well with minerva which automatically runs and pauses hive processes for stuff like this'"
+  - decision: Step one is the loop working, not a rich diff editor
+    rationale: Explicit operator scope-limiting instruction
+
+risks:
+  - severity: high
+    description: A stuck pending state (harness never reports back) with no visibility
+    mitigation: proposals list their status in the audit panel (s5); no proposal is silently lost — acceptance criteria requires exhaustive status transitions
+  - severity: medium
+    description: This mechanism drifts into overlapping/duplicating phase4's iterate mechanism, causing two ways to "fire an agent"
+    mitigation: explicit design decision above; review step checks for accidental code-path merging
+
+references:
+  - path: server/adapters/minerva/index.ts
+    relevant_excerpt: "existing capabilities/abi_version handshake, invoke(method, params), {ok,result}/{ok:false,recoverable,code} error mapping"
+  - path: .pHive/epics/consus-phase4-close-the-loop/docs/design-discussion.md
+    relevant_excerpt: "sibling mechanism for decision-iterate specifically — not duplicated here"
+
+cross_cutting:
+  - concern: documentation
+    action: "Document the new proposal request/response shape in docs/api-reference.md and .pHive/CONTEXT.md"
+
+metric:
+  applies: true
+  name: proposals.fire_to_applied_success_rate
+  direction: up
+  unit: ratio
+  baseline: 0
+  target: ">0.8 of fired proposals reach applied or an explicit failed reason (not stuck)"
+  window: next-30-days
+  source:
+    kind: sql
+    ref: "SELECT status, count(*) FROM proposals GROUP BY status"
+  verify_at: "2026-09-11T00:00:00Z"
+  owner: developer
+
+implementation_notes: |
+  New `proposals` table (item_id FK, target_type, diff, description, status
+  pending/applied/failed, requested_by/at, resolved_at, applied_diff,
+  failure_reason). Dispatch failures (harness unreachable) resolve the
+  proposal to 'failed' immediately rather than leaving it pending forever
+  — verified live end-to-end through the real server with no `minerva` CLI
+  installed locally: POST /api/proposals correctly returned status=failed,
+  failure_reason="INTERNAL_ERROR: failed to spawn Minerva", no crash. A
+  real harness reports back via POST /api/proposals/:id/result. Wired into
+  server/index.ts via StdioMinervaTransport (MINERVA_CLI_COMMAND/
+  MINERVA_CLI_ARGS env vars); NOOP transport default for buildServer
+  keeps all other tests unaffected, matching the NOOP_MULTICA_CLIENT
+  pattern from s1.

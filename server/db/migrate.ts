@@ -59,7 +59,8 @@ export function runMigration(db: Database.Database): void {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       current_version_id INTEGER,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      collection TEXT NOT NULL DEFAULT 'general' CHECK(collection IN ('marketing', 'boundary-decisions', 'plans', 'artifacts', 'general'))
     );
 
     CREATE TABLE IF NOT EXISTS kb_versions (
@@ -120,11 +121,33 @@ export function runMigration(db: Database.Database): void {
       status TEXT NOT NULL DEFAULT 'open',
       created_at TEXT NOT NULL
     );
+
+    -- s3-propose-dispatch-mechanism: a change proposal (diff + description)
+    -- fired to a harness via the Minerva adapter. Consus never writes the
+    -- underlying content directly — the harness applies it and reports
+    -- back via POST /api/proposals/:id/result, which is what transitions
+    -- status out of 'pending' and (on 'applied') writes an audit_log entry.
+    CREATE TABLE IF NOT EXISTS proposals (
+      id TEXT PRIMARY KEY,
+      item_id TEXT NOT NULL REFERENCES items(id),
+      target_type TEXT NOT NULL,
+      diff TEXT NOT NULL,
+      description TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'applied', 'failed')),
+      requested_by TEXT NOT NULL,
+      requested_at TEXT NOT NULL,
+      resolved_at TEXT,
+      applied_diff TEXT,
+      failure_reason TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_proposals_item_id ON proposals(item_id);
   `);
 
   // Guarded ALTER TABLE for columns added after a table already existed on
   // some deployment — CREATE TABLE IF NOT EXISTS alone won't add these to a
   // pre-existing items table.
+  addColumnIfMissing(db, "items", "source_body", "TEXT");
   addColumnIfMissing(db, "items", "decided_at", "TEXT");
   addColumnIfMissing(db, "items", "decision_payload", "TEXT");
   addColumnIfMissing(db, "items", "decision_type", "TEXT");
@@ -132,4 +155,15 @@ export function runMigration(db: Database.Database): void {
   addColumnIfMissing(db, "human_requests", "survey_id", "INTEGER REFERENCES surveys(id)");
   addColumnIfMissing(db, "kb_entries", "source_repo", "TEXT");
   addColumnIfMissing(db, "audit_log", "chat_summary", "TEXT");
+  // REQ (kb-01): collection grouping for KB entries. Ported from
+  // hive:~/.review-bootstrap/consus-kb01 (feat/PAN-6478), re-derived
+  // against this build's current schema rather than cherry-picked.
+  addColumnIfMissing(
+    db,
+    "kb_entries",
+    "collection",
+    "TEXT NOT NULL DEFAULT 'general' CHECK(collection IN ('marketing', 'boundary-decisions', 'plans', 'artifacts', 'general'))",
+  );
+
+  db.exec("CREATE INDEX IF NOT EXISTS idx_kb_entries_collection ON kb_entries(collection)");
 }

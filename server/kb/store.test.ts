@@ -85,6 +85,40 @@ describe("KB Store — decide API", () => {
     expect(versions.map((v) => v.content)).toEqual(["v1 content", "v2 content"]);
   });
 
+  it("defaults a new kb_entry to the 'general' collection when none is given", () => {
+    createKbEntry(db, { id: "kb-default", title: "t", author: "mathew", content: "c" });
+
+    const row = db.prepare("SELECT collection FROM kb_entries WHERE id = ?").get("kb-default") as {
+      collection: string;
+    };
+    expect(row.collection).toBe("general");
+  });
+
+  it("assigns a kb_entry to the given collection", () => {
+    createKbEntry(db, { id: "kb-marketing", title: "t", author: "mathew", content: "c", collection: "marketing" });
+
+    const row = db.prepare("SELECT collection FROM kb_entries WHERE id = ?").get("kb-marketing") as {
+      collection: string;
+    };
+    expect(row.collection).toBe("marketing");
+  });
+
+  it("rejects an invalid collection value at the schema level, as a clear error (not a downstream FK failure)", () => {
+    expect(() =>
+      createKbEntry(db, {
+        id: "kb-bad",
+        title: "t",
+        author: "mathew",
+        content: "c",
+        // @ts-expect-error — intentionally invalid to prove the CHECK constraint is enforced
+        collection: "not-a-real-collection",
+      }),
+    ).toThrow(/CHECK constraint/i);
+
+    const row = db.prepare("SELECT * FROM kb_entries WHERE id = ?").get("kb-bad");
+    expect(row).toBeUndefined();
+  });
+
   it("is backed by SQLite, not flat files — audit_log survives a reconnect", () => {
     insertItem(db, "item-3");
     decideItem(db, { itemId: "item-3", actor: "mathew", newStatus: "approved" });

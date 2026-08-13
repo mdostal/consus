@@ -1,0 +1,89 @@
+id: s4-diagram-route
+epic: consus-phase5-live-and-interactive
+title: "GET /api/diagrams (cascade org-tree, per-repo)"
+status: complete
+complexity: medium
+methodology: tdd
+depends_on: [s1-multica-live-ingest]
+
+description: |
+  This build has no diagram route at all. Add a read-side diagram endpoint,
+  using hive's routes/diagrams.ts (cascade org-tree, PAN-7956) as the API
+  shape reference, scoped per-repo (matches the existing project-registry
+  "one tab per repo" model already in server/config/project-registry.ts).
+
+acceptance_criteria:
+  - "Given a configured repo, when GET /api/diagrams?repo=<name> is called, then it returns a cascade org-tree structure for that repo"
+  - "Given an unconfigured repo name, then the endpoint returns a clear 404, not a silent empty result"
+  - "Given the diagram source data changes on disk (e.g. epic structure changes), then the endpoint reflects it without requiring a server restart (matches doc-scanner's existing re-scan behavior)"
+
+steps:
+  - id: research
+    description: Read hive's server/routes/diagrams.ts (git show against dev) for the cascade org-tree shape and data source it reads from
+    agent: researcher
+  - id: test-spec
+    description: "Write failing tests: valid repo returns a tree; unconfigured repo 404s; tree reflects current .pHive/epics structure"
+    agent: tester
+    depends_on: [research]
+  - id: implement
+    description: Add server/routes/diagrams.ts, reusing project-registry.ts for repo resolution
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: Verify response shape is consumable by a tree-rendering component (s4-diagram-viewer-and-propose-ui's concern, but shape agreed here)
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit and push to feature branch
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  tech_stack:
+    languages: [typescript]
+    frameworks: [fastify]
+  key_files:
+    - path: server/config/project-registry.ts
+      purpose: existing per-repo resolution to reuse for the ?repo= param
+    - path: server/routes/docs.ts
+      purpose: existing per-repo doc-scanning route as a structural pattern to follow
+
+files_to_modify:
+  - file: server/routes/diagrams.ts
+    change: "new file"
+  - file: server/index.ts
+    change: register the new route
+
+design_decisions:
+  - decision: Read-side only in this story; editing is s4-diagram-viewer-and-propose-ui via s3's mechanism
+    rationale: Keeps the API shape story small and testable independent of the propose/dispatch mechanism
+
+risks:
+  - severity: low
+    description: Cascade org-tree data source on hive (PAN-7956) may read from a data model this build doesn't have yet
+    mitigation: research step confirms the actual data source before implementing; adapt to this build's .pHive/epics structure if different
+
+references:
+  - path: "hive:~/code/consus server/routes/diagrams.ts (commit c11848a, PAN-7956)"
+    relevant_excerpt: "GET /api/diagrams/cascade org-tree endpoint"
+
+cross_cutting:
+  - concern: documentation
+    action: "Add the new endpoint to docs/api-reference.md"
+
+metric:
+  applies: false
+  justification: "Backend route with no standalone user-facing surface until s4-diagram-viewer-and-propose-ui lands the UI — metric belongs on that story."
+
+implementation_notes: |
+  Scoped down from hive's reference (cross-project Multica issue cascade +
+  per-repo generated component diagrams, both involving substantial ported
+  business logic and a diagram-generator module never seen in full) to what's
+  directly buildable and genuinely useful for a single-repo install: the
+  epic/story tree from .pHive/epics/*/epic.yaml on disk, with dependency
+  edges. Added js-yaml as a new dependency (no YAML parser existed in this
+  build — epic.yaml/story.yaml were previously only read by Python/Hive
+  tooling, never Node). Live-verified against this repo's own real
+  .pHive/epics/ — correctly returned all 5 real epics with accurate
+  story/dependency data.
