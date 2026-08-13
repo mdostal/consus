@@ -278,13 +278,38 @@ function ProjectsSection() {
   const [entries, setEntries] = useState<KbEntrySummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [project, setProject] = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const [ingesting, setIngesting] = useState(false);
+  const [ingestError, setIngestError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadEntries = useCallback(() => {
     fetch("/api/kb-entries")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(setEntries)
       .catch((e) => setError(e.message));
   }, []);
+
+  useEffect(() => {
+    loadEntries();
+  }, [loadEntries]);
+
+  async function ingestRepo(repoName: string) {
+    setIngesting(true);
+    setIngestError(null);
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(repoName)}/ingest`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      loadEntries();
+      setRefreshToken((t) => t + 1);
+    } catch (e) {
+      setIngestError((e as Error).message);
+    } finally {
+      setIngesting(false);
+    }
+  }
 
   if (error) return <p className="state state--err">Could not load projects: {error}</p>;
   if (!entries) return <p className="state">Loading projects…</p>;
@@ -327,12 +352,19 @@ function ProjectsSection() {
             <GlobalView entries={entries} onSelect={() => {}} />
           ) : (
             <>
+              <div className="project-actions">
+                <button type="button" onClick={() => ingestRepo(project)} disabled={ingesting}>
+                  {ingesting ? "Ingesting…" : "Ingest repo"}
+                </button>
+                {ingestError ? <p className="dv__err">{ingestError}</p> : null}
+              </div>
               <ProjectView
                 project={project}
                 entries={entries.filter((e) => (e.source_repo ?? "unassigned") === project)}
                 onSelect={() => {}}
               />
-              <ProjectDiagram repo={project} />
+              <ProjectDiagram repo={project} refreshToken={refreshToken} />
+              <ProjectDocs repo={project} refreshToken={refreshToken} />
             </>
           )}
         </>
@@ -346,7 +378,7 @@ function ProjectsSection() {
  * action through POST /api/proposals (s3) — fire, then poll once for a
  * result so "pending" doesn't hang silently forever in the UI.
  */
-function ProjectDiagram({ repo }: { repo: string }) {
+function ProjectDiagram({ repo, refreshToken }: { repo: string; refreshToken?: number }) {
   const [data, setData] = useState<{ itemId: string; epics: DiagramEpic[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingProposalId, setPendingProposalId] = useState<string | null>(null);
@@ -370,7 +402,7 @@ function ProjectDiagram({ repo }: { repo: string }) {
         loadAuditTrail(body.itemId);
       })
       .catch((e) => setError(e.message));
-  }, [repo, loadAuditTrail]);
+  }, [repo, refreshToken, loadAuditTrail]);
 
   const proposeChange = useCallback(
     ({ diff, description }: { diff: string; description: string }) => {
@@ -407,6 +439,67 @@ function ProjectDiagram({ repo }: { repo: string }) {
       onProposeChange={proposeChange}
       auditEntries={auditEntries}
     />
+  );
+}
+
+/**
+ * s2 (phase6): this project's generated docs, alongside its diagram + KB
+ * entries — folding the previously-separate global Docs tab's data into
+ * the per-project view too. Read-only here (no propose-change wiring);
+ * the global Docs tab remains the full-featured surface for that.
+ */
+function ProjectDocs({ repo, refreshToken }: { repo: string; refreshToken?: number }) {
+  const [grouped, setGrouped] = useState<GroupedDocs | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [openDoc, setOpenDoc] = useState<{ format: "md" | "html"; content: string; path: string } | null>(null);
+
+  useEffect(() => {
+    setGrouped(null);
+    setOpenDoc(null);
+    fetch(`/api/docs?project=${encodeURIComponent(repo)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(setGrouped)
+      .catch((e) => setError(e.message));
+  }, [repo, refreshToken]);
+
+  async function open(docRepo: string, filePath: string) {
+    const res = await fetch(
+      `/api/docs/content?repo=${encodeURIComponent(docRepo)}&path=${encodeURIComponent(filePath)}`,
+    );
+    if (res.ok) {
+      const data = await res.json();
+      setOpenDoc({ format: data.format, content: data.content, path: filePath });
+    }
+  }
+
+  if (error) return <p className="state state--err">Could not load docs: {error}</p>;
+  if (!grouped) return <p className="state">Loading docs…</p>;
+
+  const empty = Object.keys(grouped).length === 0;
+
+  if (openDoc) {
+    return (
+      <div>
+        <button className="doc-back" onClick={() => setOpenDoc(null)}>
+          ← Back to docs
+        </button>
+        <DocRenderer format={openDoc.format} content={openDoc.content} />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h3 className="dv__section-title">Docs</h3>
+      {empty ? (
+        <div className="empty">
+          <strong>No docs indexed yet</strong>
+          Click "Ingest repo" above to pull this project's generated docs into Consus.
+        </div>
+      ) : (
+        <DocBrowser grouped={grouped} onOpen={open} />
+      )}
+    </div>
   );
 }
 
