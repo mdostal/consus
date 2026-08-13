@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import Database from "better-sqlite3";
 import { runMigration } from "../db/migrate.js";
 import { proposeChange, reportProposalResult, listProposals } from "./store.js";
-import type { MinervaTransport, MinervaResult } from "../adapters/minerva/transport.js";
+import type { HarnessTransport, HarnessResult } from "../harness/transport.js";
 
 function insertItem(db: Database.Database, id: string) {
   const now = new Date().toISOString();
@@ -11,13 +11,13 @@ function insertItem(db: Database.Database, id: string) {
   ).run(id, "doc_ref", "Test item", "open", now, now);
 }
 
-function fakeTransport(result: MinervaResult): MinervaTransport & { calls: Array<{ method: string; params: unknown }> } {
+function fakeTransport(result: HarnessResult): HarnessTransport & { calls: Array<{ method: string; params: unknown }> } {
   const calls: Array<{ method: string; params: unknown }> = [];
   return {
     calls,
     async invoke<T>(method: string, params?: unknown) {
       calls.push({ method, params });
-      return result as MinervaResult<T>;
+      return result as HarnessResult<T>;
     },
   };
 }
@@ -31,7 +31,7 @@ describe("proposeChange", () => {
     insertItem(db, "item-1");
   });
 
-  it("records a pending proposal and dispatches it via the Minerva transport", async () => {
+  it("records a pending proposal and dispatches it via the harness transport", async () => {
     const transport = fakeTransport({ ok: true, result: { acknowledged: true } });
 
     const result = await proposeChange(db, transport, {

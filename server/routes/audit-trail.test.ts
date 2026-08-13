@@ -5,7 +5,7 @@ import { runMigration } from "../db/migrate.js";
 import { registerAuditTrailRoutes } from "./audit-trail.js";
 import { decideItem } from "../kb/store.js";
 import { proposeChange } from "../proposals/store.js";
-import type { MinervaTransport } from "../adapters/minerva/transport.js";
+import type { HarnessTransport } from "../harness/transport.js";
 
 function insertItem(db: Database.Database, id: string) {
   const now = new Date().toISOString();
@@ -14,8 +14,12 @@ function insertItem(db: Database.Database, id: string) {
   ).run(id, "doc_ref", "Test item", "open", now, now);
 }
 
-function fakeTransport(): MinervaTransport {
-  return { async invoke() { return { ok: true, result: {} }; } };
+function fakeTransport(): HarnessTransport {
+  return {
+    async invoke<T>() {
+      return { ok: true, result: {} as T };
+    },
+  };
 }
 
 describe("GET /api/items/:id/audit-trail", () => {

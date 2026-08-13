@@ -81,42 +81,4 @@ describe("DecisionCard", () => {
     expect(onVerdict).toHaveBeenCalledWith({ kind: "accepted" });
   });
 
-  it("does not show the fire-agent trigger or Versions view when their props are omitted", () => {
-    render(<DecisionCard question="q" payload={PAYLOAD} onVerdict={vi.fn()} />);
-
-    expect(screen.queryByRole("button", { name: /fire agent to iterate/i })).not.toBeInTheDocument();
-    expect(screen.queryByText("Versions")).not.toBeInTheDocument();
-  });
-
-  it("shows the fire-agent trigger when onFireAgent is supplied (REQ-16)", () => {
-    render(<DecisionCard question="q" payload={PAYLOAD} onVerdict={vi.fn()} onFireAgent={vi.fn()} />);
-
-    expect(screen.getByRole("button", { name: /fire agent to iterate/i })).toBeInTheDocument();
-  });
-
-  it("shows a Versions section listing iterate-request history when versionsEntries is supplied", () => {
-    render(
-      <DecisionCard
-        question="q"
-        payload={PAYLOAD}
-        onVerdict={vi.fn()}
-        versionsEntries={[
-          {
-            log_id: "log-1",
-            timestamp: "2026-08-13T00:00:00Z",
-            actor: "mathew",
-            prompt: "redo it",
-            scope: null,
-            agent: null,
-            comment_id: "c-1",
-            status_set: null,
-            previous_status: null,
-          },
-        ]}
-      />,
-    );
-
-    expect(screen.getByText("Versions")).toBeInTheDocument();
-    expect(screen.getByText(/redo it/)).toBeInTheDocument();
-  });
 });

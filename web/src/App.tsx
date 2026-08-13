@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { marked } from "marked";
 import { AnswerControl } from "./features/decisions/answer-shapes/AnswerControl";
 import { CommentThread, type Comment } from "./features/comments/CommentThread";
-import { QAQueue, type QueuedQuestion } from "./features/minerva/QAQueue";
 import { GlobalView, type KbEntrySummary } from "./features/projects/GlobalView";
 import { ProjectView } from "./features/projects/ProjectView";
 import { DiagramView, type DiagramEpic } from "./features/projects/DiagramView";
@@ -11,8 +10,6 @@ import { BacklogBrowser, type BacklogEntry, type KbCollection } from "./features
 import { DocBrowser, type GroupedDocs } from "./features/docs/DocBrowser";
 import { DocRenderer } from "./features/docs/DocRenderer";
 import type { DecisionPayload, Verdict } from "./features/decisions/answer-shapes/types";
-import { FireAgentTrigger, type FireAgentInput, type FireAgentResult } from "./features/decisions/FireAgentTrigger";
-import { VersionsView, type DecisionLogEntry } from "./features/decisions/VersionsView";
 import "./theme/tokens.css";
 import "./app.css";
 
@@ -21,8 +18,8 @@ import "./app.css";
 /* ---------------------------------------------------------------- */
 
 /** A decision as returned by GET /api/decisions (payload parsed server-side).
- *  decision_payload is null for a raw Multica issue with no fenced
- *  decision-request block (s1) — most real tickets don't carry one. */
+ *  decision_payload is null for an item with no fenced decision-request
+ *  block — not every item carries one. */
 interface DecisionItem {
   id: string;
   type: string;
@@ -74,9 +71,6 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
   const [recorded, setRecorded] = useState<Verdict | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [auditEntries, setAuditEntries] = useState<AuditTrailEntry[]>([]);
-  const [versionsEntries, setVersionsEntries] = useState<DecisionLogEntry[]>([]);
-  const [fireAgentError, setFireAgentError] = useState<string | null>(null);
-  const [fireAgentResult, setFireAgentResult] = useState<FireAgentResult | null>(null);
 
   const loadComments = useCallback(async () => {
     try {
@@ -96,41 +90,10 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
     }
   }, [item.id]);
 
-  const loadVersions = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/log?issueId=${encodeURIComponent(item.id)}`);
-      if (res.ok) setVersionsEntries(await res.json());
-    } catch {
-      /* history is best-effort */
-    }
-  }, [item.id]);
-
   useEffect(() => {
     loadComments();
     loadAuditTrail();
-    loadVersions();
-  }, [loadComments, loadAuditTrail, loadVersions]);
-
-  async function fireAgent(input: FireAgentInput) {
-    setFireAgentError(null);
-    try {
-      const res = await fetch(`/api/decisions/${encodeURIComponent(item.id)}/iterate`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(input),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        setFireAgentError(body.error ?? `HTTP ${res.status}`);
-        return;
-      }
-      setFireAgentResult({ log_id: body.log_id, comment_id: body.comment_id });
-      loadVersions();
-      loadAuditTrail();
-    } catch (e) {
-      setFireAgentError((e as Error).message);
-    }
-  }
+  }, [loadComments, loadAuditTrail]);
 
   async function submitVerdict(verdict: Verdict) {
     setErr(null);
@@ -235,8 +198,7 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
         ) : (
           <>
             <p className="dv__hint">
-              No structured decision-request on this ticket — a plain Multica item. Accept to mark it reviewed, or
-              use Discussion below.
+              No structured decision-request on this item. Accept to mark it reviewed, or use Discussion below.
             </p>
             {recorded ? (
               <div className="dv__recorded">✓ Recorded: {verdictLabel(recorded)}</div>
@@ -253,16 +215,6 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
       <section>
         <h3 className="dv__section-title">Discussion</h3>
         <CommentThread comments={comments} onSubmit={submitComment} />
-      </section>
-
-      <section>
-        <h3 className="dv__section-title">Iterate</h3>
-        <FireAgentTrigger onFire={fireAgent} error={fireAgentError} result={fireAgentResult} />
-      </section>
-
-      <section>
-        <h3 className="dv__section-title">Versions</h3>
-        <VersionsView originalContent={item.title} entries={versionsEntries} />
       </section>
 
       <section>
@@ -314,52 +266,6 @@ function DecisionsSection({
           ))}
         </>
       ) : null}
-    </div>
-  );
-}
-
-/* ---------------------------------------------------------------- */
-/* Section: Minerva Q&A (human-request items + surveys)             */
-/* ---------------------------------------------------------------- */
-
-function MinervaSection({
-  decisions,
-  reload,
-}: {
-  decisions: DecisionItem[] | null;
-  reload: () => void;
-}) {
-  if (!decisions) return <p className="state">Loading Minerva questions…</p>;
-
-  const questions: QueuedQuestion[] = decisions
-    .filter((d) => d.type === "human_request" && !d.decided_at)
-    .map((d) => ({
-      minervaQuestionId: d.id,
-      text: d.title,
-      ticketId: d.source_repo,
-      decisionPayload: d.decision_payload,
-    }));
-
-  async function onAnswer(id: string, verdict: Verdict) {
-    await postVerdict(id, verdict);
-    reload();
-  }
-
-  return (
-    <div>
-      <div className="consus__section-lead">
-        <h1>Minerva Q&amp;A</h1>
-        <p>Escalated questions and surveys from Minerva, answerable async and linked to their ticket.</p>
-      </div>
-      {questions.length === 0 ? (
-        <div className="empty">
-          <strong>No open Minerva questions</strong>
-          When Minerva escalates a question or a survey through the bridge, it appears here. Answered items move
-          to the Decisions history.
-        </div>
-      ) : (
-        <QAQueue questions={questions} onAnswer={onAnswer} />
-      )}
     </div>
   );
 }
@@ -672,11 +578,10 @@ function DocsSection() {
 /* App shell                                                        */
 /* ---------------------------------------------------------------- */
 
-type Tab = "decisions" | "minerva" | "projects" | "kb" | "docs";
+type Tab = "decisions" | "projects" | "kb" | "docs";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "decisions", label: "Decisions" },
-  { id: "minerva", label: "Minerva" },
   { id: "projects", label: "Projects" },
   { id: "kb", label: "KB" },
   { id: "docs", label: "Docs" },
@@ -725,7 +630,6 @@ export function App() {
       <main className="consus__main">
         {error ? <p className="state state--err">Could not load decisions: {error}</p> : null}
         {tab === "decisions" ? <DecisionsSection decisions={decisions} reload={reload} /> : null}
-        {tab === "minerva" ? <MinervaSection decisions={decisions} reload={reload} /> : null}
         {tab === "projects" ? <ProjectsSection /> : null}
         {tab === "kb" ? <KbSection /> : null}
         {tab === "docs" ? <DocsSection /> : null}

@@ -13,7 +13,7 @@ export interface CommentRow {
   author: string;
   body: string;
   created_at: string;
-  multica_comment_id: string | null;
+  external_ref: string | null;
 }
 
 export interface LivingDocView {
@@ -24,10 +24,9 @@ export interface LivingDocView {
 
 /**
  * REQ-10 (P1 stretch): Consus's own rendered overlay, composing references
- * from Multica (via the local comments cache) + .pHive/planning (via the
- * Doc Scanner) + the idea board. An overlay, not a copy of Multica's
- * board/task-state schema — it carries no board/task fields, only
- * references + rendering.
+ * from the local comment thread + .pHive/planning (via the Doc Scanner) +
+ * the idea board. An overlay, not a copy of any external board/task-state
+ * schema — it carries no board/task fields, only references + rendering.
  *
  * SCOPE NOTE (flagged, not silently dropped): the idea board integration
  * point has no confirmed local spec as of this implementation pass — this

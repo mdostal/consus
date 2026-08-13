@@ -4,14 +4,6 @@ import Database from "better-sqlite3";
 import { runMigration } from "../db/migrate.js";
 import { registerDecisionRoutes } from "./decisions.js";
 import { decideItem } from "../kb/store.js";
-import type { MulticaClient } from "../adapters/multica/client.js";
-
-const NOOP_CLIENT: MulticaClient = {
-  writeComment: async () => ({ ok: false, error: "unused" }),
-  listIssues: async () => ({ ok: true, issues: [] }),
-  getIssue: async () => ({ ok: false, error: "unused" }),
-  updateIssueStatus: async () => ({ ok: false, error: "unused" }),
-};
 
 function insertItem(db: Database.Database, id: string, payload: string | null, decided = false) {
   const now = new Date().toISOString();
@@ -42,7 +34,7 @@ describe("GET /api/decisions?all=1", () => {
     db = new Database(":memory:");
     runMigration(db);
     app = Fastify();
-    registerDecisionRoutes(app, { db, client: NOOP_CLIENT });
+    registerDecisionRoutes(app, { db });
     await app.ready();
   });
 
