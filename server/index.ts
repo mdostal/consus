@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { openDb } from "./db/connection.js";
 import { runMigration } from "./db/migrate.js";
 import { registerDocRoutes } from "./routes/docs.js";
+import { registerProjectRoutes } from "./routes/projects.js";
 import { registerKbRoutes } from "./routes/kb.js";
 import { registerArtifactLinkRoutes } from "./routes/artifact-links.js";
 import { registerDecisionRoutes } from "./routes/decisions.js";
@@ -31,6 +32,7 @@ export function buildServer({
   runMigration(db);
 
   registerDocRoutes(app, { db, repos });
+  registerProjectRoutes(app, { db, repos });
   registerKbRoutes(app, { db });
   registerArtifactLinkRoutes(app, { db });
   registerDecisionRoutes(app, { db });
