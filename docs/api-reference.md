@@ -155,6 +155,31 @@ Lists every proposal for an item, most recent first — pending, applied, and fa
 (comma-separated). No transport configured/reachable is not a startup error — a fired proposal
 just resolves to `"failed"` immediately with a clear reason.
 
+## Diagrams (epic/story cascade — s4)
+
+### `GET /api/diagrams?repo=<name>`
+The cascade org-tree for a repo: every epic under its `.pHive/epics/`, each with its stories'
+id/title/complexity and dependency edges (`dependsOn`). Read-only. Reads planning YAML directly
+off disk (no Multica cross-project hierarchy — that's a much larger scope than a single repo's
+own epics, deliberately out of scope here). A repo with no `.pHive/epics/` yet returns
+`{ epics: [] }`, not an error. **404** for an unconfigured repo, **400** without `?repo=`.
+
+**Response 200:**
+```json
+{
+  "repo": "consus",
+  "epics": [
+    {
+      "id": "epic-id",
+      "title": "Epic Title",
+      "stories": [
+        { "id": "story-id", "title": "Story Title", "complexity": "medium", "dependsOn": ["other-story-id"] }
+      ]
+    }
+  ]
+}
+```
+
 ## Artifact Links
 
 ### `POST /api/items/:id/artifact-links`
