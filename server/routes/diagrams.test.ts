@@ -3,7 +3,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Fastify, { type FastifyInstance } from "fastify";
-import { registerDiagramRoutes } from "./diagrams.js";
+import Database from "better-sqlite3";
+import { runMigration } from "../db/migrate.js";
+import { registerDiagramRoutes, diagramItemIdFor } from "./diagrams.js";
 
 const EPIC_A_YAML = `
 name: epic-a
@@ -32,6 +34,7 @@ stories:
 describe("GET /api/diagrams", () => {
   let repoDir: string;
   let app: FastifyInstance;
+  let db: Database.Database;
 
   beforeAll(async () => {
     repoDir = mkdtempSync(join(tmpdir(), "consus-diagram-repo-"));
@@ -40,13 +43,16 @@ describe("GET /api/diagrams", () => {
     writeFileSync(join(repoDir, ".pHive", "epics", "epic-a", "epic.yaml"), EPIC_A_YAML);
     writeFileSync(join(repoDir, ".pHive", "epics", "epic-b", "epic.yaml"), EPIC_B_YAML);
 
+    db = new Database(":memory:");
+    runMigration(db);
     app = Fastify();
-    registerDiagramRoutes(app, { repos: { "test-repo": repoDir } });
+    registerDiagramRoutes(app, { db, repos: { "test-repo": repoDir } });
     await app.ready();
   });
 
   afterAll(async () => {
     await app.close();
+    db.close();
     rmSync(repoDir, { recursive: true, force: true });
   });
 
@@ -83,8 +89,10 @@ describe("GET /api/diagrams", () => {
 
   it("returns an empty epics array (not an error) for a repo with no .pHive/epics yet", async () => {
     const emptyRepo = mkdtempSync(join(tmpdir(), "consus-diagram-empty-"));
+    const emptyDb = new Database(":memory:");
+    runMigration(emptyDb);
     const emptyApp = Fastify();
-    registerDiagramRoutes(emptyApp, { repos: { empty: emptyRepo } });
+    registerDiagramRoutes(emptyApp, { db: emptyDb, repos: { empty: emptyRepo } });
     await emptyApp.ready();
 
     const res = await emptyApp.inject({ method: "GET", url: "/api/diagrams?repo=empty" });
@@ -92,6 +100,25 @@ describe("GET /api/diagrams", () => {
     expect(res.json().epics).toEqual([]);
 
     await emptyApp.close();
+    emptyDb.close();
     rmSync(emptyRepo, { recursive: true, force: true });
+  });
+
+  it("upserts a target item for the diagram so a propose-a-change action always has something to target (s3)", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/diagrams?repo=test-repo" });
+    const body = res.json();
+
+    expect(body.itemId).toBe(diagramItemIdFor("test-repo"));
+    const row = db.prepare("SELECT type, source_repo FROM items WHERE id = ?").get(body.itemId) as {
+      type: string;
+      source_repo: string;
+    };
+    expect(row.type).toBe("diagram");
+    expect(row.source_repo).toBe("test-repo");
+
+    // refetching is idempotent, not a duplicate insert
+    await app.inject({ method: "GET", url: "/api/diagrams?repo=test-repo" });
+    const count = db.prepare("SELECT COUNT(*) AS n FROM items WHERE id = ?").get(body.itemId) as { n: number };
+    expect(count.n).toBe(1);
   });
 });

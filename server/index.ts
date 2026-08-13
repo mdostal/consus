@@ -71,7 +71,7 @@ export function buildServer({
   registerDecisionRoutes(app, { db, client });
   registerInteractionRoutes(app, { db });
   registerProposalRoutes(app, { db, transport });
-  registerDiagramRoutes(app, { repos });
+  registerDiagramRoutes(app, { db, repos });
 
   app.get("/health", async () => {
     const row = db.prepare("SELECT 1 AS ok").get() as { ok: number } | undefined;

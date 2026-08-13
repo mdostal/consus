@@ -1,11 +1,20 @@
 import type { FastifyInstance } from "fastify";
+import type Database from "better-sqlite3";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { load as parseYaml } from "js-yaml";
 
 export interface DiagramRoutesOptions {
+  db: Database.Database;
   /** repo name -> absolute path on disk (same registry docs/kb routes use) */
   repos: Record<string, string>;
+}
+
+/** The item id a diagram's propose-a-change proposals target (s4). One
+ *  synthetic item per repo's diagram, not per epic/story node — "step one"
+ *  per the operator's own scoping. */
+export function diagramItemIdFor(repo: string): string {
+  return `diagram:${repo}`;
 }
 
 interface DiagramStory {
@@ -68,7 +77,7 @@ function readEpic(epicYamlPath: string): DiagramEpic | null {
  * in this story; s4-diagram-viewer-and-propose-ui adds the propose-a-change
  * action via s3's dispatch mechanism.
  */
-export function registerDiagramRoutes(app: FastifyInstance, { repos }: DiagramRoutesOptions): void {
+export function registerDiagramRoutes(app: FastifyInstance, { db, repos }: DiagramRoutesOptions): void {
   app.get<{ Querystring: { repo?: string } }>("/api/diagrams", async (request, reply) => {
     const { repo } = request.query;
     if (!repo) {
@@ -79,6 +88,17 @@ export function registerDiagramRoutes(app: FastifyInstance, { repos }: DiagramRo
       return reply.code(404).send({ error: `unknown repo: ${repo}` });
     }
 
+    // Ensure a target item exists for this repo's diagram before the caller
+    // can propose a change to it (s3's proposeChange requires a real item
+    // row) — upserted on every fetch so it's always ready by view time.
+    const itemId = diagramItemIdFor(repo);
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO items (id, type, title, status, source_repo, created_at, updated_at)
+       VALUES (?, 'diagram', ?, 'active', ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
+    ).run(itemId, `${repo} diagram`, repo, now, now);
+
     const epicsDir = join(repoPath, ".pHive", "epics");
     let epicDirs: string[];
     try {
@@ -86,7 +106,7 @@ export function registerDiagramRoutes(app: FastifyInstance, { repos }: DiagramRo
         .filter((e) => e.isDirectory())
         .map((e) => e.name);
     } catch {
-      return { repo, epics: [] }; // no .pHive/epics yet — not an error
+      return { repo, itemId, epics: [] }; // no .pHive/epics yet — not an error
     }
 
     const epics = epicDirs
@@ -94,6 +114,6 @@ export function registerDiagramRoutes(app: FastifyInstance, { repos }: DiagramRo
       .filter((e): e is DiagramEpic => e !== null)
       .sort((a, b) => a.id.localeCompare(b.id));
 
-    return { repo, epics };
+    return { repo, itemId, epics };
   });
 }

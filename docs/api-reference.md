@@ -164,10 +164,15 @@ off disk (no Multica cross-project hierarchy — that's a much larger scope than
 own epics, deliberately out of scope here). A repo with no `.pHive/epics/` yet returns
 `{ epics: [] }`, not an error. **404** for an unconfigured repo, **400** without `?repo=`.
 
+Every fetch upserts a target item (`itemId`, e.g. `diagram:consus`) so the diagram always has
+something to target a `POST /api/proposals` change proposal against (s4's "propose a change"
+action, wired through s3). One item per repo's diagram, not per epic/story node.
+
 **Response 200:**
 ```json
 {
   "repo": "consus",
+  "itemId": "diagram:consus",
   "epics": [
     {
       "id": "epic-id",

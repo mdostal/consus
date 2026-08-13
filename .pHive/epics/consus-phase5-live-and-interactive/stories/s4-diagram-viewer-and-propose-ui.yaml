@@ -1,7 +1,7 @@
 id: s4-diagram-viewer-and-propose-ui
 epic: consus-phase5-live-and-interactive
 title: "Diagram viewer tab + propose-a-change action"
-status: pending
+status: complete
 complexity: high
 methodology: bdd
 depends_on: [s4-diagram-route, s3-propose-dispatch-mechanism]
@@ -91,3 +91,16 @@ metric:
     ref: "SELECT count(*) FROM proposals WHERE target_type='diagram'"
   verify_at: integrate
   owner: developer
+
+implementation_notes: |
+  Propose-a-change targets one synthetic item per repo's diagram
+  (diagram:<repo>, auto-upserted by GET /api/diagrams — see s4-diagram-route's
+  updated implementation), not per epic/story node — coarser granularity
+  than the original story text implied, chosen because per-node items don't
+  exist yet and inventing them was out of scope for "step one." Rendered as
+  a nested list (epic -> stories -> dependsOn), not a graphical DAG — matches
+  architecture.md's explicit deferral of a diagram engine. Wired into
+  App.tsx's ProjectsSection (new ProjectDiagram component) alongside the
+  existing KB ProjectView. Live-verified end-to-end through the real
+  server: fetch diagram -> itemId -> fire proposal -> resolves (as
+  expected, no Minerva binary in this environment).

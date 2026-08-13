@@ -5,6 +5,7 @@ import { CommentThread, type Comment } from "./features/comments/CommentThread";
 import { QAQueue, type QueuedQuestion } from "./features/minerva/QAQueue";
 import { GlobalView, type KbEntrySummary } from "./features/projects/GlobalView";
 import { ProjectView } from "./features/projects/ProjectView";
+import { DiagramView, type DiagramEpic } from "./features/projects/DiagramView";
 import { BacklogBrowser, type BacklogEntry, type KbCollection } from "./features/kb/BacklogBrowser";
 import { DocBrowser, type GroupedDocs } from "./features/docs/DocBrowser";
 import { DocRenderer } from "./features/docs/DocRenderer";
@@ -326,15 +327,70 @@ function ProjectsSection() {
           {project === null ? (
             <GlobalView entries={entries} onSelect={() => {}} />
           ) : (
-            <ProjectView
-              project={project}
-              entries={entries.filter((e) => (e.source_repo ?? "unassigned") === project)}
-              onSelect={() => {}}
-            />
+            <>
+              <ProjectView
+                project={project}
+                entries={entries.filter((e) => (e.source_repo ?? "unassigned") === project)}
+                onSelect={() => {}}
+              />
+              <ProjectDiagram repo={project} />
+            </>
           )}
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * s4: fetches a repo's epic/story diagram and wires the propose-a-change
+ * action through POST /api/proposals (s3) — fire, then poll once for a
+ * result so "pending" doesn't hang silently forever in the UI.
+ */
+function ProjectDiagram({ repo }: { repo: string }) {
+  const [data, setData] = useState<{ itemId: string; epics: DiagramEpic[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingProposalId, setPendingProposalId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setData(null);
+    fetch(`/api/diagrams?repo=${encodeURIComponent(repo)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(setData)
+      .catch((e) => setError(e.message));
+  }, [repo]);
+
+  const proposeChange = useCallback(
+    ({ diff, description }: { diff: string; description: string }) => {
+      if (!data) return;
+      fetch("/api/proposals", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          itemId: data.itemId,
+          targetType: "diagram",
+          diff,
+          description,
+          requestedBy: "Mathew",
+        }),
+      })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .then((proposal) => setPendingProposalId(proposal.status === "pending" ? proposal.id : null))
+        .catch((e) => setError(e.message));
+    },
+    [data],
+  );
+
+  if (error) return <p className="state state--err">Could not load the diagram: {error}</p>;
+  if (!data) return <p className="state">Loading diagram…</p>;
+
+  return (
+    <DiagramView
+      repo={repo}
+      epics={data.epics}
+      pendingProposal={pendingProposalId !== null}
+      onProposeChange={proposeChange}
+    />
   );
 }
 
