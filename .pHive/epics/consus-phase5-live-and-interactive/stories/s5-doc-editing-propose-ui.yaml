@@ -1,7 +1,9 @@
 id: s5-doc-editing-propose-ui
 epic: consus-phase5-live-and-interactive
 title: "Doc editing propose-a-change mode in DocRenderer"
-status: complete
+status: shipped
+shipped_at: "2026-08-13T14:00:00Z"
+release_id: "v0.4.0"
 complexity: medium
 methodology: bdd
 depends_on: [s3-propose-dispatch-mechanism]

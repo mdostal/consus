@@ -1,7 +1,9 @@
 id: s2-kb01-collection-schema-port
 epic: consus-phase5-live-and-interactive
 title: "Re-implement KB-01 collection schema + API against current kb/store.ts"
-status: complete
+status: shipped
+shipped_at: "2026-08-13T14:00:00Z"
+release_id: "v0.4.0"
 complexity: medium
 methodology: tdd
 depends_on: [s1-multica-live-ingest]

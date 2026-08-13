@@ -1,7 +1,9 @@
 id: s3-propose-dispatch-mechanism
 epic: consus-phase5-live-and-interactive
 title: "Propose-a-change-and-fire-to-harness mechanism (via Minerva adapter)"
-status: complete
+status: shipped
+shipped_at: "2026-08-13T14:00:00Z"
+release_id: "v0.4.0"
 complexity: high
 methodology: tdd
 depends_on: [s1-multica-live-ingest]

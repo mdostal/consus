@@ -1,7 +1,9 @@
 id: s4-diagram-route
 epic: consus-phase5-live-and-interactive
 title: "GET /api/diagrams (cascade org-tree, per-repo)"
-status: complete
+status: shipped
+shipped_at: "2026-08-13T14:00:00Z"
+release_id: "v0.4.0"
 complexity: medium
 methodology: tdd
 depends_on: [s1-multica-live-ingest]

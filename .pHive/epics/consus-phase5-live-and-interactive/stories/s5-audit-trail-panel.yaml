@@ -1,7 +1,9 @@
 id: s5-audit-trail-panel
 epic: consus-phase5-live-and-interactive
 title: "Per-item audit trail panel (audit_log + fired/pending/applied proposals)"
-status: complete
+status: shipped
+shipped_at: "2026-08-13T14:00:00Z"
+release_id: "v0.4.0"
 complexity: medium
 methodology: bdd
 depends_on: [s3-propose-dispatch-mechanism, s4-diagram-viewer-and-propose-ui, s5-doc-editing-propose-ui]

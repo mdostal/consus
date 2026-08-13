@@ -1,7 +1,9 @@
 id: s0-preserve-historical-data
 epic: consus-phase5-live-and-interactive
 title: "Copy ~/.multica/delphi-*.jsonl off hive to durable storage"
-status: complete
+status: shipped
+shipped_at: "2026-08-13T14:00:00Z"
+release_id: "v0.4.0"
 complexity: low
 methodology: classic
 depends_on: []

@@ -1,7 +1,9 @@
 id: s4-diagram-viewer-and-propose-ui
 epic: consus-phase5-live-and-interactive
 title: "Diagram viewer tab + propose-a-change action"
-status: complete
+status: shipped
+shipped_at: "2026-08-13T14:00:00Z"
+release_id: "v0.4.0"
 complexity: high
 methodology: bdd
 depends_on: [s4-diagram-route, s3-propose-dispatch-mechanism]

@@ -1,7 +1,9 @@
 id: s1-multica-live-ingest
 epic: consus-phase5-live-and-interactive
 title: "Wire GET /api/decisions to live Multica, classified into decision-request/v1"
-status: complete
+status: shipped
+shipped_at: "2026-08-13T14:00:00Z"
+release_id: "v0.4.0"
 complexity: high
 methodology: tdd
 depends_on: []
