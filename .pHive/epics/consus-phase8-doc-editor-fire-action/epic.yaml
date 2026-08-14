@@ -1,0 +1,14 @@
+name: consus-phase8-doc-editor-fire-action
+title: In-place doc edit/view toggle with auto-computed diff and fire action
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: bdd
+stories:
+  - id: p8-01-inplace-edit-toggle
+    title: In-place edit/view toggle for doc content
+    complexity: medium
+    depends_on: []
+  - id: p8-02-autodiff-fire-action
+    title: Auto-computed diff and fire action wired to existing proposals endpoint
+    complexity: medium
+    depends_on:
+      - p8-01-inplace-edit-toggle

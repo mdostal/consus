@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { marked } from "marked";
 import { AuditPanel, type AuditTrailEntry } from "../audit/AuditPanel";
 import "../../theme/tokens.css";
@@ -30,6 +30,14 @@ export interface DocRendererProps {
  * dispatch mechanism. Consus never writes to the doc's source directly;
  * the `content` prop is only ever set by the caller re-fetching after a
  * harness reports an applied result.
+ *
+ * p8-01: an in-place view/edit toggle. An Edit button (shown once content
+ * has loaded, in view mode) swaps the rendered content for a textarea
+ * seeded with the current content; Cancel discards the in-progress edit
+ * and reverts to view mode. This is UI-only — no draft persistence, no
+ * diff computation, no submit action yet (wired in the follow-up story,
+ * p8-02). Whenever `content` changes (a different doc opened), edit state
+ * resets to view mode so a stale in-progress edit never leaks across docs.
  */
 export function DocRenderer({
   format,
@@ -47,12 +55,28 @@ export function DocRenderer({
   const [diff, setDiff] = useState("");
   const [description, setDescription] = useState("");
 
+  const [mode, setMode] = useState<"view" | "edit">("view");
+  const [draft, setDraft] = useState(content);
+
+  // p8-01: a different doc opening (content prop changing) always discards
+  // any in-progress edit and returns to view mode — no draft survives a
+  // navigation.
+  useEffect(() => {
+    setMode("view");
+    setDraft(content);
+  }, [content]);
+
   const submit = () => {
     if (!diff.trim() || !description.trim() || !onProposeChange) return;
     onProposeChange({ diff: diff.trim(), description: description.trim() });
     setDiff("");
     setDescription("");
     setComposing(false);
+  };
+
+  const cancelEdit = () => {
+    setDraft(content);
+    setMode("view");
   };
 
   return (
@@ -90,7 +114,32 @@ export function DocRenderer({
         </div>
       ) : null}
 
-      <div data-testid="doc-html" className="doc-renderer" dangerouslySetInnerHTML={{ __html: html }} />
+      {content && mode === "view" ? (
+        <div className="doc-renderer__edit-header">
+          <button type="button" onClick={() => setMode("edit")}>
+            Edit
+          </button>
+        </div>
+      ) : null}
+
+      {mode === "edit" ? (
+        <div className="doc-renderer__edit-form">
+          <textarea
+            data-testid="doc-edit-textarea"
+            aria-label="Edit doc content"
+            className="doc-renderer__edit-textarea"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+          <div className="doc-renderer__edit-actions">
+            <button type="button" onClick={cancelEdit}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div data-testid="doc-html" className="doc-renderer" dangerouslySetInnerHTML={{ __html: html }} />
+      )}
 
       {auditEntries ? (
         <div className="doc-renderer__history">
