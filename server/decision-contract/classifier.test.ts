@@ -74,6 +74,56 @@ describe("Decision-type + triage classifier", () => {
     expect(result.triageBucket).toBe("noise");
   });
 
+  it("routes a heuristic-tier decision_payload with a non-default decisionType to 'agent_task', not 'open_question'", () => {
+    insertItem(db, "item-heuristic-tier", {
+      decisionPayload: JSON.stringify({
+        version: "dostal:decision-request/v1",
+        title: "Choose an option",
+        context: "ctx",
+        options: OPTIONS,
+        recommended: "A",
+        extractionTier: "heuristic",
+      }),
+    });
+
+    const result = classifyItem(db, "item-heuristic-tier");
+    expect(result.decisionType).toBe("choose");
+    expect(result.triageBucket).toBe("agent_task");
+  });
+
+  it("still routes a structured (tier-1) decision_payload with a non-default decisionType to 'open_question'", () => {
+    insertItem(db, "item-structured-tier", {
+      decisionPayload: JSON.stringify({
+        version: "dostal:decision-request/v1",
+        title: "Choose an option",
+        context: "ctx",
+        options: OPTIONS,
+        recommended: "A",
+      }),
+    });
+
+    const result = classifyItem(db, "item-structured-tier");
+    expect(result.decisionType).toBe("choose");
+    expect(result.triageBucket).toBe("open_question");
+  });
+
+  it("a human-authored override wins regardless of extractionTier", () => {
+    insertItem(db, "item-override-heuristic", {
+      decisionPayload: JSON.stringify({
+        version: "dostal:decision-request/v1",
+        title: "Choose an option",
+        context: "ctx",
+        options: OPTIONS,
+        recommended: "A",
+        extractionTier: "heuristic",
+      }),
+    });
+    setTriageOverride(db, { itemId: "item-override-heuristic", bucket: "noise", author: "mathew" });
+
+    const result = classifyItem(db, "item-override-heuristic");
+    expect(result.triageBucket).toBe("noise");
+  });
+
   describe("REQ-22: legacy heuristic fallback (no decision_payload)", () => {
     it("classifies a CBA-shaped title as decision-type 'cba'", () => {
       insertItem(db, "item-cba", { title: "CBA: microservices vs. monolith trade-off" });
