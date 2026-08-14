@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import Database from "better-sqlite3";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { runMigration } from "../db/migrate.js";
 import { decideItem, getAuditLog, createKbEntry, getKbVersions, saveKbDraft, getKbDraftVersions } from "./store.js";
 
@@ -225,5 +228,11 @@ describe("KB Store — decide API", () => {
     expect(drafts).toHaveLength(1);
     expect(drafts[0].content).toBe(longContent);
     expect(drafts[0].content.length).toBe(50_003);
+  });
+
+  it("never imports from ./pipeline — the submit path (pipeline.ts) is only permitted to import FROM store.ts, never the reverse", () => {
+    const storeDir = dirname(fileURLToPath(import.meta.url));
+    const storeSource = readFileSync(join(storeDir, "store.ts"), "utf8");
+    expect(storeSource).not.toMatch(/from ["']\.\/pipeline(\.js|\.ts)?["']/);
   });
 });

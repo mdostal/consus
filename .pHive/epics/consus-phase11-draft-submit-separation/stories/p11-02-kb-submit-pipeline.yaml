@@ -1,0 +1,107 @@
+id: p11-02-kb-submit-pipeline
+epic: consus-phase11-draft-submit-separation
+title: Isolated submit pipeline that promotes a draft to published
+status: pending
+complexity: medium
+methodology: tdd
+depends_on:
+  - p11-01-kb-draft-storage
+
+description: |
+  With p11-01's saveKbDraft() in place, a draft can be persisted but nothing
+  can promote it to published. This story adds the "submit" half of REQ-17:
+  a new server/kb/pipeline.ts module exporting triggerApprovalPipeline(),
+  which looks up a specific draft kb_versions row and publishes its content
+  by calling the existing, unmodified createKbEntry() — i.e. submit reuses
+  the same publish logic every other write already goes through, rather than
+  a bespoke promotion routine.
+
+  Ported from archive/dev-2026-08-11-pantheon-coupled:server/kb/pipeline.ts,
+  which is confirmed free of Minerva/Multica coupling (grepped clean for
+  "minerva|multica"). The archived version's phases: { approve: true,
+  phaseSplit: true, kb: true } result shape is preserved as-is — approve and
+  phase-split have no separate systems to call into in this codebase either,
+  so (per the archived module's own comment) they're recorded as fired
+  no-op flags for downstream consumers to attach to later, not implemented
+  as real steps.
+
+  Isolation between save and submit is structural, not a literal
+  parsed-import test — I looked for the "never imports" test this task
+  anticipated finding in the archive and it does not exist in that form.
+  What actually enforces isolation there (and must be preserved here): the
+  import direction is one-way (pipeline.ts imports from store.ts; store.ts
+  has zero reference to pipeline.ts), and the two write paths
+  (saveKbDraft/getKbDraftVersions vs. triggerApprovalPipeline) never call
+  each other. This story's test suite proves it behaviorally, the same way
+  the archived pipeline.test.ts did: saving a draft never changes
+  current_version_id, and submitting leaves the original draft row's state
+  and content untouched (append-only) after promotion.
+
+acceptance_criteria:
+  - "Given a kb_entry with a published version and a saved draft version, when triggerApprovalPipeline() is called with that draft's versionId, then a NEW kb_versions row is created with state='published' and the draft's exact content, and kb_entries.current_version_id is repointed to that new row."
+  - "Given a submit has just occurred, when the original draft's kb_versions row is read back, then its state is still 'draft' and its content is unchanged — the draft row itself is never mutated or deleted (append-only, matching every other write in this store)."
+  - "Given triggerApprovalPipeline() is called for a kb_entry id that does not exist, when the call is made, then it throws an Error matching /kb_entry not found/, mirroring decideItem()'s existing not-found error convention in this same file's style."
+  - "Given triggerApprovalPipeline() is called with a versionId that doesn't exist or belongs to a different kb_entry, when the call is made, then it throws an Error matching /kb_version not found/."
+  - "Given the result of a successful triggerApprovalPipeline() call, when inspected, then it includes { entryId, publishedVersionId, phases: { approve: true, phaseSplit: true, kb: true }, triggeredAt }."
+  - "Given server/kb/store.ts's own source, when grepped for an import of ./pipeline.js (or pipeline.ts), then there is no match — store.ts (the save/draft path) has zero dependency on pipeline.ts (the submit path); only pipeline.ts is allowed to import from store.ts."
+
+steps:
+  - id: create-pipeline-module
+    description: |
+      Create server/kb/pipeline.ts exporting SubmitPipelineInput { id,
+      versionId, actor }, SubmitPipelineResult { entryId, publishedVersionId,
+      phases: { approve, phaseSplit, kb }, triggeredAt }, and
+      triggerApprovalPipeline(db, input): looks up the kb_entry (title,
+      source_repo) and the specific kb_versions row (by id AND
+      kb_entry_id, to catch mismatched ids), throws on either missing, then
+      calls createKbEntry() from ./store.js with the draft's content,
+      author=actor, and the entry's existing title/sourceRepo, and returns
+      the result shape above by re-reading kb_entries.current_version_id
+      after the call.
+    agent: developer
+  - id: write-isolation-and-behavior-tests
+    description: |
+      Add server/kb/pipeline.test.ts (new file, following the archived
+      version's structure) covering: promotes draft to published and
+      repoints current_version_id; leaves the original draft row untouched
+      (append-only) after submit; throws for unknown kb_entry; throws for
+      unknown/mismatched versionId. Also add one test (in store.test.ts or a
+      small architecture-check test) that greps server/kb/store.ts's source
+      for any import referencing pipeline — asserting it's absent — so the
+      one-way import direction is a checked invariant, not just an
+      unverified comment.
+    agent: tester
+
+context:
+  key_files:
+    - path: server/kb/store.ts
+      purpose: Owns saveKbDraft/getKbDraftVersions/createKbEntry (from p11-01); pipeline.ts is only permitted to import FROM this file, never the reverse.
+    - path: server/kb/pipeline.ts
+      purpose: New file this story creates — the only place triggerApprovalPipeline / the submit side of REQ-17 lives.
+  reference:
+    - path: "archive/dev-2026-08-11-pantheon-coupled:server/kb/pipeline.ts"
+      purpose: Source of the triggerApprovalPipeline shape being ported almost verbatim; confirmed free of Minerva/Multica coupling.
+    - path: "archive/dev-2026-08-11-pantheon-coupled:server/kb/pipeline.test.ts"
+      purpose: Source of the four behavioral test cases (promote, append-only draft, unknown entry, unknown version) being ported.
+
+files_to_modify:
+  - file: server/kb/pipeline.ts
+    change: New file — triggerApprovalPipeline() and its input/result types.
+  - file: server/kb/pipeline.test.ts
+    change: New file — behavioral tests ported from the archived reference.
+
+design_decisions:
+  - decision: Submit is implemented by calling the existing createKbEntry(), not a separate promotion function.
+    rationale: Keeps exactly one code path that ever repoints current_version_id or writes a published kb_versions row, so publish behavior (conflict handling, versioning) can't drift between the "immediate publish" and "submit a draft" callers.
+  - decision: approve/phaseSplit phases are recorded as fired flags with no real system behind them, matching the archive.
+    rationale: Consus has no separate approval or phase-split system to call into today (same reasoning the archived module's own comment gives); recording them as flags gives downstream consumers (e.g. a future audit_log write-back) a stable shape to attach to without inventing fake behavior now.
+  - decision: Isolation is enforced by import direction and a grep-based check, not a runtime guard.
+    rationale: TypeScript/ES module import graphs are static; a test that fails if store.ts ever gains an import of pipeline.ts is a real, cheap, always-correct proof of the isolation property — no mocking or runtime instrumentation needed.
+
+risks:
+  - severity: medium
+    description: If a future change adds a convenience function to store.ts that internally calls into pipeline.ts (e.g. "save and auto-submit"), it would silently break the isolation property this story establishes.
+    mitigation: The grep-based isolation test in this story's acceptance criteria fails immediately if that import is ever added, making the violation loud rather than silent.
+  - severity: low
+    description: triggerApprovalPipeline() re-reads current_version_id after calling createKbEntry() rather than using its return value directly, an extra query.
+    mitigation: Negligible cost at current scale (single SQLite row lookup); matches the archived implementation's own approach.
