@@ -1,0 +1,210 @@
+id: sectional-edit-state
+epic: consus-phase12-sectional-diff-view
+title: Split doc edit/fire flow into independent per-section state
+status: pending
+complexity: medium
+methodology: bdd
+depends_on: []
+
+description: |
+  REQ-18 ("Sectional Review with Non-Destructive Diff", .pHive/planning/roadmap.md
+  Phase 5) asks for a sectional, non-destructive diff view. The full archived vision
+  (archive/dev-2026-08-11-pantheon-coupled: consus-editable-artifact-doc epic) reconciles
+  durable human drafts against independently-regenerated agent versions per section —
+  that depends on draft persistence (REQ-17) that doesn't exist on mainline and is out
+  of scope tonight. This story delivers the smaller, real slice that stands on its own:
+  split a doc into sections at markdown heading boundaries (h1-h3), and give each
+  section fully independent edit/diff/fire state in DocRenderer.tsx, so that editing
+  and firing one section can never discard, clobber, or block another section's
+  in-progress edit. This is "non-destructive" in the section-isolation sense — not
+  cross-author (human vs. agent) reconciliation, which remains future work.
+
+  Today, DocRenderer.tsx (touched by tonight's consus-phase8 epic) has exactly one
+  mode/draft/description for the whole document: Edit swaps the entire rendered doc
+  for one textarea; Fire to harness runs textDiff.ts's computeLineDiff over the whole
+  document and calls onProposeChange({ diff, description }) once, hitting the existing
+  POST /api/proposals endpoint. This story replaces the single mode/draft/description
+  trio with an array of per-section state of the same shape, reusing computeLineDiff
+  and the onProposeChange contract unchanged — no backend change.
+
+acceptance_criteria:
+  - given: A markdown doc with three h2 sections is open in DocRenderer, in view mode.
+    when: The doc renders.
+    then: Each of the three sections shows its own independent Edit control (not one
+      whole-document Edit button), and the rendered content is otherwise unchanged
+      (same marked.parse output as today).
+
+  - given: A doc with no markdown headings at all is open in DocRenderer.
+    when: The doc renders.
+    then: The whole document is treated as a single section and behaves exactly as
+      DocRenderer does today (one Edit control, one textarea, one Fire to harness) —
+      no regression for heading-less docs.
+
+  - given: A three-section doc where the user has clicked Edit on section 1 and typed
+      an unsaved change, and separately clicked Edit on section 3 and typed a different
+      unsaved change.
+    when: The user clicks "Fire to harness" on section 1 (with a description filled in).
+    then: A single POST /api/proposals fires containing only section 1's diff
+      (computeLineDiff between section 1's original and edited text) and section 1
+      returns to view mode; section 3's in-progress edit (draft text and description)
+      is completely untouched — still present, still in edit mode, not submitted,
+      not discarded.
+
+  - given: A three-section doc where section 2 is mid-edit (unsaved draft).
+    when: The user clicks Cancel on section 2.
+    then: Only section 2 reverts to view mode with its draft discarded; sections 1 and
+      3 (whatever state they were in) are unaffected.
+
+  - given: The doc's `content` prop changes (the user navigates to open a different doc).
+    when: DocRenderer re-renders with new content.
+    then: All sections' edit state resets — no section retains an in-progress edit
+      across a doc navigation (matches today's whole-doc behavior in the existing
+      useEffect keyed on `content`).
+
+  - given: A doc is open in read-only mode (no onProposeChange prop supplied, matching
+      the DocBrowser global-docs read-only usage in App.tsx).
+    when: The doc renders.
+    then: No Edit controls appear on any section, same as today's whole-doc read-only
+      behavior.
+
+  - given: A section's Fire to harness is clicked with no changes made to that section's
+      draft, or with the description field empty.
+    when: The click happens.
+    then: No proposal is submitted for that section (same disabled/no-op guard as
+      today's whole-doc `hasChanges && description.trim()` check, applied per-section).
+
+steps:
+  - id: step-1
+    description: Add web/src/features/docs/sections.ts exporting splitIntoSections(content),
+      a direct port of the archived heading-boundary splitter
+      (content.split(/(?=^#{1,3} )/m), filtered for non-empty parts, falling back to
+      [content] when there are no headings). Pure function, no React, no dependencies
+      beyond the standard library — mirrors textDiff.ts's existing style (see its
+      module docstring for the project's convention of a small dependency-free utility
+      with a comment explaining its scope).
+    agent: developer
+
+  - id: step-2
+    description: Add a colocated test file (sections.test.ts) covering split at h1/h2/h3
+      boundaries, a heading-less doc collapsing to one section, and a doc where a
+      heading-like line appears inside a fenced code block (document the known
+      limitation from the design discussion — the naive regex will over-split this
+      case; assert the current, honest behavior rather than papering over it).
+    agent: developer
+
+  - id: step-3
+    description: Rewrite DocRenderer.tsx's state from single mode/draft/description to
+      an array of per-section state (one entry per splitIntoSections(content) result,
+      each holding its own mode/draft/description), replacing the single-textarea
+      edit form with one edit form per section. Keep the existing content-change
+      useEffect (resets all section state on doc navigation), the existing view-mode
+      marked.parse rendering (unchanged, still driven by the full joined content string),
+      and the existing pendingProposal/proposalFailureReason header pills (unaffected
+      by this story, same as consus-phase8 left them for the whole-doc case).
+    agent: developer
+
+  - id: step-4
+    description: Rewire fire() and cancelEdit() to operate on a single section's index —
+      fire computes computeLineDiff(originalSection, editedSection) and calls the
+      existing onProposeChange({ diff, description }) prop unchanged, then resets only
+      that section's state to view mode; cancelEdit resets only that section's draft/
+      description/mode. Neither function may touch any other section's state.
+    agent: developer
+
+  - id: step-5
+    description: Update DocRenderer.test.tsx for the new per-section DOM shape — existing
+      singular-selector assertions (getByTestId("doc-edit-textarea"), single Edit
+      button queries, etc.) need to become per-section (e.g. getAllByTestId, indexed
+      test ids like doc-edit-textarea-0). Add new tests directly covering the
+      acceptance criteria above: independent fire of one section leaving another
+      section's draft intact, independent cancel, heading-less single-section
+      fallback, and read-only mode showing no Edit controls on any section.
+    agent: developer
+
+context:
+  key_files:
+    - path: web/src/features/docs/DocRenderer.tsx
+      purpose: The component this story modifies. Currently holds one mode/draft/
+        description trio for the whole document; this story replaces that with a
+        per-section array of the same shape. The onProposeChange prop contract,
+        pendingProposal/proposalFailureReason pills, and view-mode marked.parse
+        rendering are all reused unchanged.
+    - path: web/src/features/docs/textDiff.ts
+      purpose: computeLineDiff(original, edited) — the existing whole-string LCS line
+        diff. Reused unchanged, called once per section-fire instead of once per
+        whole-doc-fire. Its docstring already establishes the project convention this
+        story's new sections.ts follows (small, dependency-free, scoped utility).
+    - path: web/src/features/docs/DocRenderer.test.tsx
+      purpose: Existing test suite (208 lines) with assertions written against the
+        current single-mode structure; needs updates for the new per-section DOM shape
+        plus new tests for section-isolation behavior.
+    - path: server/routes/proposals.ts
+      purpose: The existing POST /api/proposals endpoint — unchanged by this story.
+        Confirmed it treats `diff` as an opaque string with no format validation, so
+        per-section diffs need no special handling on the backend.
+    - path: web/src/App.tsx
+      purpose: Wires DocRenderer in two places — one read-only (DocBrowser global docs
+        tab, no onProposeChange) and one full propose-change flow (per-project docs
+        tab). Both call sites are unchanged by this story since the onProposeChange
+        prop contract is preserved; confirms the read-only acceptance criterion's
+        real-world usage.
+  reference:
+    - archive/dev-2026-08-11-pantheon-coupled: web/src/utils/sections.ts (source for
+        the heading-split regex ported in step-1) and
+        web/src/features/docs/SectionDiff.tsx (the larger, out-of-scope-for-this-story
+        human-vs-agent reconciliation UI referenced in the design discussion's
+        descoping section — do not port this file; it assumes durable draft
+        persistence (REQ-17) that doesn't exist on mainline).
+
+files_to_modify:
+  - web/src/features/docs/sections.ts (new)
+  - web/src/features/docs/sections.test.ts (new)
+  - web/src/features/docs/DocRenderer.tsx
+  - web/src/features/docs/DocRenderer.test.tsx
+
+design_decisions:
+  - decision: Split at h1-h3 headings only (not h4-h6), matching the archived
+      splitIntoSections exactly rather than inventing a different granularity.
+    rationale: This is the one piece of concrete prior art for what "sectional" means
+      for this codebase; deviating without a stated reason would be inventing
+      precision the source material doesn't actually specify beyond h1-h3.
+  - decision: No cross-section batch actions (e.g. "fire all changed sections") in
+      this pass — strictly independent per-section firing only.
+    rationale: Keeps the story's surface area matched to what's achievable in one
+      session; batching is an additive follow-up if wanted, not a blocker to shipping
+      the isolation guarantee itself.
+  - decision: Reuse computeLineDiff and the onProposeChange({ diff, description })
+      contract verbatim, called once per section-fire, rather than inventing a new
+      diff shape or batching diffs into one call.
+    rationale: Matches the story's constraint that /api/proposals stays the fire
+      target unchanged, and keeps the backend genuinely untouched.
+  - decision: Do not port SectionDiff.tsx's word-level accept/send-back-against-
+      agent-output UI from the archive.
+    rationale: That UI assumes a second, independently-authored (agent-regenerated)
+      version to diff against, which requires durable draft persistence (REQ-17) that
+      doesn't exist on mainline. Porting it now would build UI with no real second
+      version to reconcile against.
+
+risks:
+  - severity: medium
+    description: DocRenderer.test.tsx has several assertions against singular
+      testids/roles (one textarea, one Edit button) that will break once the DOM
+      becomes per-section; this is a known, scoped-for cost (step-5), not a surprise,
+      but it's real rewrite work across the existing suite, not purely additive.
+    mitigation: Step-5 explicitly budgets for updating existing assertions to
+      getAllByTestId/indexed selectors alongside adding new section-isolation tests.
+  - severity: low
+    description: The heading-boundary regex will over-split on a heading-like line
+      inside a fenced code block (e.g. a doc showing example markdown that contains
+      "# foo" inside a ``` block). This is an inherited limitation from the archived
+      reference implementation, not introduced by this story.
+    mitigation: Documented as a known limitation in sections.ts's docstring and
+      covered by an explicit (not hidden) test case per step-2; not a blocker for
+      this story's scope, since real .pHive/ docs rarely embed heading-shaped text in
+      code fences.
+  - severity: low
+    description: More visual surface (N sets of Edit/Fire controls instead of one) may
+      look cluttered on docs with many short sections.
+    mitigation: Out of scope for this story to solve with new styling/collapse
+      affordances; flagged in the epic's design discussion as a follow-up if it
+      proves to be a real problem in practice, not pre-solved speculatively here.
