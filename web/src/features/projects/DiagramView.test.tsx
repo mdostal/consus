@@ -4,8 +4,18 @@ import { DiagramView } from "./DiagramView";
 
 const { initializeMock, renderMock } = vi.hoisted(() => ({
   initializeMock: vi.fn(),
+  // Mimics real Mermaid's DOM conventions closely enough to exercise the
+  // node-click wiring in jsdom: node ids are *wrapped* (e.g.
+  // "flowchart-n_story_s1-0"), not equal to the sanitized id passed into
+  // render() — plus a non-node element (an edge) to prove clicks outside a
+  // node are inert.
   renderMock: vi.fn(async (_id: string, source: string) => ({
-    svg: `<svg data-testid="rendered-svg"><text>${source}</text></svg>`,
+    svg: `<svg data-testid="rendered-svg"><text>${source}</text>
+      <g class="node" id="flowchart-n_story_s1-0"><rect /><text>Story One (low)</text></g>
+      <g class="node" id="flowchart-n_story_s2-1"><rect /><text>Story Two (medium)</text></g>
+      <g class="cluster" id="flowchart-n_epic_epic_a-2"><rect /><text>Epic A</text></g>
+      <path class="edge" data-testid="diagram-edge"></path>
+    </svg>`,
     bindFunctions: vi.fn(),
   })),
 }));
@@ -113,5 +123,107 @@ describe("DiagramView", () => {
     render(<DiagramView repo="consus" epics={EPICS} pendingProposal onProposeChange={vi.fn()} />);
 
     expect(screen.getByText(/change proposed/i)).toBeInTheDocument();
+  });
+
+  describe("clicking a rendered node", () => {
+    it("shows that story's id, title, complexity, and dependsOn in a detail panel", async () => {
+      render(<DiagramView repo="consus" epics={EPICS} onProposeChange={vi.fn()} />);
+
+      const graph = await screen.findByTestId("diagram-view-graph");
+      await waitFor(() => expect(graph.querySelector("#flowchart-n_story_s2-1")).not.toBeNull());
+      expect(screen.queryByTestId("diagram-view-detail")).not.toBeInTheDocument();
+
+      fireEvent.click(graph.querySelector("#flowchart-n_story_s2-1")!);
+
+      const detail = await screen.findByTestId("diagram-view-detail");
+      expect(detail).toHaveTextContent("Story Two");
+      expect(detail).toHaveTextContent("s2");
+      expect(detail).toHaveTextContent("medium");
+      // dependsOn resolved to the depended-on story's title, not just its raw id
+      expect(detail).toHaveTextContent("Story One");
+    });
+
+    it("updates the panel when a different node is clicked, instead of stacking or leaving stale detail", async () => {
+      render(<DiagramView repo="consus" epics={EPICS} onProposeChange={vi.fn()} />);
+
+      const graph = await screen.findByTestId("diagram-view-graph");
+      await waitFor(() => expect(graph.querySelector("#flowchart-n_story_s1-0")).not.toBeNull());
+
+      fireEvent.click(graph.querySelector("#flowchart-n_story_s1-0")!);
+      expect(await screen.findByTestId("diagram-view-detail")).toHaveTextContent("Story One");
+
+      fireEvent.click(graph.querySelector("#flowchart-n_story_s2-1")!);
+      const detail = await screen.findByTestId("diagram-view-detail");
+      expect(detail).toHaveTextContent("Story Two");
+      expect(screen.getAllByTestId("diagram-view-detail")).toHaveLength(1);
+    });
+
+    it("closes the panel when the same node is clicked again", async () => {
+      render(<DiagramView repo="consus" epics={EPICS} onProposeChange={vi.fn()} />);
+
+      const graph = await screen.findByTestId("diagram-view-graph");
+      await waitFor(() => expect(graph.querySelector("#flowchart-n_story_s1-0")).not.toBeNull());
+
+      fireEvent.click(graph.querySelector("#flowchart-n_story_s1-0")!);
+      expect(await screen.findByTestId("diagram-view-detail")).toBeInTheDocument();
+
+      fireEvent.click(graph.querySelector("#flowchart-n_story_s1-0")!);
+      expect(screen.queryByTestId("diagram-view-detail")).not.toBeInTheDocument();
+    });
+
+    it("closes the panel via its close control", async () => {
+      render(<DiagramView repo="consus" epics={EPICS} onProposeChange={vi.fn()} />);
+
+      const graph = await screen.findByTestId("diagram-view-graph");
+      await waitFor(() => expect(graph.querySelector("#flowchart-n_story_s1-0")).not.toBeNull());
+
+      fireEvent.click(graph.querySelector("#flowchart-n_story_s1-0")!);
+      expect(await screen.findByTestId("diagram-view-detail")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: /close detail panel/i }));
+      expect(screen.queryByTestId("diagram-view-detail")).not.toBeInTheDocument();
+    });
+
+    it("does not crash or show stale detail when a non-node element is clicked", async () => {
+      render(<DiagramView repo="consus" epics={EPICS} onProposeChange={vi.fn()} />);
+
+      const graph = await screen.findByTestId("diagram-view-graph");
+      await waitFor(() => expect(graph.querySelector('[data-testid="diagram-edge"]')).not.toBeNull());
+
+      expect(() => fireEvent.click(graph.querySelector('[data-testid="diagram-edge"]')!)).not.toThrow();
+      expect(screen.queryByTestId("diagram-view-detail")).not.toBeInTheDocument();
+    });
+
+    it("does not break when an epic-level node is clicked", async () => {
+      render(<DiagramView repo="consus" epics={EPICS} onProposeChange={vi.fn()} />);
+
+      const graph = await screen.findByTestId("diagram-view-graph");
+      await waitFor(() => expect(graph.querySelector("#flowchart-n_epic_epic_a-2")).not.toBeNull());
+
+      expect(() => fireEvent.click(graph.querySelector("#flowchart-n_epic_epic_a-2")!)).not.toThrow();
+      expect(screen.queryByTestId("diagram-view-detail")).not.toBeInTheDocument();
+    });
+
+    it("leaves the propose-change form and audit history unaffected by node clicks", async () => {
+      render(
+        <DiagramView
+          repo="consus"
+          epics={EPICS}
+          onProposeChange={vi.fn()}
+          auditEntries={[]}
+        />,
+      );
+
+      const graph = await screen.findByTestId("diagram-view-graph");
+      await waitFor(() => expect(graph.querySelector("#flowchart-n_story_s1-0")).not.toBeNull());
+      fireEvent.click(graph.querySelector("#flowchart-n_story_s1-0")!);
+      expect(await screen.findByTestId("diagram-view-detail")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: /propose a change/i }));
+      expect(screen.getByPlaceholderText(/added x/i)).toBeInTheDocument();
+      expect(screen.getByText(/no history yet/i)).toBeInTheDocument();
+      // the node-click panel is untouched by opening the propose form
+      expect(screen.getByTestId("diagram-view-detail")).toBeInTheDocument();
+    });
   });
 });
