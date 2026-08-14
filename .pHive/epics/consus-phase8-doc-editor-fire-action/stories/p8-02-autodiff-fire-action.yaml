@@ -1,0 +1,112 @@
+id: p8-02-autodiff-fire-action
+epic: consus-phase8-doc-editor-fire-action
+title: Auto-computed diff and fire action wired to existing proposals endpoint
+status: pending
+complexity: medium
+methodology: bdd
+depends_on:
+  - p8-01-inplace-edit-toggle
+
+description: |
+  With p8-01's edit/view toggle in place, the operator can now edit a doc's
+  actual text in a textarea. This story replaces the remaining hand-typed
+  part of the flow: DocRenderer's current "Propose a change" form
+  (web/src/features/docs/DocRenderer.tsx) makes the operator type a
+  description AND a raw text diff by hand into two separate fields. Instead,
+  when the operator finishes editing (in edit mode from p8-01) and clicks a
+  submit action — named "Fire to harness", matching the wording DocRenderer
+  already uses and echoing the archived reference's "Fire" as an explicit,
+  distinct submit action from "Save" — Consus computes the diff itself by
+  comparing the original fetched content against the edited textarea
+  content, and submits that computed diff through the exact same
+  `POST /api/proposals` call that already exists (server/proposals/store.ts,
+  server/routes/proposals.ts), unchanged. The operator still supplies a
+  short description of the change; only the diff itself becomes computed
+  instead of hand-authored.
+
+  Verified against current code: no new backend endpoint is needed for this.
+  `POST /api/proposals` already accepts `{ itemId, targetType, diff,
+  description, requestedBy }` and already dispatches through
+  HarnessTransport identically for targetType "doc" and "diagram". The only
+  new piece of surface area is a client-side diff-computation utility (no
+  diff-generation library is currently a dependency).
+
+acceptance_criteria:
+  - "Given the operator is in edit mode with modified content, when they click the fire/submit action, then a diff is computed client-side between the original content and the edited content and submitted as the `diff` field of a POST /api/proposals call, with no manual diff-text entry required."
+  - "Given the operator is in edit mode with content unchanged from the original, when they attempt to fire, then the submit action is disabled or blocked (no-op edits are not fired as proposals), consistent with requiring a real change same as the existing raw-diff form requires non-empty diff/description today."
+  - "Given a fire action is submitted, when the request is pending, then the same pendingProposal / proposalFailureReason UI already shown for the raw-diff flow (pill--pending / pill--failed in DocRenderer) is shown for the auto-diff flow too, and the view returns to view mode (rendered content) reflecting that a proposal is pending."
+  - "Given the fire action succeeds, when the proposal transitions out of pending, then the audit trail reload (loadAuditTrail via /api/items/:itemId/audit-trail) already wired in DocsSection continues to fire exactly as it does for the existing raw-diff flow, since this story reuses that same onProposeChange({ diff, description }) contract unchanged."
+  - "Given the existing raw-diff manual entry fields (diff textarea, description input as separate always-visible fields) in DocRenderer, when this story is complete, then they are removed/replaced by the edit-mode-driven flow — the operator no longer has a path to type a raw diff by hand for docs."
+
+steps:
+  - id: add-diff-utility
+    description: |
+      Add a small client-side text-diff utility (either a minimal
+      dependency-free line-diff implementation under web/src/features/docs/,
+      or a small, well-known diff library added as a new dependency in
+      package.json) that takes (originalContent, editedContent) and returns
+      diff text suitable for the diff field already accepted by
+      POST /api/proposals. Confirm against HarnessTransport's actual
+      implementation(s) in this repo whether it expects diff text in a
+      specific format (e.g. unified diff) or treats it as opaque descriptive
+      text, and shape the utility's output accordingly.
+    agent: developer
+  - id: wire-fire-action
+    description: |
+      In DocRenderer.tsx (and/or DocsSection in App.tsx wherever
+      onProposeChange is composed), replace the always-visible raw diff
+      textarea + description-only submit form with: a description input
+      shown alongside edit mode, and a "Fire to harness" button that (a) is
+      disabled when edited content equals original content, (b) on click,
+      computes the diff via the new utility and calls the existing
+      onProposeChange({ diff, description }) callback unchanged, (c) returns
+      the view to view mode after firing. Remove the now-unused manual diff
+      textarea input.
+    agent: developer
+  - id: update-tests
+    description: |
+      Update/extend web/src/features/docs/DocRenderer.test.tsx (and any
+      DocsSection-level tests in web/src/App.test.tsx or similar) to cover:
+      fire is disabled with no content changes; fire computes and submits a
+      diff matching the edited content without the operator typing one;
+      pendingProposal/proposalFailureReason states render correctly for the
+      new flow; the raw manual-diff textarea is no longer present.
+    agent: tester
+  - id: manual-verification
+    description: |
+      Run the app locally, edit a real doc's content, fire it, and confirm
+      the resulting proposal row's diff field (via GET /api/proposals or the
+      audit trail once resolved) reflects the actual edit made, not a
+      hand-typed placeholder.
+    agent: tester
+
+context:
+  key_files:
+    - path: web/src/features/docs/DocRenderer.tsx
+      purpose: Owns the current raw-diff "Propose a change" form being replaced, and the pendingProposal/proposalFailureReason display this story must preserve for the new flow.
+    - path: web/src/App.tsx
+      purpose: DocsSection's current diff-compose box (proposeChange callback, ~line 617) posts { itemId, targetType: "doc", diff, description, requestedBy } to /api/proposals — this story keeps that call shape identical, only changing how `diff` is produced before the call is made.
+    - path: server/proposals/store.ts
+      purpose: The existing, unmodified POST /api/proposals endpoint this story reuses as-is — confirmed generic across targetType "doc" and "diagram", requiring no server-side change.
+
+files_to_modify:
+  - file: web/src/features/docs/DocRenderer.tsx
+    change: Remove the manual raw-diff textarea; compute the diff from edit-mode content (from p8-01) and description, then call onProposeChange with the computed diff.
+  - file: package.json
+    change: Possibly add a small diff-computation dependency, if a hand-rolled line-diff utility is judged insufficient during implementation.
+
+design_decisions:
+  - decision: Reuse POST /api/proposals unchanged rather than adding a new endpoint.
+    rationale: Verified during design research that the endpoint already accepts a diff + description + itemId + targetType generically and already dispatches through HarnessTransport identically for docs and diagrams; adding a parallel endpoint would duplicate working infrastructure for no benefit.
+  - decision: Disable firing when edited content is unchanged from original.
+    rationale: Prevents no-op proposals from reaching the harness; mirrors the existing raw-diff form's requirement that diff and description both be non-empty before Fire is enabled.
+  - decision: Description remains a manually-typed field (not auto-generated).
+    rationale: Only the diff itself was the tedious, error-prone hand-authored part; a short human description of intent is still meaningful for the harness/audit trail and is cheap for the operator to supply.
+
+risks:
+  - severity: medium
+    description: An auto-computed diff's format may not match what HarnessTransport implementations in this repo expect if they were built/tested against hand-typed diff text.
+    mitigation: Verify actual HarnessTransport implementation(s) and, if needed, any harness-side consumer expectations before finalizing the diff utility's output format; adjust format (e.g. unified diff) accordingly.
+  - severity: low
+    description: Large edited docs could make computing a diff on every fire noticeably slow.
+    mitigation: Acceptable at current doc sizes per the design discussion; revisit only if it becomes a measured problem.
