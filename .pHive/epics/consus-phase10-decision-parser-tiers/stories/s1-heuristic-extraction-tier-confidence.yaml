@@ -1,0 +1,120 @@
+id: s1-heuristic-extraction-tier-confidence
+epic: consus-phase10-decision-parser-tiers
+title: Signal heuristic (tier-2) vs structured (tier-1) origin on DecisionPayload and downgrade triage confidence accordingly
+status: pending
+complexity: low
+methodology: tdd
+depends_on: []
+
+description: |
+  `parser.ts`'s `parseDecisionPayload()` already implements both documented tiers of
+  `docs/delphi-lineage-inventory.md`'s "real 3-tier parser" (REQ-23, commit bc0e8f6 / PR #7):
+  tier 1 parses a structured fenced ```decision-request block (or bare JSON); tier 2 falls back
+  to regex-extracted options from free-form markdown (heading / lettered-line / table-cell shapes,
+  `recommended` resolved from the nearest option letter to a `/recommend/i` line) when tier 1
+  finds nothing. Both tiers return the exact same `DecisionPayload` shape, so nothing downstream
+  can tell a hand-authored, structured decision apart from a regex guess extracted out of prose.
+
+  The single production consumer of `parseDecisionPayload()`, `classifier.ts`'s `classifyItem()`,
+  currently treats every non-null payload identically: `heuristicTriageBucket()` promotes any
+  non-`"default"` decision type straight to `"open_question"` — the same bucket a carefully
+  composed structured payload gets. A tier-2 false positive (see design-discussion.md's Risks
+  section — e.g. a changelog entry that happens to match the `A) title: detail` shape) would get
+  surfaced to a human as a confirmed decision request with no lower-confidence signal at all.
+
+  This story adds an optional `extractionTier?: "structured" | "heuristic"` field to
+  `DecisionPayload` (unset for tier 1, `"heuristic"` for tier 2 — see parser.ts's
+  `parseHeuristicPayload`), and teaches `classifier.ts`'s `heuristicTriageBucket()` to route a
+  heuristic-tier decision to `"agent_task"` instead of `"open_question"` — the same conservative
+  default already used for items with no payload at all, giving an agent pass a chance to
+  confirm/correct the guess before it's surfaced to a human as settled. No DB migration is
+  needed: `items.decision_payload` is already a TEXT column of serialized JSON, so the new field
+  round-trips through existing `JSON.stringify`/`JSON.parse` calls for free.
+
+acceptance_criteria:
+  - "Given a ticket body containing a valid fenced ```decision-request block, when parseDecisionPayload is called, then the returned payload has no extractionTier field set (tier 1 stays implicitly \"structured\", matching every existing parser.test.ts assertion that does .toEqual(SAMPLE_PAYLOAD) with no extractionTier key)."
+  - "Given a ticket body with no fenced block but a heuristically-extractable option shape (e.g. 'A) WRAP: ...' / 'B) EMBED: ...' plus a 'recommend' line), when parseDecisionPayload is called, then the returned payload has extractionTier: \"heuristic\"."
+  - "Given an item whose decision_payload has extractionTier: \"heuristic\" and a decisionType other than \"default\", when classifyItem is called, then the resulting triageBucket is \"agent_task\", not \"open_question\"."
+  - "Given an item whose decision_payload has no extractionTier (a structured tier-1 payload) and a decisionType other than \"default\", when classifyItem is called, then the resulting triageBucket is still \"open_question\" — this story must not change tier-1 behavior."
+  - "Given plain prose with no fenced block and no lettered-option/table-cell/heading structure at all (e.g. 'just plain prose, no JSON here'), when parseDecisionPayload is called, then it still returns null — this story adds a field to the existing heuristic payload, it does not loosen what counts as a match."
+  - "Given a human-authored triage_overrides row for an item, when classifyItem is called regardless of the item's extractionTier, then the override still wins (no change to setTriageOverride's precedence)."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Add vitest specs to server/decision-contract/parser.test.ts (extractionTier is absent on
+      a tier-1 parse, present and "heuristic" on a tier-2 parse — extend the existing "heuristic-
+      from-markdown fallback tier (REQ-23)" describe block rather than starting a new one) and to
+      server/decision-contract/classifier.test.ts (a heuristic-tier payload routes to
+      "agent_task", a structured payload still routes to "open_question" — extend the existing
+      describe blocks, following the insertItem/OPTIONS helper pattern already in that file).
+    agent: tester
+  - id: implement-extraction-tier-field
+    description: >
+      Add extractionTier?: "structured" | "heuristic" to the DecisionPayload interface in
+      parser.ts. Set it to "heuristic" in parseHeuristicPayload's return; leave it unset on the
+      tier-1 JSON.parse path (do not set it to "structured" explicitly — undefined is the
+      implicit default, per design-discussion.md's backward-compatibility rationale). Make the
+      new parser.test.ts specs pass without modifying the tests.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: implement-classifier-downgrade
+    description: >
+      In classifier.ts's heuristicTriageBucket, branch on the parsed payload's extractionTier:
+      when it is "heuristic" and decisionType is not "default", return "agent_task" instead of
+      "open_question". classifyItem already parses the payload via parseDecisionPayload before
+      calling heuristicTriageBucket — pass the payload through (or the tier flag) rather than
+      re-parsing. Make the new classifier.test.ts specs pass without modifying the tests.
+    agent: developer
+    depends_on: [implement-extraction-tier-field]
+  - id: review
+    description: >
+      Review both changes for scope creep beyond the two files (no schema/route changes should
+      be needed) and confirm no existing parser.test.ts or classifier.test.ts assertion needed to
+      change to accommodate the new field (a break there would indicate the field isn't as
+      backward-compatible as designed).
+    agent: reviewer
+    depends_on: [implement-classifier-downgrade]
+  - id: integrate
+    description: Commit the parser.ts/classifier.ts changes and their test additions.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: server/decision-contract/parser.ts
+      purpose: "parseDecisionPayload() and DecisionPayload live here. Tier 1 (fenced-block JSON.parse) and tier 2 (parseHeuristicPayload, already implemented per REQ-23/bc0e8f6) both need this story's new optional extractionTier field — tier 1 path leaves it unset, parseHeuristicPayload's return sets it to \"heuristic\"."
+    - path: server/decision-contract/parser.test.ts
+      purpose: "Existing round-trip and heuristic-fallback-tier specs this story extends. The SAMPLE_PAYLOAD .toEqual assertions are the backward-compatibility check that a tier-1 parse must not gain an extractionTier key."
+    - path: server/decision-contract/classifier.ts
+      purpose: "classifyItem()'s single call to parseDecisionPayload (line ~100) and heuristicTriageBucket() are what this story changes to consume extractionTier — confirmed via grep as the only production call site of parseDecisionPayload."
+    - path: server/decision-contract/classifier.test.ts
+      purpose: "Existing classifier specs (diagram:true -> cba, human_request -> open_question, override precedence, REQ-22 legacy fallback) this story extends without altering."
+    - path: docs/delphi-lineage-inventory.md
+      purpose: "Source 2's \"server/parse.mjs — the real 3-tier parser\" section is the documented reference for tier 2's option-extraction shapes and recommended-resolution rule that parser.ts already implements; this story's design-discussion.md quotes it directly and flags where the shipped code goes beyond the doc's literal detail (nearest-letter recommended resolution)."
+
+files_to_modify:
+  - file: server/decision-contract/parser.ts
+    change: "Add extractionTier?: \"structured\" | \"heuristic\" to DecisionPayload; set it in parseHeuristicPayload's return."
+  - file: server/decision-contract/parser.test.ts
+    change: "Add specs asserting extractionTier is absent on a tier-1 parse and \"heuristic\" on a tier-2 parse."
+  - file: server/decision-contract/classifier.ts
+    change: "heuristicTriageBucket routes extractionTier: \"heuristic\" payloads to \"agent_task\" instead of \"open_question\"."
+  - file: server/decision-contract/classifier.test.ts
+    change: "Add specs for the heuristic-tier downgrade and confirm the structured-tier path is unchanged."
+
+design_decisions:
+  - decision: "extractionTier is an optional field on DecisionPayload itself, not a wrapper return type around it."
+    rationale: "Keeps classifyItem()'s single parseDecisionPayload call and every existing test assertion (.title, .options, .toEqual(SAMPLE_PAYLOAD)) unchanged for the tier-1 path, and lets the signal travel with the payload through serialization (API responses) without a second lookup. See design-discussion.md's Approach and rejected-alternative sections."
+  - decision: "Heuristic-tier decisions downgrade to \"agent_task\", reusing the existing bucket rather than adding a new TriageBucket variant."
+    rationale: "Keeps this story's scope to two files with no type/schema-adjacent change to TriageBucket (used by triage_overrides and UI rendering). Flagged in design-discussion.md's Open Questions as a judgment call, not a settled design — a dedicated \"needs_confirmation\" bucket is a reasonable future direction if this pattern gets more common."
+  - decision: "Tier-1 payloads leave extractionTier unset (undefined) rather than explicitly \"structured\"."
+    rationale: "undefined is falsy/absent under both JS equality checks and JSON serialization (an unset optional key doesn't appear in JSON.stringify output), which is what keeps every existing test's exact-shape assertion passing unmodified."
+
+risks:
+  - severity: low
+    description: "A heuristic-tier payload that classifier.ts previously routed to \"open_question\" now routes to \"agent_task\" — any existing downstream code or UI view that assumed \"open_question\" meant \"ready for a human\" now sees fewer heuristic-derived items there."
+    mitigation: "Only one production consumer (classifier.ts) exists today per the grep in this epic's design-discussion.md, so the blast radius is contained to this repo's own triage view. Acceptance criteria explicitly pin the tier-1 (structured) path to unchanged \"open_question\" behavior."
+  - severity: low
+    description: "This story does not reduce tier-2's false-positive rate (see design-discussion.md Risks) — it only changes what happens after a false positive is produced."
+    mitigation: "Explicitly out of scope; tightening the tier-2 regex heuristics themselves (if false positives turn out to be common in practice) is future backlog, not this story."

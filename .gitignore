@@ -34,6 +34,8 @@ build/
 !.pHive/epics/consus-phase8-doc-editor-fire-action/**
 !.pHive/epics/consus-phase9-mermaid-diagram-engine/
 !.pHive/epics/consus-phase9-mermaid-diagram-engine/**
+!.pHive/epics/consus-phase10-decision-parser-tiers/
+!.pHive/epics/consus-phase10-decision-parser-tiers/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/
