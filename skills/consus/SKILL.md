@@ -42,6 +42,40 @@ your harness's own workflow; Consus's server is verdict-shape-agnostic and just 
 **Do not** re-decide an item already returned without a `decision_payload`, or one no longer
 present in `GET /api/decisions` — it's already resolved.
 
+## Pushing a new decision or CBA
+
+```
+POST /api/decisions
+Body: {
+  "id": "<your own stable id — required>",
+  "title": "<one-line summary>",
+  "source_repo": "<optional — which repo/project this is about>",
+  "decision_payload": {
+    "version": "dostal:decision-request/v1",
+    "title": "...", "context": "...",
+    "options": [{ "id": "A", "title": "...", "tradeoffs": "..." }, { "id": "B", "title": "...", "tradeoffs": "..." }],
+    "recommended": "A"
+  }
+}
+```
+
+Use this when your harness produces a decision or a CBA (cost-benefit analysis) somewhere else
+and wants it to show up in Consus's queue — a CBA *is* a `decision_payload`: options being
+compared, each with tradeoffs, plus a recommendation. `decision_payload` must already be a
+complete, valid `dostal:decision-request/v1` object (at least 2 options, `recommended` matching
+one of their ids) — this endpoint validates and stores what you send, it does not compose it for
+you.
+
+`id` is yours to choose and is required — Consus never generates one. Pick something stable for
+your own workflow (e.g. deterministic from the source doc/decision), because **a duplicate `id`
+is rejected with 409, not silently merged or overwritten**. That's deliberate: only you know
+whether a repeat `id` means "the same decision, don't re-post it" or a real bug in your own id
+scheme.
+
+**Response 201:** the created item, same shape `GET /api/decisions` returns for it. **400** if
+`id`/`title` is missing or `decision_payload` fails validation (the error names which part).
+**409** if `id` already exists.
+
 ## Browsing generated docs (optional, read-only)
 
 ```

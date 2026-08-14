@@ -61,6 +61,28 @@ the same file the `multica` CLI itself writes):
   deployment. No config-file fallback; a workspace has many projects and there's no universal
   default.
 
+### `POST /api/decisions` (s1-push-decision-endpoint)
+Creates a new decision item — the counterpart to `GET /api/decisions` above. This is how an
+outside agent/harness pushes a decision or CBA into Consus; today's other write paths (the KB
+store, the propose-a-change mechanism) are Consus-internal only. Stores what the caller supplies
+— it does not compose or classify the payload itself.
+
+**Request body:** `{ "id": string, "title": string, "source_repo"?: string, "decision_payload": DecisionPayload }`.
+`id` is caller-supplied and required (never server-generated). `decision_payload` must already be
+a valid `dostal:decision-request/v1` object: `version` exactly `"dostal:decision-request/v1"`,
+`options` with at least 2 entries, `recommended` matching one of `options[].id`.
+
+**Response 201:** the created item, same shape `GET /api/decisions` returns for it (`id`, `type`,
+`title`, `status`, `source_repo`, `decided_at`, `decision_payload` parsed, `decision_type`,
+`triage_bucket`).
+
+**Response 400:** `{ "error": "<which field/rule failed>" }` — missing `id`, missing `title`, or
+a `decision_payload` validation failure (wrong version, too few options, `recommended` not
+matching an option).
+
+**Response 409:** `{ "error": "item already exists: <id>" }` — no row is modified. A duplicate
+`id` is never silently upserted; the caller owns its own idempotency/dedup scheme.
+
 ### `POST /api/items/:id/decide`
 Submits a verdict on any item (not just human_requests — any item with a `decision_payload`,
 or without one). Writes an append-only `audit_log` entry and marks the item decided (REQ-08).
