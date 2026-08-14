@@ -142,6 +142,15 @@ export function runMigration(db: Database.Database): void {
     "collection",
     "TEXT NOT NULL DEFAULT 'general' CHECK(collection IN ('marketing', 'boundary-decisions', 'plans', 'artifacts', 'general'))",
   );
+  // p11-01: draft/published storage split (REQ-17, "Save != Submit").
+  // Defaults to 'published' so every existing row and every existing
+  // createKbEntry() call remains valid published content with zero backfill.
+  addColumnIfMissing(
+    db,
+    "kb_versions",
+    "state",
+    "TEXT NOT NULL DEFAULT 'published' CHECK(state IN ('published', 'draft'))",
+  );
 
   db.exec("CREATE INDEX IF NOT EXISTS idx_kb_entries_collection ON kb_entries(collection)");
 }

@@ -1,0 +1,115 @@
+id: p11-01-kb-draft-storage
+epic: consus-phase11-draft-submit-separation
+title: Draft-state storage for kb_versions (schema + saveKbDraft)
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: []
+
+description: |
+  server/kb/store.ts has exactly one write path, createKbEntry(), which
+  always both inserts a new kb_versions row AND repoints
+  kb_entries.current_version_id to it — there is no way today to persist an
+  in-progress edit without it instantly becoming the published content
+  (verified: grep -rn "draft|Save.*Submit|pipeline" server/kb --include="*.ts"
+  returns no hits on this branch). This story adds the storage half of
+  REQ-17 ("Save != Submit"): a `state` column on kb_versions distinguishing
+  'published' from 'draft', and a new saveKbDraft() function that inserts a
+  draft row without touching current_version_id. createKbEntry() itself is
+  unchanged — its inserts become implicitly state='published'.
+
+  Ported from the archived reference at
+  archive/dev-2026-08-11-pantheon-coupled:server/kb/store.ts (saveKbDraft,
+  getKbDraftVersions, the KbVersionRow.state field) and
+  archive/dev-2026-08-11-pantheon-coupled:server/db/migrations/005_v1_core_schema.sql
+  (the kb_versions.state column). That reference has no Minerva/Multica
+  coupling in this specific file — confirmed via grep for
+  "minerva|multica" against the archived store.ts, returning no matches — so
+  it's a clean, direct port of the SQL/TS shape, not a strip-and-rebuild.
+  Mainline's migration mechanism differs from the archive's (mainline uses
+  runMigration()'s addColumnIfMissing() guarded-ALTER pattern in
+  server/db/migrate.ts, not a numbered .sql migrations directory), so the
+  column addition must follow mainline's existing pattern, not copy the
+  archive's file structure.
+
+acceptance_criteria:
+  - "Given a fresh database, when runMigration() runs, then kb_versions has a state column that is NOT NULL, defaults to 'published', and is constrained to ('published', 'draft') — verified by inserting a row without specifying state and reading it back as 'published', and by an insert attempting an invalid state throwing."
+  - "Given an existing kb_entry with a published version, when saveKbDraft() is called for that entry, then a new kb_versions row is inserted with state='draft' and kb_entries.current_version_id is unchanged (still points at the prior published row)."
+  - "Given multiple saveKbDraft() calls for the same entry, when getKbDraftVersions() is called, then all draft rows are returned in chronological (ascending id) order, and none of them is state='published'."
+  - "Given createKbEntry() is called (the existing, unmodified publish path), when its resulting row is read back, then state='published' — existing callers and existing tests for createKbEntry()/getKbVersions() continue to pass unmodified, confirming this is additive and backward-compatible."
+  - "Given a very long draft content string (e.g. 50k+ characters), when saveKbDraft() persists it and getKbDraftVersions() reads it back, then the content is returned byte-for-byte, not truncated."
+
+steps:
+  - id: add-migration-column
+    description: |
+      In server/db/migrate.ts, add a `state` column to kb_versions using the
+      existing addColumnIfMissing() helper (same pattern already used for
+      kb_entries.source_repo and kb_entries.collection), with definition
+      "TEXT NOT NULL DEFAULT 'published' CHECK(state IN ('published',
+      'draft'))". Confirm via a quick migrate.test.ts-style check that
+      re-running runMigration() on an already-migrated DB is still a no-op
+      (idempotent), matching every other guarded ALTER in this file.
+    agent: developer
+  - id: add-store-functions
+    description: |
+      In server/kb/store.ts, extend KbVersionRow with `state: "published" |
+      "draft"`. Add saveKbDraft(db, { id, title?, author, content,
+      sourceRepo? }): inserts (or INSERT OR IGNORE / ON CONFLICT DO NOTHING
+      for the kb_entries row, matching createKbEntry()'s existing conflict
+      handling) a kb_entries row if missing, then inserts a kb_versions row
+      with state='draft', and does NOT update kb_entries.current_version_id.
+      Add getKbDraftVersions(db, kbEntryId): selects kb_versions WHERE
+      kb_entry_id = ? AND state = 'draft' ORDER BY id ASC. Leave
+      createKbEntry() itself untouched except for the state='published'
+      column now being written explicitly in its INSERT.
+    agent: developer
+  - id: write-tests
+    description: |
+      Add tests to server/kb/store.test.ts covering: draft save doesn't
+      move current_version_id; multiple drafts return in order via
+      getKbDraftVersions(); draft rows never appear in plain getKbVersions()
+      results filtered by state='published' assumptions elsewhere; a long
+      draft string round-trips without truncation; the CHECK constraint
+      rejects an invalid state value the same way the existing collection
+      CHECK constraint is already tested (see
+      "rejects invalid kb_entry collections through the SQLite CHECK
+      constraint" for the existing pattern to mirror).
+    agent: tester
+
+context:
+  key_files:
+    - path: server/kb/store.ts
+      purpose: Currently the single write path (createKbEntry) for kb_versions; this story adds the second, non-publishing write path (saveKbDraft) alongside it.
+    - path: server/db/migrate.ts
+      purpose: Owns the idempotent guarded-ALTER pattern (addColumnIfMissing) this story must follow for adding kb_versions.state; lines 58-74 define the current kb_entries/kb_versions schema this column is added to.
+    - path: server/kb/store.test.ts
+      purpose: Existing test file to extend; already has a pattern for testing a CHECK constraint (the kb_entries.collection tests) to mirror for kb_versions.state.
+  reference:
+    - path: "archive/dev-2026-08-11-pantheon-coupled:server/kb/store.ts"
+      purpose: Source of the saveKbDraft/getKbDraftVersions shape being ported; confirmed free of Minerva/Multica coupling.
+    - path: "archive/dev-2026-08-11-pantheon-coupled:server/kb/store.test.ts"
+      purpose: Source of the draft-storage test cases (state preserved, current_version_id untouched, long-content round-trip) being ported.
+
+files_to_modify:
+  - file: server/db/migrate.ts
+    change: Add addColumnIfMissing(db, "kb_versions", "state", "TEXT NOT NULL DEFAULT 'published' CHECK(state IN ('published', 'draft'))").
+  - file: server/kb/store.ts
+    change: Add state to KbVersionRow; add saveKbDraft() and getKbDraftVersions(); write state='published' explicitly in createKbEntry()'s INSERT.
+  - file: server/kb/store.test.ts
+    change: Add draft-storage test cases per acceptance criteria.
+
+design_decisions:
+  - decision: Use a guarded ALTER TABLE (addColumnIfMissing) rather than a numbered migration file.
+    rationale: Mainline's migration mechanism (server/db/migrate.ts) is a single idempotent function, not the archived branch's numbered .sql-migrations directory; matching mainline's existing convention keeps this additive and low-risk rather than introducing a second migration mechanism.
+  - decision: Default state to 'published', not 'draft'.
+    rationale: Every existing row and every existing createKbEntry() call must remain valid published content with zero backfill or behavior change; 'draft' as a default would silently hide all pre-existing content from anything that later filters on state='published'.
+  - decision: saveKbDraft() never writes kb_entries.current_version_id.
+    rationale: This is the entire mechanism that makes a draft not instantly become "the" published content — the one structural difference from createKbEntry().
+
+risks:
+  - severity: medium
+    description: Any existing or future query that reads kb_versions without filtering by state could now surface draft content unintentionally once drafts exist.
+    mitigation: Addressed structurally by p11-02/p11-03's routes only ever calling getKbDraftVersions() for drafts and getKbVersions()/getKbEntries() for published-facing reads; the design-discussion.md flags server/routes/kb.ts's search-join query specifically as needing a state='published' filter once drafts exist, tracked as part of this epic's follow-through, not deferred.
+  - severity: low
+    description: SQLite CHECK constraints are not enforced retroactively on existing rows if a column is added with a default that happens to violate the check (not the case here, since 'published' satisfies the CHECK).
+    mitigation: Verified default value 'published' is itself a valid member of the CHECK's allowed set; no retroactive violation possible.

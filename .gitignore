@@ -36,6 +36,8 @@ build/
 !.pHive/epics/consus-phase9-mermaid-diagram-engine/**
 !.pHive/epics/consus-phase10-decision-parser-tiers/
 !.pHive/epics/consus-phase10-decision-parser-tiers/**
+!.pHive/epics/consus-phase11-draft-submit-separation/
+!.pHive/epics/consus-phase11-draft-submit-separation/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/
