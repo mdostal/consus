@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AuditPanel, type AuditTrailEntry } from "../audit/AuditPanel";
 
 export interface DiagramStory {
@@ -30,17 +30,117 @@ export interface DiagramViewProps {
   auditEntries?: AuditTrailEntry[];
 }
 
+/** Renders every id/label unique to a single mermaid.render() call, so re-renders never collide with a stale one still finishing. */
+let renderIdCounter = 0;
+
+const RENDER_TIMEOUT_MS = 5000;
+
+function sanitizeMermaidId(id: string): string {
+  return `n_${id.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+}
+
+function escapeMermaidLabel(label: string): string {
+  return label.replace(/"/g, "&quot;");
+}
+
 /**
- * Read-only cascade tree (epic -> stories -> dependency edges) plus a
- * propose-a-change action that fires through s3's dispatch mechanism —
- * Consus never edits the diagram data directly. Nested-list rendering by
- * design (see architecture.md: a graphical DAG/diagram engine is explicitly
- * deferred, not this story's scope).
+ * Pure: turns the epics/stories/dependsOn tree into Mermaid `graph LR`
+ * source text — one subgraph per epic, one node per story, one edge per
+ * dependsOn relationship (dependency -> dependent, matching the direction
+ * the old "depends on" list text read in). Re-derived fresh against this
+ * component's own DiagramEpic/DiagramStory types (p9-01) rather than reusing
+ * the archived cascade-tree-builder.ts, which mixed in Multica-specific
+ * issue classification that has no equivalent here.
+ */
+export function buildMermaidSource(epics: DiagramEpic[]): string {
+  const lines = ["graph LR"];
+
+  for (const epic of epics) {
+    lines.push(`  subgraph ${sanitizeMermaidId(`epic_${epic.id}`)}["${escapeMermaidLabel(epic.title)}"]`);
+    for (const story of epic.stories) {
+      const label = story.complexity ? `${story.title} (${story.complexity})` : story.title;
+      lines.push(`    ${sanitizeMermaidId(`story_${story.id}`)}["${escapeMermaidLabel(label)}"]`);
+    }
+    lines.push("  end");
+  }
+
+  for (const epic of epics) {
+    for (const story of epic.stories) {
+      for (const dependsOnId of story.dependsOn) {
+        lines.push(`  ${sanitizeMermaidId(`story_${dependsOnId}`)} --> ${sanitizeMermaidId(`story_${story.id}`)}`);
+      }
+    }
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Read-only cascade tree (epic -> stories -> dependency edges) rendered as a
+ * real Mermaid graph, plus a propose-a-change action that fires through
+ * s3's dispatch mechanism — Consus never edits the diagram data directly.
+ * mermaid is imported dynamically (only diagram views pay for it) and the
+ * graph source is built client-side from the `epics` prop; see
+ * buildMermaidSource above (p9-01 — this replaces the nested-<ul> rendering
+ * that architecture.md's decision #3 had deferred).
  */
 export function DiagramView({ repo, epics, pendingProposal, onProposeChange, auditEntries }: DiagramViewProps) {
   const [composing, setComposing] = useState(false);
   const [diff, setDiff] = useState("");
   const [description, setDescription] = useState("");
+  const graphRef = useRef<HTMLDivElement | null>(null);
+  const [rendering, setRendering] = useState(false);
+  const [renderError, setRenderError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (epics.length === 0) return;
+
+    let cancelled = false;
+    setRendering(true);
+    setRenderError(null);
+
+    const renderDiagram = async () => {
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const { default: mermaid } = await import("mermaid");
+        mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
+
+        const source = buildMermaidSource(epics);
+        const timeout = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error("Diagram rendering timed out")), RENDER_TIMEOUT_MS);
+        });
+
+        const { svg, bindFunctions } = await Promise.race([
+          mermaid.render(`diagram-view-${renderIdCounter++}`, source),
+          timeout,
+        ]);
+
+        if (cancelled) return;
+        const container = graphRef.current;
+        if (container) {
+          container.innerHTML = svg;
+          bindFunctions?.(container);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : String(error);
+        setRenderError(
+          /timed out/i.test(message)
+            ? "This diagram is too complex to render quickly."
+            : "We couldn't render this diagram. Please try again.",
+        );
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+        if (!cancelled) setRendering(false);
+      }
+    };
+
+    renderDiagram();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [epics]);
 
   const submit = () => {
     if (!diff.trim() || !description.trim()) return;
@@ -83,25 +183,17 @@ export function DiagramView({ repo, epics, pendingProposal, onProposeChange, aud
 
       {epics.length === 0 ? (
         <p className="state">No epics yet for {repo}.</p>
+      ) : renderError ? (
+        <p className="state state--err">{renderError}</p>
       ) : (
-        <ul className="diagram-view__epics">
-          {epics.map((epic) => (
-            <li key={epic.id}>
-              <strong>{epic.title}</strong>
-              <ul className="diagram-view__stories">
-                {epic.stories.map((story) => (
-                  <li key={story.id}>
-                    {story.title}
-                    {story.complexity ? <span className="diagram-view__complexity"> ({story.complexity})</span> : null}
-                    {story.dependsOn.length > 0 ? (
-                      <span className="diagram-view__deps"> — depends on {story.dependsOn.join(", ")}</span>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ul>
+        <div
+          ref={graphRef}
+          className="diagram-view__graph"
+          role="img"
+          aria-busy={rendering}
+          aria-label={`${repo} epic/story diagram`}
+          data-testid="diagram-view-graph"
+        />
       )}
 
       {auditEntries ? (

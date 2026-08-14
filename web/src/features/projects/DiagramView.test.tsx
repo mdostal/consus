@@ -1,6 +1,21 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { DiagramView } from "./DiagramView";
+
+const { initializeMock, renderMock } = vi.hoisted(() => ({
+  initializeMock: vi.fn(),
+  renderMock: vi.fn(async (_id: string, source: string) => ({
+    svg: `<svg data-testid="rendered-svg"><text>${source}</text></svg>`,
+    bindFunctions: vi.fn(),
+  })),
+}));
+
+vi.mock("mermaid", () => ({
+  default: {
+    initialize: initializeMock,
+    render: renderMock,
+  },
+}));
 
 const EPICS = [
   {
@@ -14,18 +29,41 @@ const EPICS = [
 ];
 
 describe("DiagramView", () => {
-  it("renders the epic/story tree with dependency edges", () => {
+  beforeEach(() => {
+    renderMock.mockClear();
+    initializeMock.mockClear();
+  });
+
+  it("renders the epic/story cascade as a Mermaid graph with dependency edges", async () => {
     render(<DiagramView repo="consus" epics={EPICS} onProposeChange={vi.fn()} />);
 
-    expect(screen.getByText("Epic A")).toBeInTheDocument();
-    expect(screen.getByText("Story One")).toBeInTheDocument();
-    expect(screen.getByText(/depends on s1/)).toBeInTheDocument();
+    await waitFor(() => expect(renderMock).toHaveBeenCalled());
+    const [, source] = renderMock.mock.calls[0];
+
+    expect(source).toContain("graph LR");
+    expect(source).toContain("Epic A");
+    expect(source).toContain("Story One");
+    expect(source).toContain("Story Two");
+    // one edge for the s2 -> depends on -> s1 relationship
+    expect(source).toMatch(/n_story_s1 --> n_story_s2/);
+
+    expect(await screen.findByTestId("diagram-view-graph")).toHaveTextContent("graph LR");
   });
 
   it("shows an empty state when the repo has no epics yet, not a broken view", () => {
     render(<DiagramView repo="empty-repo" epics={[]} onProposeChange={vi.fn()} />);
 
     expect(screen.getByText(/no epics yet/i)).toBeInTheDocument();
+    expect(renderMock).not.toHaveBeenCalled();
+  });
+
+  it("shows a friendly fallback message when mermaid.render() fails", async () => {
+    renderMock.mockRejectedValueOnce(new Error("parse error"));
+
+    render(<DiagramView repo="consus" epics={EPICS} onProposeChange={vi.fn()} />);
+
+    expect(await screen.findByText(/couldn't render this diagram/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("diagram-view-graph")).not.toBeInTheDocument();
   });
 
   it("composing a change: propose action reveals a diff + description form", () => {

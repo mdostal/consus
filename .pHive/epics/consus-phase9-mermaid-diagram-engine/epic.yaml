@@ -1,0 +1,14 @@
+name: consus-phase9-mermaid-diagram-engine
+title: Mermaid-rendered epic/story diagram, replacing the nested-list cascade view
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: bdd
+stories:
+  - id: p9-01-mermaid-cascade-render
+    title: Render the epic/story cascade as a real Mermaid diagram
+    complexity: medium
+    depends_on: []
+  - id: p9-02-node-click-story-detail
+    title: Click a diagram node to see that story's detail
+    complexity: small
+    depends_on:
+      - p9-01-mermaid-cascade-render
