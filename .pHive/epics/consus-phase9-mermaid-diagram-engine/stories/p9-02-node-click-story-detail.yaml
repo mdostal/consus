@@ -1,0 +1,121 @@
+id: p9-02-node-click-story-detail
+epic: consus-phase9-mermaid-diagram-engine
+title: Click a diagram node to see that story's detail
+status: pending
+complexity: small
+methodology: bdd
+depends_on:
+  - p9-01-mermaid-cascade-render
+
+description: |
+  With p9-01's Mermaid rendering in place, the diagram shows nodes and edges
+  but each node's full detail (id, title, complexity, dependsOn list) is
+  only visible if it fits legibly inside the node label itself — cramped for
+  anything but the shortest titles. This story adds a click interaction:
+  clicking a rendered story node shows that story's full detail in a small
+  panel next to the diagram, without leaving the diagram view or navigating
+  away.
+
+  Checked against the archived reference (`archive/dev-2026-08-11-pantheon-
+  coupled`): neither of its two diagram components (`DiagramView.tsx`,
+  `DiagramViewer.tsx`) wired node clicks to anything — `bindFunctions?.
+  (container)` was called but never exercised, because neither server-side
+  Mermaid-string generator (`diagram-generator.ts`, `cascade-tree-
+  builder.ts`) ever emitted a `click nodeId callback` directive into the
+  graph source. So there is no existing click-to-detail interaction being
+  ported here; this is new UX for Consus, built directly against the
+  rendered SVG's own DOM rather than Mermaid's `click` directive mechanism.
+
+  Approach: after `mermaid.render()` writes its SVG into the container
+  (p9-01), attach plain DOM click listeners to each rendered node element
+  (Mermaid gives node groups a `class="node"` and an `id` containing the
+  sanitized node id passed into the source-builder), mapped back to the
+  originating story via that id. Clicking a story node shows its title,
+  complexity, and dependsOn list in a small detail panel. This avoids
+  needing `securityLevel: "loose"` or exposing global window callback
+  functions for Mermaid's own `click` directive mechanism — plain
+  addEventListener on elements already in the container is simpler and
+  keeps the standalone, no-external-coupling posture (nothing here reaches
+  outside Consus's own data).
+
+acceptance_criteria:
+  - "Given the diagram has rendered with one or more story nodes, when the operator clicks a story node, then a detail panel appears showing that story's id, title, complexity, and dependsOn list (its full data, not just what fits in the node label)."
+  - "Given a detail panel is showing a story's detail, when the operator clicks a different story node, then the panel updates to the newly-clicked story's detail (not stacking or leaving stale detail visible)."
+  - "Given a detail panel is showing a story's detail, when the operator clicks the same node again or an explicit close control, then the panel closes/hides."
+  - "Given epic nodes (as opposed to story nodes) are also rendered per p9-01's subgraph grouping, when the operator clicks an epic node/label rather than a story node, then nothing breaks (either the epic's title is shown in the same panel, or the click is a no-op) — no error or blank panel state."
+  - "Given the existing propose-a-change form, pendingProposal pill, and AuditPanel history section, when this story is complete, then all continue to work exactly as before — clicking a node only affects the new detail panel, nothing else in the view."
+
+steps:
+  - id: map-rendered-nodes-to-story-data
+    description: |
+      After the SVG from p9-01's mermaid.render() is written into the
+      container, query the container for rendered node elements (Mermaid's
+      convention: elements with class "node", each with an id derived from
+      the mermaid node id passed into render()). Build a lookup from the
+      sanitized node id back to the originating DiagramStory (or DiagramEpic
+      for epic-level nodes) using the same id-sanitizing function p9-01's
+      source-builder already uses, so the mapping is exact and doesn't rely
+      on parsing rendered label text.
+    agent: developer
+  - id: wire-click-handlers-and-detail-panel
+    description: |
+      Attach a click listener to each mapped node element (addEventListener
+      in the same useEffect that runs after render, cleaned up on
+      unmount/re-render per the existing cancelled/cleanup pattern from
+      p9-01). Add a small detail panel (local component state: selected
+      story id or null) rendered alongside the diagram container showing the
+      selected story's title, complexity, and dependsOn (resolved to titles
+      where possible, falling back to raw ids for any dependsOn target not
+      present in the current epics list). Clicking the same node again or a
+      close control clears the selection.
+    agent: developer
+  - id: update-tests
+    description: |
+      Extend web/src/features/projects/DiagramView.test.tsx: simulate a
+      click on a rendered node (via the mocked mermaid module's fake
+      svg/bindFunctions output, giving rendered nodes deterministic
+      data-testid or id attributes the test can target) and assert the
+      detail panel shows the expected story's id/title/complexity/dependsOn;
+      assert clicking a second node updates the panel; assert closing/
+      re-clicking clears it; assert the propose-change and audit sections
+      are unaffected by these additions.
+    agent: tester
+  - id: manual-verification
+    description: |
+      Run the app locally, open a project's diagram with multiple epics and
+      stories with dependsOn edges, click through several story nodes, and
+      confirm the detail panel shows correct, current data for whichever
+      node was last clicked, and that closing it and using the rest of the
+      view (propose-change, audit history) still works normally.
+    agent: tester
+
+context:
+  key_files:
+    - path: web/src/features/projects/DiagramView.tsx
+      purpose: Where p9-01 introduced the Mermaid render container; this story adds click listeners on the rendered node elements and a new detail-panel section, without touching the propose-change/audit sections.
+    - path: web/src/features/projects/DiagramView.test.tsx
+      purpose: Existing/p9-01-updated test suite this story extends with node-click assertions using the same mocked mermaid module.
+    - path: archive/dev-2026-08-11-pantheon-coupled:web/src/components/DiagramView.tsx
+      purpose: "Confirmed via git show: bindFunctions?.(container) is called but never exercised — no click-to-node-detail interaction exists to port from here; this story's interaction is new, not archived-derived (git show to read; not present in the current working tree)."
+
+files_to_modify:
+  - file: web/src/features/projects/DiagramView.tsx
+    change: Add a node-id-to-story/epic lookup, click listeners on rendered node elements, and a detail panel showing the selected node's data.
+  - file: web/src/features/projects/DiagramView.test.tsx
+    change: Add test coverage for node-click, selection-switching, and deselection behavior against the mocked mermaid render output.
+
+design_decisions:
+  - decision: Attach click listeners directly to the rendered SVG's DOM node elements rather than using Mermaid's own `click nodeId callback` directive mechanism.
+    rationale: Mermaid's click-directive mechanism typically requires securityLevel "loose" and/or exposing a global window callback function to be invoked from the rendered SVG's inline handler; attaching addEventListener directly to elements already present in a container this component controls is simpler, keeps securityLevel at its safer default/strict setting from p9-01, and needs no global callback surface.
+  - decision: Detail panel shows dependsOn resolved to story titles where possible, falling back to raw ids.
+    rationale: Titles are more readable for an operator scanning a cascade; falling back to the raw id keeps the panel from breaking if a dependsOn target references a story id not present in the currently-loaded epics (e.g. a stale/typo'd depends_on in an epic.yaml).
+  - decision: No detail panel behavior is added for epic-level nodes beyond "don't break" — full epic detail is out of scope for this story.
+    rationale: Keeps this story small and focused on the story-level detail gap that motivated it; epic-level node interaction can be a future addition if it turns out to matter in practice.
+
+risks:
+  - severity: low
+    description: Mermaid's exact DOM structure/id conventions for rendered node elements could change across mermaid versions, breaking the click-target lookup.
+    mitigation: Pin the mermaid version added in p9-01 rather than a loose range that could silently upgrade; re-verify the lookup if the pin is ever bumped.
+  - severity: low
+    description: Clicking rapidly between many nodes, or a node whose id doesn't cleanly map back to a story (e.g. an epic subgraph label), could produce a confusing or blank detail panel.
+    mitigation: Covered by this story's acceptance criteria (epic-node clicks must not error or blank the panel) and test coverage for selection-switching.
