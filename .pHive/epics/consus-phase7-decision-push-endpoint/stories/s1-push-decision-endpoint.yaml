@@ -1,0 +1,115 @@
+id: s1-push-decision-endpoint
+epic: consus-phase7-decision-push-endpoint
+title: POST /api/decisions accepts a decision-request/v1 payload and creates a new item
+status: pending
+complexity: low
+methodology: tdd
+depends_on: []
+
+description: |
+  Consus has no HTTP endpoint that lets an outside agent/harness create a new decision item —
+  today items only land via Consus's own internal KB-store flow or the propose-a-change
+  mechanism. Add POST /api/decisions to server/routes/decisions.ts (alongside the existing GET)
+  that accepts { id, title, source_repo?, decision_payload } and creates a new items row, so it
+  shows up in GET /api/decisions like anything else. decision_payload must already be a valid
+  dostal:decision-request/v1 object (server/decision-contract/parser.ts's DecisionPayload shape) —
+  this route does not compose it, it validates and stores what the caller supplies.
+
+  id is caller-supplied and required (not server-generated) — see design-discussion.md's
+  "Id generation and duplicate handling" section for why. A duplicate id is a 409, not an upsert.
+
+acceptance_criteria:
+  - "Given a well-formed request (id, title, a valid decision_payload with >=2 options and a recommended letter matching one of them), when POST /api/decisions is called, then a new item is created and it appears in a subsequent GET /api/decisions call with the same decision_payload."
+  - "Given a request missing id or title, when POST /api/decisions is called, then the response is 400 with a clear error naming the missing field."
+  - "Given a decision_payload with the wrong version string, fewer than 2 options, or a recommended letter that doesn't match any option id, when POST /api/decisions is called, then the response is 400 with a clear error naming what's wrong."
+  - "Given a request whose id already exists in the items table, when POST /api/decisions is called, then the response is 409 Conflict and no row is modified."
+  - "Given a successful creation, then the response body includes the created item's id, type, title, status, and decision_payload — the same shape GET /api/decisions returns for it."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Write vitest specs in server/routes/decisions.test.ts (extend the existing file) covering
+      all five acceptance criteria above, using an in-memory better-sqlite3 db, following the
+      existing insertItem/PAYLOAD test helper pattern already in that file.
+    agent: tester
+  - id: implement-route
+    description: >
+      Add the POST /api/decisions handler to server/routes/decisions.ts, validating the payload
+      shape (version string, options.length >= 2, recommended matches an option id) before
+      inserting, following server/kb/store.ts's existing insert/transaction conventions. Make the
+      failing tests pass without modifying the tests.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: document-the-route
+    description: >
+      Add a "Pushing a new decision or CBA" section to skills/consus/SKILL.md, matching the voice
+      and level of detail of its existing "Reading the queue" and "Submitting a verdict" sections.
+      Add a matching POST /api/decisions section to docs/api-reference.md's "Decisions" heading,
+      following that file's existing per-route format (method/path, description, request body,
+      response shape, error cases) — write only the new section accurately; do not attempt to fix
+      that file's other already-stale Multica-sync references in this story, that's tracked
+      separately in .pHive/planning/backlog.md.
+    agent: developer
+    depends_on: [implement-route]
+  - id: review
+    description: Review the route for correctness (validation completeness, 409 handling, response shape) and convention compliance with the other routes/*.ts files.
+    agent: reviewer
+    depends_on: [document-the-route]
+  - id: integrate
+    description: Commit the route, its tests, and the two doc updates.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: server/decision-contract/parser.ts
+      purpose: "Defines the DecisionPayload/DecisionOption shape this route validates against. Do not modify — this route consumes the existing contract, it doesn't change it."
+    - path: server/routes/decisions.ts
+      purpose: "Existing GET /api/decisions handler this story adds a POST alongside — follow its existing style (ItemRow interface, prepared statements)."
+    - path: server/kb/store.ts
+      purpose: "decideItem() is the closest existing example of a function that writes to the items table with a transaction — follow its conventions for the new insert."
+    - path: skills/consus/SKILL.md
+      purpose: "The agent-facing skill doc — has 'Reading the queue' and 'Submitting a verdict' sections already; this story adds a third, 'Pushing a new decision or CBA', in the same voice."
+    - path: docs/api-reference.md
+      purpose: "Per-route API reference; the 'Decisions' section needs this new route documented in its existing format (see the GET /api/decisions entry directly above it for the format to match)."
+
+files_to_modify:
+  - file: server/routes/decisions.ts
+    change: "Add the POST /api/decisions handler with payload validation and the 409-on-duplicate-id check."
+  - file: server/routes/decisions.test.ts
+    change: "Extend with vitest specs for the five acceptance criteria."
+  - file: skills/consus/SKILL.md
+    change: "Add the 'Pushing a new decision or CBA' section."
+  - file: docs/api-reference.md
+    change: "Add the POST /api/decisions entry to the Decisions section."
+
+design_decisions:
+  - decision: "id is caller-supplied and required, not server-generated."
+    rationale: "The calling agent/harness is the one that knows what counts as 'the same decision asked twice' for its own workflow — Consus can't infer that. See design-discussion.md."
+  - decision: "A duplicate id is 409 Conflict, not a silent upsert."
+    rationale: "Upserting would hide a real bug in the caller's own id scheme. A clear 409 lets the caller decide whether that's expected (catch and ignore) or a mistake."
+  - decision: "No auth/token layer for this route."
+    rationale: "Server binds 127.0.0.1 only, single-operator threat model — consistent with every other route in this codebase; none of them have auth either."
+
+risks:
+  - severity: low
+    description: "A caller could push a decision_payload that passes structural validation but is semantically nonsensical (e.g. a recommended option that doesn't actually make sense given its own tradeoffs text)."
+    mitigation: "Not fully preventable server-side — same trust boundary the existing decision-contract parser already accepts from doc-embedded fenced blocks. Structural validation (version, option count, recommended-matches-an-option) is the bar the rest of this codebase holds itself to."
+
+references:
+  - path: server/decision-contract/parser.ts
+    relevant_excerpt: |
+      export interface DecisionPayload {
+        version: "dostal:decision-request/v1";
+        title: string;
+        context: string;
+        options: DecisionOption[];
+        recommended: string;
+        diagram?: boolean;
+        doc?: DecisionDocPointer;
+      }
+  - path: server/routes/decisions.ts
+    relevant_excerpt: |
+      export function registerDecisionRoutes(app: FastifyInstance, { db }: DecisionRoutesOptions): void {
+        app.get<{ Querystring: { all?: string } }>("/api/decisions", async (request) => {
+          ...
