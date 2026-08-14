@@ -38,6 +38,8 @@ build/
 !.pHive/epics/consus-phase10-decision-parser-tiers/**
 !.pHive/epics/consus-phase11-draft-submit-separation/
 !.pHive/epics/consus-phase11-draft-submit-separation/**
+!.pHive/epics/consus-phase12-sectional-diff-view/
+!.pHive/epics/consus-phase12-sectional-diff-view/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/
