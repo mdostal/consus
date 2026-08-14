@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
+import type { DecisionPayload } from "../decision-contract/parser.js";
 
 export interface DecisionRoutesOptions {
   db: Database.Database;
@@ -16,6 +17,33 @@ interface ItemRow {
   decision_payload: string | null;
   decision_type: string | null;
   triage_bucket: string | null;
+}
+
+interface CreateDecisionBody {
+  id?: string;
+  title?: string;
+  source_repo?: string;
+  decision_payload?: DecisionPayload;
+}
+
+/** Structural validation only — this route stores what a caller supplies, it
+ *  never composes a decision_payload itself. Returns the first problem found,
+ *  or null when the payload is well-formed. */
+function validateDecisionPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") {
+    return "decision_payload is required";
+  }
+  const p = payload as Partial<DecisionPayload>;
+  if (p.version !== "dostal:decision-request/v1") {
+    return `decision_payload.version must be "dostal:decision-request/v1"`;
+  }
+  if (!Array.isArray(p.options) || p.options.length < 2) {
+    return "decision_payload.options must have at least 2 entries";
+  }
+  if (!p.options.some((o) => o.id === p.recommended)) {
+    return "decision_payload.recommended must match one of decision_payload.options[].id";
+  }
+  return null;
 }
 
 /**
@@ -46,5 +74,50 @@ export function registerDecisionRoutes(app: FastifyInstance, { db }: DecisionRou
       ...row,
       decision_payload: row.decision_payload ? JSON.parse(row.decision_payload) : null,
     }));
+  });
+
+  /**
+   * s1-push-decision-endpoint: lets an outside agent/harness create a new
+   * decision item — today's only other write paths (the KB store, the
+   * propose-a-change mechanism) are Consus-internal. `id` is caller-supplied
+   * and required, never server-generated: the calling agent is the one that
+   * knows whether this is a genuinely new decision or the same one asked
+   * twice, so a duplicate `id` is a 409, not a silent upsert.
+   */
+  app.post<{ Body: CreateDecisionBody }>("/api/decisions", async (request, reply) => {
+    const { id, title, source_repo: sourceRepo, decision_payload: decisionPayload } = request.body ?? {};
+
+    if (!id) {
+      return reply.code(400).send({ error: "id is required" });
+    }
+    if (!title) {
+      return reply.code(400).send({ error: "title is required" });
+    }
+    const payloadError = validateDecisionPayload(decisionPayload);
+    if (payloadError) {
+      return reply.code(400).send({ error: payloadError });
+    }
+
+    const existing = db.prepare("SELECT id FROM items WHERE id = ?").get(id);
+    if (existing) {
+      return reply.code(409).send({ error: `item already exists: ${id}` });
+    }
+
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO items (id, type, title, status, source_repo, created_at, updated_at, decision_payload)
+       VALUES (?, 'decision_request', ?, 'open', ?, ?, ?, ?)`,
+    ).run(id, title, sourceRepo ?? null, now, now, JSON.stringify(decisionPayload));
+
+    const row = db
+      .prepare(
+        "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket FROM items WHERE id = ?",
+      )
+      .get(id) as ItemRow;
+
+    return reply.code(201).send({
+      ...row,
+      decision_payload: row.decision_payload ? JSON.parse(row.decision_payload) : null,
+    });
   });
 }
