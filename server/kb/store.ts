@@ -17,6 +17,8 @@ export interface KbVersionRow {
   kb_entry_id: string;
   content: string;
   author: string;
+  /** p11-01: 'published' rows are visible KB content; 'draft' rows are not. */
+  state: "published" | "draft";
   created_at: string;
 }
 
@@ -108,10 +110,48 @@ export function createKbEntry(
     ).run(id, title, now, sourceRepo ?? null, collection);
 
     const result = db
-      .prepare("INSERT INTO kb_versions (kb_entry_id, content, author, created_at) VALUES (?, ?, ?, ?)")
-      .run(id, content, author, now);
+      .prepare("INSERT INTO kb_versions (kb_entry_id, content, author, state, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(id, content, author, "published", now);
 
     db.prepare("UPDATE kb_entries SET current_version_id = ? WHERE id = ?").run(result.lastInsertRowid, id);
+  });
+  tx();
+}
+
+export interface SaveKbDraftInput {
+  id: string;
+  title?: string;
+  author: string;
+  content: string;
+  /** Project/repo this entry belongs to (REQ-27) — nullable for backward compatibility. */
+  sourceRepo?: string | null;
+}
+
+/**
+ * Persist an in-progress edit as a kb_versions row with state='draft'
+ * WITHOUT repointing kb_entries.current_version_id — the structural
+ * mechanism that keeps a draft from instantly becoming published content
+ * (REQ-17, "Save != Submit").
+ */
+export function saveKbDraft(
+  db: Database.Database,
+  { id, title, author, content, sourceRepo }: SaveKbDraftInput,
+): void {
+  const now = new Date().toISOString();
+
+  const tx = db.transaction(() => {
+    // ON CONFLICT DO NOTHING — see createKbEntry() above for why this form
+    // is used instead of INSERT OR IGNORE (which would also silently
+    // swallow a CHECK constraint violation on `collection`).
+    db.prepare(
+      `INSERT INTO kb_entries (id, title, current_version_id, created_at, source_repo)
+       VALUES (?, ?, NULL, ?, ?)
+       ON CONFLICT(id) DO NOTHING`,
+    ).run(id, title ?? id, now, sourceRepo ?? null);
+
+    db.prepare(
+      "INSERT INTO kb_versions (kb_entry_id, content, author, state, created_at) VALUES (?, ?, ?, ?, ?)",
+    ).run(id, content, author, "draft", now);
   });
   tx();
 }
@@ -119,5 +159,11 @@ export function createKbEntry(
 export function getKbVersions(db: Database.Database, kbEntryId: string): KbVersionRow[] {
   return db
     .prepare("SELECT * FROM kb_versions WHERE kb_entry_id = ? ORDER BY id ASC")
+    .all(kbEntryId) as KbVersionRow[];
+}
+
+export function getKbDraftVersions(db: Database.Database, kbEntryId: string): KbVersionRow[] {
+  return db
+    .prepare("SELECT * FROM kb_versions WHERE kb_entry_id = ? AND state = 'draft' ORDER BY id ASC")
     .all(kbEntryId) as KbVersionRow[];
 }
