@@ -1,0 +1,135 @@
+id: s1-wire-classifier-into-decisions-route
+epic: consus-phase15-wire-decision-classifier
+title: Call classifyItem from the decisions and event-detection write paths so decision_type/triage_bucket are populated
+status: pending
+complexity: low
+methodology: tdd
+depends_on: []
+
+description: |
+  server/decision-contract/classifier.ts exports classifyItem(db, itemId) — a fully built, fully
+  tested heuristic decision-type + triage-bucket classifier that already writes decision_type and
+  triage_bucket back onto the items row itself and already consults triage_overrides — but no
+  route ever calls it. Every item returned by GET /api/decisions and POST /api/decisions carries
+  decision_type: null, triage_bucket: null today regardless of content. This story wires the
+  existing function into the two real write paths that give an item a decision_payload:
+  POST /api/decisions (server/routes/decisions.ts) and the decision_needed event-detection pass
+  (detectDecisionNeededForRow in server/events/detect.ts). It also adds a narrow opportunistic
+  classification step in GET /api/decisions for any row whose decision_type is still null (covers
+  items that existed before this wiring shipped), so nothing is left permanently unclassified.
+  No changes to the classifier's own logic — this is call-an-existing-function wiring only.
+
+acceptance_criteria:
+  - "Given a well-formed POST /api/decisions request with a valid decision_payload, when the item is created, then the response body's decision_type and triage_bucket are non-null and match what classifyItem computes for that payload (e.g. a payload with diagram: true returns decision_type 'cba')."
+  - "Given an items row that already has a decision_payload but decision_type/triage_bucket are still null (representing data written before this story), when GET /api/decisions is called, then the response for that item has populated decision_type/triage_bucket, and the underlying items row is updated so a second GET does not need to reclassify it."
+  - "Given an items row that already has a non-null decision_type (already classified), when GET /api/decisions is called again, then classifyItem is not re-invoked for that row — no redundant UPDATE — and the response reflects the already-stored values."
+  - "Given a doc containing an embedded decision-request block that the decision_needed event-detection pass picks up, when detectDecisionNeededForRow upserts the corresponding items row, then that row's decision_type and triage_bucket are populated without requiring a subsequent GET /api/decisions call to trigger it."
+  - "Given a triage_overrides row exists for an item's id, when that item is classified via any of the three call sites this story adds (POST /api/decisions, GET /api/decisions null-row backfill, detectDecisionNeededForRow), then triage_bucket reflects the override value, not the heuristic bucket — this already works inside classifyItem itself and must not regress."
+  - "Given the existing test suites server/routes/decisions.test.ts and server/routes/decisions.all.test.ts, when this story lands, then no existing assertion is broken (none of them currently assert decision_type/triage_bucket stay null), and at least one existing or new assertion in those files explicitly checks that decision_type/triage_bucket are populated post-wiring, so the new behavior is pinned rather than left implicitly untested."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Add vitest specs to server/routes/decisions.test.ts and server/routes/decisions.all.test.ts
+      covering: POST /api/decisions returning a populated decision_type/triage_bucket for a fresh
+      item; GET /api/decisions backfilling decision_type/triage_bucket for a pre-existing row that
+      was inserted directly with decision_type left null (mirroring how these test files already
+      insert rows via their insertItem helper, bypassing the route); and GET /api/decisions not
+      overwriting an already-classified row's stored values on a second call. Also add a vitest
+      spec to server/events/detect.test.ts (or wherever the existing decision_needed detection
+      tests live — locate the current test file for detectDecisionNeededForRow first) asserting
+      that an item created by that pass ends up with a populated decision_type/triage_bucket.
+      Follow each file's existing insertItem/PAYLOAD helper conventions rather than inventing new
+      ones.
+    agent: tester
+  - id: wire-decisions-route
+    description: >
+      In server/routes/decisions.ts, import classifyItem from ../decision-contract/classifier.js.
+      In the POST /api/decisions handler, call classifyItem(db, id) immediately after the INSERT
+      and before the follow-up SELECT that builds the response, so the response's existing
+      decision_type/triage_bucket columns come back populated with no other response-shape change.
+      In the GET /api/decisions handler, after fetching rows, iterate them and for any row whose
+      decision_type is null call classifyItem(db, row.id), then use the returned
+      ClassificationResult to fill decision_type/triage_bucket on that row in the response instead
+      of issuing a second SELECT per row. Rows that already have a non-null decision_type are left
+      untouched — no call, no write.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: wire-event-detection
+    description: >
+      In server/events/detect.ts, import classifyItem and call classifyItem(db, decisionItemId)
+      immediately after the existing INSERT ... ON CONFLICT DO UPDATE that upserts the items row
+      inside detectDecisionNeededForRow, so every item this pass creates or updates is classified
+      in the same pass rather than waiting on a later GET /api/decisions call.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: make-tests-pass
+    description: >
+      Run the full test suite and fix the wiring in decisions.ts / detect.ts as needed until every
+      new test from write-failing-tests passes without modifying the tests themselves, and until
+      the full existing suite (server/routes/decisions.test.ts,
+      server/routes/decisions.all.test.ts, server/decision-contract/classifier.test.ts, and the
+      event-detection test file) still passes unchanged.
+    agent: developer
+    depends_on: [wire-decisions-route, wire-event-detection]
+  - id: review
+    description: >
+      Review the two call sites for correctness: confirm the POST path classifies exactly once per
+      created item, confirm the GET path only classifies null rows (never re-classifies an
+      already-populated row on every list render), and confirm the event-detection call site
+      re-classifies correctly on content drift (a re-upsert of the same item id with a changed
+      decision_payload). Also confirm no route or test now silently assumes decision_type/
+      triage_bucket stay null.
+    agent: reviewer
+    depends_on: [make-tests-pass]
+  - id: integrate
+    description: Commit the wiring changes and their tests.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: server/decision-contract/classifier.ts
+      purpose: "classifyItem(db, itemId) — the existing, fully tested function this story wires in. Do not modify its logic; it already writes decision_type/triage_bucket to the items row and already consults triage_overrides."
+    - path: server/decision-contract/classifier.test.ts
+      purpose: "Existing unit coverage for classifyItem's own behavior — read for concrete input/output examples (e.g. diagram:true -> 'cba', extractionTier 'heuristic' -> 'agent_task') but do not need to change; this story doesn't touch classifier logic."
+    - path: server/decision-contract/parser.ts
+      purpose: "DecisionPayload shape and extractionTier field that classifyItem already consumes via heuristicTriageBucket — read-only context, not modified by this story."
+    - path: server/routes/decisions.ts
+      purpose: "GET and POST /api/decisions handlers — both call sites this story adds live here. Existing SELECT statements already include decision_type, triage_bucket columns."
+    - path: server/routes/decisions.test.ts
+      purpose: "Existing GET/POST test coverage to extend; confirmed no current assertion assumes decision_type/triage_bucket stay null."
+    - path: server/routes/decisions.all.test.ts
+      purpose: "Existing ?all=1 test coverage to extend under the same confirmation as decisions.test.ts."
+    - path: server/events/detect.ts
+      purpose: "detectDecisionNeededForRow (around lines 237-280) — the decision_needed event-detection pass and its INSERT ... ON CONFLICT DO UPDATE upsert of an items row with a decision_payload; the third call site this story adds."
+    - path: server/db/migrate.ts
+      purpose: "Confirms decision_type and triage_bucket columns already exist on items (addColumnIfMissing calls, lines 160-161) and triage_overrides' schema (lines 87-92) — no migration needed for this story."
+
+files_to_modify:
+  - file: server/routes/decisions.ts
+    change: "Import classifyItem; call it after the POST insert, and for any null-decision_type row inside the GET handler."
+  - file: server/routes/decisions.test.ts
+    change: "Add specs asserting POST and GET populate decision_type/triage_bucket, and that an already-classified row isn't re-classified on a later GET."
+  - file: server/routes/decisions.all.test.ts
+    change: "Add or extend a spec confirming decision_type/triage_bucket are populated under the ?all=1 path too."
+  - file: server/events/detect.ts
+    change: "Import classifyItem; call it right after the items upsert inside detectDecisionNeededForRow."
+  - file: server/events/detect.test.ts
+    change: "Add a spec confirming an item created by detectDecisionNeededForRow ends up classified (exact filename to confirm during write-failing-tests — locate the current test file covering this function first)."
+
+design_decisions:
+  - decision: "Classify at write time (on insert/upsert in POST /api/decisions and detectDecisionNeededForRow), not at read time (recomputing for every row on every GET)."
+    rationale: "classifyItem already performs its own UPDATE as a side effect, so it is inherently a write-time function, not a pure one — running it from GET would make a read endpoint mutate the database on every request. GET /api/decisions's existing SELECT already lists decision_type/triage_bucket as plain stored columns, matching a write-time design. See design-discussion.md."
+  - decision: "GET /api/decisions opportunistically classifies only rows where decision_type IS NULL, rather than never touching GET at all."
+    rationale: "Pure write-time-only wiring would leave every item that existed before this story ships permanently unclassified, since nothing ever revisits old rows. This narrow backfill self-heals exactly those rows on first read after the story ships, without turning GET into a full recompute-every-row operation for already-classified data."
+  - decision: "No changes to triage_overrides wiring or a new overrides-management route."
+    rationale: "classifyItem already consults triage_overrides on every call (classifier.ts:116-119) — this is not a gap. setTriageOverride has no HTTP route calling it today, but that's a separate, pre-existing gap outside VISION.md's flagged scope for this story."
+
+risks:
+  - severity: low
+    description: "The GET-path null-row backfill means the very first GET /api/decisions call after this story ships could be slightly slower for repos with many pre-existing unclassified items, since it classifies (and writes) each of them inline."
+    mitigation: "classifyItem is a single indexed row read plus a single indexed triage_overrides lookup plus one UPDATE — cheap per item, and it's a one-time cost per item (subsequent GETs skip already-classified rows). No pagination or batching added given this codebase's local, single-operator scale."
+  - severity: low
+    description: "A future change to the classifier's heuristics won't retroactively reclassify rows already written under the old logic, since write-time classification only runs once per row (at insert, or once via the GET backfill for legacy rows)."
+    mitigation: "Accepted and out of scope — a full backfill/reclassification pass is a separate concern from wiring the existing function in for the first time. Noted in design-discussion.md as a known limitation."
