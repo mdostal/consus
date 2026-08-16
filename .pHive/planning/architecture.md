@@ -1,5 +1,12 @@
 # Architecture — Consus
 
+> **Historical record — v1 pre-code planning pass.** This document describes the original
+> architecture proposal, written before any code existed and before Multica/Minerva/Auriga/
+> Vesta/Votem coupling was stripped from the codebase. Its Components, API Contracts, and Data
+> Model sections describe adapters and tables that no longer exist. Kept for design-lesson value
+> (the Tech Stack and several Key Decisions still hold), not as a current reference — see
+> `.pHive/planning/vision-and-way-of-working.md` for the current architecture and mission.
+
 Source: `.pHive/planning/prd.md`
 
 **Grounding note:** Multica and the Hive adapter-ABI pattern were verified directly against their real repos (`~/Code/multica`, `~/Code/plugin-hive/hive/lib/task-tracking-dispatch`) during this phase. Auriga's `EventContract` / `ConsumerContract` / `LockContract` / `TrackerAdapter` names come from the operator's description — no Auriga repo/spec exists locally yet to verify against. Where this doc references Auriga's contract, treat the *shape* (read-only tracker/observability access) as fixed and the exact schema as **pending** `docs/contracts/pantheon-contract-levels.md` (see Risks).

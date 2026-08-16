@@ -1,5 +1,15 @@
 # PRD — Consus
 
+> **Historical record — v1 pre-code planning pass.** Most requirements below (REQ-01, REQ-04,
+> REQ-06, REQ-07, REQ-13, REQ-14, REQ-26 and others) describe direct integration with Minerva/
+> Multica/Auriga/Vesta/Votem — coupling this codebase has since deliberately stripped out.
+> Consus's fixed scope is now standalone-only; cross-plugin integration is future Pantheon L2
+> adapter work, not something Consus's own code reaches out for. Kept for traceability (several
+> REQs — decision-request/v1, KB store, doc scanner, project registry — describe capabilities
+> that shipped and remain accurate), not as a current target list — see
+> `.pHive/planning/vision-and-way-of-working.md` and `.pHive/planning/backlog.md` for current
+> direction and what's actually left to build.
+
 Source: `.pHive/planning/product-brief.md` (Product Brief) ← `.pHive/planning/product-discovery-brief.md` (Discovery Brief)
 
 ## Requirements Breakdown

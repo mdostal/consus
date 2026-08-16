@@ -2,9 +2,10 @@
 
 Refreshed 2026-08-13, after the Multica/Minerva/Auriga/Vesta/Votem strip (`4653222`) and the
 consus-phase6-standalone-onboarding epic. Supersedes the framing in `.pHive/planning/product-brief.md`,
-`product-discovery-brief.md`, and `roadmap.md` wherever they assume live coupling to another
-Pantheon system — those documents predate this session's architectural correction and are kept
-as historical record, not as current direction. `docs/prior-art.md` and
+`product-discovery-brief.md`, `roadmap.md`, `prd.md`, and `architecture.md` wherever they assume
+live coupling to another Pantheon system — those documents predate this session's architectural
+correction and are kept as historical record (the original v1 pre-code planning pass), not as
+current direction. `docs/prior-art.md` and
 `docs/delphi-lineage-inventory.md` remain valid as design-lesson sources; their LIFT/REDO calls
 mostly still stand, just with "REDO" now meaning "rebuild fully standalone," not "rebuild behind
 a swappable adapter to a specific system."

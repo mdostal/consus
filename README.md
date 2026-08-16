@@ -1,18 +1,20 @@
 # Consus
 
-**The Pantheon's rendered doc & decision surface** — a readable, navigable web+API surface for every artifact the swarm generates and every decision a human needs to make on it.
+**A standalone architect tool for any repo** — a local knowledgebase, graph, and doc editor for a repo's own decisions, docs, and architecture, with an agent-facing HTTP API so any Claude-Code-compatible harness can read and write to it.
 
 ## What & why
 
-When the swarm runs `/hive:kickoff`, `/plan`, or `/execute`, it produces briefs, PRDs, architecture docs, plans, CBAs, and specs as `.md`/`.html` files on the box. **You cannot read those in a shell session.** The old workaround was pulling each doc off the box by hand and rendering it as a one-off Artifact.
+A repo accumulates decisions, briefs, PRDs, architecture docs, plans, CBAs, and epic/story plans as `.md`/`.html`/YAML files on disk. **Reading those cleanly from a shell session, or tracking which decisions are still open, is tedious.** Consus indexes a repo's own `.pHive/` tree and gives it a real surface: browse the docs, see the diagram cascade, read and answer the open decision queue, edit a doc and propose the change back.
 
-Consus productizes exactly that. It is:
+The core loop: **index → open → interact → propose a change → shared-truth KB.**
 
-1. **A read/view surface** — render every generated doc cleanly, browse by repo / phase / epic.
-2. **A decision surface** — approve · discuss · iterate · sign-off. An approval isn't "done" — it's *go-build*, and it becomes shared-truth KB.
-3. **A Q&A / ideation loop** — surface the swarm's questions (kickoff/plan/CBA gates), answer them, iterate.
+1. **Index** — an operator-triggered, on-demand scan (`POST /api/projects/:project/ingest`) walks a repo's `.pHive/planning/` and `.pHive/epics/**` and populates the doc index. Deliberately not a background poll.
+2. **Open** — the per-project view shows a project's diagram cascade, its docs, and its KB entries together.
+3. **Interact** — read a rendered doc or a Mermaid diagram cascade, edit a doc section in place.
+4. **Propose a change** — `POST /api/proposals` fires a `{diff, description}` at whatever local harness is configured (`HarnessTransport`); the harness applies it and reports back.
+5. **Shared-truth KB** — an approved decision or doc becomes a durable, versioned `kb_entries` row, grouped by collection (`marketing` / `boundary-decisions` / `plans` / `artifacts` / `general`).
 
-Consus exists as its own service (and its own repo, `mdostal/consus`) because the ideation→sign-off loop is a distinct capability slot in Pantheon: swappable, independently versioned, with its own store and its own human surface. It runs **standalone or as a Pantheon plugin** — every route serves both modes identically.
+Consus is fully standalone: **zero live coupling to any other system.** It reads and writes only local SQLite and the local filesystem. It binds to `127.0.0.1` only — no network exposure.
 
 ## Architecture
 
@@ -20,41 +22,29 @@ Consus exists as its own service (and its own repo, `mdostal/consus`) because th
 flowchart TB
   subgraph Consus["Consus (this repo)"]
     direction TB
-    Web["Web SPA — Vite + React<br/>DecisionCard · DocRenderer · QAQueue<br/>KBBrowser · ProjectView (theme-aware)"]
-    API["Fastify server :8722"]
-    DB[("SQLite<br/>better-sqlite3<br/>items · audit_log · doc_index · kb_entries")]
-    subgraph Adapters["Read/write adapters"]
-      Doc["Doc Scanner"]
-      Min["Minerva bridge<br/>(questions · surveys)"]
-      Mul["Multica client<br/>(comments)"]
-      Aur["Auriga reader<br/>(tracker state)"]
-      Ves["Vesta policy"]
-      Vot["Votem quorum router"]
-    end
+    Web["Web SPA — Vite + React<br/>Decisions · DocRenderer · Diagrams (Mermaid)<br/>KB Browser · ProjectView (theme-aware)"]
+    API["Fastify server :8722<br/>(127.0.0.1 only)"]
+    DB[("SQLite<br/>better-sqlite3<br/>items · audit_log · doc_index · kb_entries · proposals")]
+    Scanner["Doc Scanner<br/>(server/adapters/doc-scanner)"]
+    Harness["HarnessTransport<br/>generic invoke(method, params)<br/>no-op unless a local command is configured"]
     Web -->|/api proxy| API
     API --> DB
-    API --> Adapters
+    API --> Scanner
+    API --> Harness
   end
 
-  Doc -.scans .pHive/planning docs.-> Repos[("Pantheon repos<br/>generated .md/.html")]
-  Min -.-> Minerva["Minerva (planning god)"]
-  Mul -.-> Multica["Multica (board substrate)"]
-  Aur -.-> Auriga["Auriga (routing god)"]
-  Ves -.-> Vesta["Vesta (settings god)"]
-  Vot -.-> Votum["Votum (quorum god)"]
+  Scanner -.on-demand ingest.-> Repo[("This repo's own .pHive/<br/>planning/ + epics/ (.md/.html/.yaml)")]
+  Harness -.optional, opt-in.-> LocalCmd["A locally configured CLI command<br/>(CONSUS_HARNESS_COMMAND)"]
 
-  Human["Human reviewer"] -->|reads docs · decides| Web
+  Human["Human / agent harness"] -->|reads docs · decides · proposes changes| Web
+  Human -->|GET/POST| API
 ```
 
-Internally: a **Fastify** HTTP server (`server/index.ts`) on `:8722`, an idempotent **SQLite** schema (`server/db/migrate.ts`), a **doc scanner** that indexes generated docs, a `dostal:decision-request/v1` contract parser + classifier, a **KB store** with append-only audit log and versioning (so a decided item never loses its history), and a set of read/write **adapters** to sibling gods. The web layer is a Vite + React SPA whose feature components render docs via `marked` and present theme-aware decision cards.
+Internally: a **Fastify** HTTP server (`server/index.ts`) bound to `127.0.0.1:8722`, an idempotent **SQLite** schema (`server/db/migrate.ts`), a **doc scanner** (`server/adapters/doc-scanner` — the only adapter in the codebase) that indexes a repo's own generated docs, a `dostal:decision-request/v1` contract parser, a **KB store** with append-only audit log, draft/publish separation, and versioning, and the generic **`HarnessTransport`** seam (`server/harness/transport.ts`) for the propose-a-change mechanism — it defaults to a no-op and has no knowledge of what, if anything, is configured on the other end. The web layer is a Vite + React SPA (`web/src/App.tsx`) whose feature components render docs via `marked`, diagrams via Mermaid, and present theme-aware decision cards.
 
 ## How it fits
 
-Consus is one capability slot in **Pantheon** — the replace-yourself orchestration OS.
-
-- **Core host:** [pantheon-v2](https://github.com/mdostal/pantheon-v2) owns the contracts; Consus plugs into it.
-- **Substrate:** it reads planning docs and board state produced on top of [Multica](https://github.com/firefly-events/multica) and [plugin-hive](https://firefly-events.github.io/plugin-hive/).
-- **Sibling gods it talks to:** **Minerva** (planning — supplies the questions and surveys Consus surfaces), **Multica** (the board — comment read/write), **Auriga** (routing — read-only tracker state), **Vesta** (settings — policy reader), and **Votum** (quorum voting). Consus is typically presented inside **Janus**, Pantheon's UI/portal god.
+Consus is a standalone tool today — it does not reach out to any other system's API or client library (see `package.json`'s dependency list). Any agent harness that understands `skills/consus/SKILL.md` can drive it over plain HTTP: read the decision queue, push a decision or CBA, propose a doc/diagram change. Cross-system integration (e.g. a future Pantheon L2 adapter layer) is explicitly out of Consus's own codebase — if it ever exists, it talks to Consus over these same generic HTTP routes, the same as any other harness would.
 
 ## Quickstart
 
@@ -89,4 +79,6 @@ The full HTTP contract lives in [`docs/api-reference.md`](docs/api-reference.md)
 
 ## Status
 
-**WIP.** The server, HTTP API, SQLite store, doc scanner, decision contract, KB versioning, and the sibling-god adapters are **live and tested** (~109 passing tests across 31 suites). The React feature components (decision cards, doc renderer, Q&A queue, KB browser) are **built and tested but not yet assembled into the SPA shell** (`web/src/App.tsx` is still a placeholder), and doc rendering is markdown-only — **no mermaid yet**. See [VISION.md](VISION.md) for the current → goals → long-term trajectory and where to jump in.
+**v0.6.0.** The server, HTTP API, SQLite store, on-demand doc scanner, decision contract, KB store (with draft/submit separation and versioning), the generic proposal/harness mechanism, and the Mermaid-rendered diagram cascade are **live and tested**. The SPA shell (`web/src/App.tsx`) is assembled and wired: a per-project view shows a project's diagrams, docs, and KB entries together, with an in-place doc editor and a "Fire to harness" propose-a-change action.
+
+Consus went through a real architectural correction along the way: it briefly grew live integrations with several other systems, and that coupling was fully stripped back out (see `CHANGELOG.md`'s `[0.6.0]` entry) — the codebase today has no adapter for, client for, or dependency on any external system beyond what's listed in `package.json`. See [VISION.md](VISION.md) for the current state and where things go next.
