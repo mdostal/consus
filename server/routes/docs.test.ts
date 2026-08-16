@@ -216,3 +216,155 @@ describe("GET /api/docs/resolve", () => {
     expect(body.candidates).toEqual([{ candidate: ".pHive/planning/does-not-exist.md", resolved: false }]);
   });
 });
+
+describe("GET /api/docs/search", () => {
+  let repoDir: string;
+  let otherRepoDir: string;
+  let db: Database.Database;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    repoDir = mkdtempSync(join(tmpdir(), "consus-repo-"));
+    mkdirSync(join(repoDir, ".pHive", "planning"), { recursive: true });
+    writeFileSync(join(repoDir, ".pHive", "planning", "roadmap.md"), "# Plans\n\nnothing special here");
+
+    otherRepoDir = mkdtempSync(join(tmpdir(), "consus-other-repo-"));
+    mkdirSync(join(otherRepoDir, ".pHive", "planning"), { recursive: true });
+    writeFileSync(
+      join(otherRepoDir, ".pHive", "planning", "architecture.md"),
+      "# Architecture\n\nthis mentions decision-request somewhere in the body",
+    );
+
+    db = new Database(":memory:");
+    runMigration(db);
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
+    scanRepo(db, { repoName: "other-project", repoPath: otherRepoDir });
+
+    app = Fastify();
+    registerDocRoutes(app, { db, repos: { consus: repoDir, "other-project": otherRepoDir } });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+    rmSync(repoDir, { recursive: true, force: true });
+    rmSync(otherRepoDir, { recursive: true, force: true });
+  });
+
+  it("matches on repo name via a case-insensitive path/repo substring, tagging matched with 'path'", async () => {
+    // "other-project" repo name contains "other"; "consus" doesn't.
+    const res = await app.inject({ method: "GET", url: "/api/docs/search?q=other-proj" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.results).toHaveLength(1);
+    expect(body.results[0]).toMatchObject({
+      repo: "other-project",
+      file_path: join(".pHive", "planning", "architecture.md"),
+      matched: ["path"],
+    });
+  });
+
+  it("matches a file_path substring case-insensitively (query 'ROADMAP' matches roadmap.md)", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/docs/search?q=ROADMAP" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.results).toHaveLength(1);
+    expect(body.results[0]).toMatchObject({
+      repo: "consus",
+      file_path: join(".pHive", "planning", "roadmap.md"),
+      matched: ["path"],
+    });
+  });
+
+  it("matches on live file content when repo/file_path don't contain the query, tagging matched with 'content' only", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/docs/search?q=decision-request" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.results).toHaveLength(1);
+    expect(body.results[0]).toMatchObject({
+      repo: "other-project",
+      file_path: join(".pHive", "planning", "architecture.md"),
+      matched: ["content"],
+    });
+  });
+
+  it("appears exactly once, with matched containing both 'path' and 'content', when a doc matches both dimensions", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/docs/search?q=architecture" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // "architecture" is in the file_path (path match) AND in the file
+    // content via the "# Architecture" heading (case-insensitive content match).
+    const matches = body.results.filter(
+      (r: { repo: string; file_path: string }) =>
+        r.repo === "other-project" && r.file_path === join(".pHive", "planning", "architecture.md"),
+    );
+    expect(matches).toHaveLength(1);
+    expect(matches[0].matched.sort()).toEqual(["content", "path"]);
+  });
+
+  it("scopes both the path-match and content-match dimensions to a single project via ?project=", async () => {
+    // "decision-request" only lives in other-project's content; scoping the
+    // search to consus must suppress it on both dimensions, not just one.
+    const res = await app.inject({ method: "GET", url: "/api/docs/search?q=decision-request&project=consus" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.results).toEqual([]);
+
+    // Sanity check: the same query against the actual owning project still matches.
+    const res2 = await app.inject({
+      method: "GET",
+      url: "/api/docs/search?q=decision-request&project=other-project",
+    });
+    const body2 = res2.json();
+    expect(body2.results).toHaveLength(1);
+    expect(body2.results[0].repo).toBe("other-project");
+
+    // Also verify project scoping suppresses a path match from the other repo.
+    const res3 = await app.inject({ method: "GET", url: "/api/docs/search?q=other-proj&project=consus" });
+    const body3 = res3.json();
+    expect(body3.results).toEqual([]);
+  });
+
+  it("returns 400 when q is missing", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/docs/search" });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("returns 400 when q is an empty string", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/docs/search?q=" });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("returns 200 with an empty results array (not a 404) when nothing matches", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/docs/search?q=nonexistent-string-xyz" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.results).toEqual([]);
+  });
+
+  it("still returns 200 and skips only the content dimension when a doc_index row's file has been deleted from disk", async () => {
+    const deletedPath = join(repoDir, ".pHive", "planning", "gone.md");
+    writeFileSync(deletedPath, "# Gone\n\nsome ephemeral content only findable while it exists");
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
+    rmSync(deletedPath, { force: true });
+
+    // Path match should still work off the stale index row.
+    const pathRes = await app.inject({ method: "GET", url: "/api/docs/search?q=gone.md" });
+    expect(pathRes.statusCode).toBe(200);
+    const pathBody = pathRes.json();
+    expect(pathBody.results).toHaveLength(1);
+    expect(pathBody.results[0]).toMatchObject({
+      repo: "consus",
+      file_path: join(".pHive", "planning", "gone.md"),
+      matched: ["path"],
+    });
+
+    // A content-only query against the now-deleted file's content must not
+    // error the whole request — it simply can't match via content anymore.
+    const contentRes = await app.inject({ method: "GET", url: "/api/docs/search?q=ephemeral" });
+    expect(contentRes.statusCode).toBe(200);
+    const contentBody = contentRes.json();
+    expect(contentBody.results).toEqual([]);
+  });
+});
