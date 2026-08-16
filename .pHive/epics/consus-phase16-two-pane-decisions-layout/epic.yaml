@@ -1,0 +1,10 @@
+name: consus-phase16-two-pane-decisions-layout
+title: Two-pane Decisions layout with URL-addressable selection
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: tdd
+
+stories:
+  - id: s1-two-pane-decisions-layout
+    title: Split the Decisions tab into an independently-scrolling list+detail two-pane layout with a ?selected= URL param
+    complexity: low
+    depends_on: []

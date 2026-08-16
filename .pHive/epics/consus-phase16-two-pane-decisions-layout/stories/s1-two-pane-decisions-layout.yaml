@@ -1,0 +1,161 @@
+id: s1-two-pane-decisions-layout
+epic: consus-phase16-two-pane-decisions-layout
+title: Split the Decisions tab into an independently-scrolling list+detail two-pane layout with a ?selected= URL param
+status: pending
+complexity: low
+methodology: tdd
+depends_on: []
+
+description: |
+  The Decisions tab (web/src/App.tsx's DecisionsSection, lines 243-282) renders every open decision
+  and then every decided decision as a single flat, vertically-stacked list of full inline
+  DecisionView cards (lines 75-237) — no list+detail split, no way to link directly to one decision.
+  This story replaces that flat layout with a two-pane layout: a left-hand scannable list and a
+  right-hand independently-scrolling detail panel, with the current selection addressable via a
+  `?selected=<id>` query param on the page URL. DecisionView (the existing rich per-item renderer —
+  context, option previews, verdict/AnswerControl, CommentThread, AuditPanel) is reused unchanged as
+  the detail pane's body; DecisionCard.tsx is not touched, since it isn't what the Decisions tab
+  renders today (it's used only by KBBrowser) and swapping to it would drop functionality DecisionView
+  already provides — see design-discussion.md's "Resolved design decision" section. Standalone-only:
+  no new backend route, reuses the existing GET /api/decisions?all=1 fetch App() already performs and
+  passes to DecisionsSection as props. No router library exists in this codebase (confirmed: no
+  react-router-dom in web/package.json, no <Route>/<BrowserRouter> in App.tsx) — selection/URL sync is
+  hand-rolled with URLSearchParams + window.history.replaceState via a small new hook, not a new
+  dependency.
+
+acceptance_criteria:
+  - "Given decisions data has loaded, when the Decisions tab renders, then a left list pane and a right detail pane are both present as distinct scroll containers (independent overflow-y: auto), not one long page-scrolling list as today."
+  - "Given the list pane shows multiple decisions, when the operator clicks a row for decision id X, then the page URL's `?selected=` query param becomes X and the detail pane renders that decision (its title/question visible in the DOM) without a page reload."
+  - "Given the page is loaded directly with `?selected=<id>` for an id present in the fetched decisions, when DecisionsSection mounts, then that decision is pre-selected and shown in the detail pane without requiring a click."
+  - "Given the page is loaded with `?selected=` absent, or set to an id not present in the fetched decisions, when DecisionsSection renders, then it falls back to a sane default selection (first open decision, else first decided decision, else an explicit empty-state message) rather than a blank pane or a crash — and this fallback does not itself rewrite the URL."
+  - "Given a decision is decided via the verdict flow inside the detail pane (DecisionView's onDecided calling reload()), when reload completes and a fresh `decisions` array is passed back down, then the same decision id remains selected and its updated decided state is reflected, rather than the selection being silently cleared."
+  - "Given the new decisions-two-pane.css stylesheet, when read at the source level (jsdom does not evaluate CSS layout), then it contains a `@media (max-width: 768px)` rule that collapses the two-pane container to a single column."
+  - "Given the existing DecisionCard.test.tsx and KBBrowser.test.tsx suites, when this story's changes land, then both pass unmodified, since DecisionCard.tsx itself is not changed by this story."
+  - "Given the existing App.test.tsx assertions about Decisions-tab nav-button visibility gating (on non-empty docs/kb/decisions) and loading-state smoke checks, when this story's changes land, then those assertions pass unmodified."
+  - "Given this story ships, then no new backend route or fetch call is added — the two-pane layout is populated entirely from the existing GET /api/decisions?all=1 fetch already performed in App()."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Add vitest specs for the two new files: web/src/features/decisions/useSelectedDecisionId.test.ts
+      (covers reading an initial ?selected= from window.location.search, select() updating the URL via
+      replaceState without adding a history entry, and responding to a popstate event) and
+      web/src/features/decisions/DecisionListPane.test.tsx (covers rendering grouped open/decided rows,
+      calling onSelect on click and on Enter/Space keydown, and marking the selected row via
+      aria-selected). Extend web/src/App.test.tsx with specs covering: both panes render as distinct
+      scroll containers; clicking a list row updates window.location's ?selected= and shows that
+      decision's detail; mounting with ?selected=<id> pre-selects it; mounting with a missing or
+      unknown ?selected= value falls back to the first open (else first decided, else empty-state)
+      decision without rewriting the URL; the same decision stays selected across a reload() triggered
+      by recording a verdict. Also add a plain source-level test asserting
+      decisions-two-pane.css contains a `@media (max-width: 768px)` rule. Follow App.test.tsx's
+      existing fetch-mock conventions (firstRunFetchMock and friends) rather than inventing new ones.
+    agent: tester
+  - id: add-selection-hook-and-list-pane
+    description: >
+      Add web/src/features/decisions/useSelectedDecisionId.ts: a hook returning
+      [selectedId: string | null, select: (id: string) => void], reading the initial value from
+      `new URLSearchParams(window.location.search).get("selected")`, writing via
+      `window.history.replaceState` (not pushState) on select(), and subscribing to `popstate` to stay
+      in sync with back/forward navigation. Add web/src/features/decisions/DecisionListPane.tsx: a
+      presentational component taking a duck-typed item shape ({ id, title, status, decided_at,
+      decision_type? } — structurally compatible with App.tsx's DecisionItem, no import from App.tsx)
+      grouped into open/decided sections with the existing "Needs you (N)" / "Decided (N)" heading
+      copy, selectedId, and onSelect; rows are clickable and keyboard-activatable
+      (role="option"/tabIndex/Enter+Space) with aria-selected reflecting selectedId.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: wire-two-pane-layout-into-app
+    description: >
+      In web/src/App.tsx, rewrite DecisionsSection's body (keeping its existing
+      `{ decisions, reload }` prop signature) to: compute open/decided as today; call
+      useSelectedDecisionId(); compute effectiveId as selectedId if it matches a fetched decision,
+      else the first open decision's id, else the first decided decision's id, else null; render
+      DecisionListPane in a left pane and, in a right pane, either `<DecisionView item={selected}
+      onDecided={reload} />` (selected = decisions.find by effectiveId) or an empty-state message when
+      effectiveId is null. DecisionView's own function body is not modified. Add
+      web/src/features/decisions/decisions-two-pane.css (grid/flex two-column container, each pane
+      `overflow-y: auto` with `min-height: 0` on the scrolling child, `@media (max-width: 768px)`
+      collapsing to a single stacked column) and import it from App.tsx alongside the existing
+      theme/tokens.css and app.css imports.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: make-tests-pass
+    description: >
+      Run the full web test suite and adjust the hook/list-pane/App.tsx wiring as needed until every
+      new test from write-failing-tests passes without modifying the tests themselves, and until the
+      full existing suite (App.test.tsx in full, DecisionCard.test.tsx, KBBrowser.test.tsx, and every
+      other currently-passing web test) still passes unchanged.
+    agent: developer
+    depends_on: [add-selection-hook-and-list-pane, wire-two-pane-layout-into-app]
+  - id: review
+    description: >
+      Review for: DecisionCard.tsx is genuinely untouched (diff has zero changes to that file);
+      DecisionView's body is genuinely untouched (diff shows only its call site moving, not its
+      internals); the selection fallback logic is applied identically whether ?selected= is absent or
+      unknown; replaceState is used (not pushState) so clicking through many decisions doesn't spam
+      browser history; the CSS scroll-containment (min-height: 0) is present so panes actually scroll
+      independently rather than growing the page; and no test was weakened (e.g. loosened matchers) to
+      make it pass.
+    agent: reviewer
+    depends_on: [make-tests-pass]
+  - id: integrate
+    description: Commit the two-pane Decisions layout changes and their tests.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: web/src/App.tsx
+      purpose: "DecisionItem type (lines 34-45), DecisionView (75-237, unchanged by this story), DecisionsSection (243-282, rewritten body / same props), App() (1070-1073, owns the decisions fetch + reload(), 1159 renders DecisionsSection). Central file this story edits."
+    - path: web/src/features/decisions/DecisionCard.tsx
+      purpose: "Explicitly NOT touched by this story — used only by KBBrowser.tsx today, not by the Decisions tab. See design-discussion.md's 'Resolved design decision' for why DecisionView, not DecisionCard, is what the new detail pane renders."
+    - path: web/src/features/decisions/DecisionCard.test.tsx
+      purpose: "Existing coverage for DecisionCard standalone — must keep passing unmodified since DecisionCard.tsx is not changed."
+    - path: web/src/features/kb/KBBrowser.tsx
+      purpose: "The only current consumer of DecisionCard — read-only context to confirm this story's changes don't affect it."
+    - path: web/src/App.test.tsx
+      purpose: "Existing shallow Decisions-tab coverage (nav-button visibility gating, loading-state smoke checks against /api/decisions fetch mocks) to extend, and whose existing fetch-mock helper conventions (firstRunFetchMock etc.) new specs should follow."
+    - path: web/src/app.css
+      purpose: "Existing .dv/.dv__*, .group-heading, .empty classes DecisionView/DecisionsSection already use and that the new two-pane layout should keep using rather than duplicating."
+    - path: web/package.json
+      purpose: "Confirms no router dependency exists (no react-router-dom) — selection/URL sync must be hand-rolled, not add a new dependency."
+
+files_to_modify:
+  - file: web/src/App.tsx
+    change: "Rewrite DecisionsSection's body to compose the two-pane layout via useSelectedDecisionId + DecisionListPane + DecisionView; import decisions-two-pane.css. DecisionView's own function body is unchanged."
+  - file: web/src/App.test.tsx
+    change: "Add/extend specs covering both panes rendering, URL updates on selection, ?selected= pre-selection, invalid/missing id fallback, and selection persisting across a verdict-triggered reload()."
+  - file: web/src/features/decisions/useSelectedDecisionId.ts
+    change: "New hook: reads/writes the ?selected= query param via URLSearchParams + history.replaceState, syncing with popstate."
+  - file: web/src/features/decisions/useSelectedDecisionId.test.ts
+    change: "New test file covering the hook in isolation."
+  - file: web/src/features/decisions/DecisionListPane.tsx
+    change: "New presentational left-pane list component (duck-typed item shape, grouped open/decided rows, click + keyboard selection)."
+  - file: web/src/features/decisions/DecisionListPane.test.tsx
+    change: "New test file covering the list pane in isolation."
+  - file: web/src/features/decisions/decisions-two-pane.css
+    change: "New stylesheet: two-column scroll-contained grid/flex layout with a 768px single-column collapse breakpoint."
+
+design_decisions:
+  - decision: "The detail pane renders the existing DecisionView unchanged, not DecisionCard."
+    rationale: "DecisionCard is not what the Decisions tab renders today (only KBBrowser uses it) and lacks functionality DecisionView already has live (previews, comments, audit trail). Swapping to DecisionCard would silently regress functionality — a bigger, unrequested scope change that conflicts with this epic's 'small scope, not a rewrite' constraint. See design-discussion.md."
+  - decision: "Selection state lives in ?selected= via a hand-rolled hook using URLSearchParams + history.replaceState, not a router library."
+    rationale: "No router dependency exists in web/package.json or App.tsx today; adding one for a single query param would be disproportionate. replaceState (not pushState) avoids one browser-history entry per row click, matching the archived precedent's own { replace: true } choice."
+  - decision: "Missing and invalid ?selected= values are handled identically: fall back to first open, else first decided, else empty state — and this fallback never rewrites the URL."
+    rationale: "Uniform handling avoids a special-cased branch for 'unknown id' vs 'no id'. Not rewriting the URL on the automatic default avoids mutating history/URL on a bare page load that the user didn't initiate."
+  - decision: "The list pane renders compact rows, not a full DecisionView/DecisionCard per item."
+    rationale: "A list of full rich cards is what today's flat layout already does and is exactly the problem being fixed (unscannable, no detail focus). Compact rows keep the list cheap to render and scannable; full detail is reserved for the single selected item."
+  - decision: "Narrow-viewport (<768px) collapse is CSS-only (a media query), no JS viewport-detection branching."
+    rationale: "Keeps the change small and stateless; matches the archived precedent's own approach and breakpoint. jsdom doesn't evaluate CSS layout, so this is verified at the CSS-source level in tests, with a real-browser spot-check left to review."
+
+risks:
+  - severity: low
+    description: "Independent-scroll panes require a bounded-height container coordinated with the existing app shell's nav/header CSS; incorrect height math could produce a double scrollbar or a pane that doesn't scroll."
+    mitigation: "Use the standard flex/grid min-height: 0 pattern on the scrolling children, and visually verify in the running app during review, not just via unit tests."
+  - severity: low
+    description: "jsdom does not evaluate CSS media queries, so the narrow-viewport acceptance criterion can only be pinned at the CSS-source level in the automated suite, not via a real rendered-layout assertion."
+    mitigation: "Accepted; the review step explicitly calls for a manual/real-browser spot-check of the 768px collapse as a supplement to the source-level test."
+  - severity: low
+    description: "This plan diverges from the task's literal wording that DecisionCard should be reused in the detail panel, based on what the current codebase actually contains (DecisionCard isn't used by the Decisions tab today)."
+    mitigation: "Explicitly documented and resolved in design-discussion.md's 'Resolved design decision' section with rationale, rather than silently deviated from or left blocking."
