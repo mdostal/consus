@@ -9,6 +9,8 @@ import { AuditPanel, type AuditTrailEntry } from "./features/audit/AuditPanel";
 import { BacklogBrowser, type BacklogEntry, type KbCollection } from "./features/kb/BacklogBrowser";
 import { DocBrowser, type GroupedDocs } from "./features/docs/DocBrowser";
 import { DocRenderer } from "./features/docs/DocRenderer";
+import { EventsList, type EventRow, type EventStatus } from "./features/events/EventsList";
+import { EventProposeComposer } from "./features/events/EventProposeComposer";
 import type { DecisionPayload, Verdict } from "./features/decisions/answer-shapes/types";
 import "./theme/tokens.css";
 import "./app.css";
@@ -689,6 +691,276 @@ function DocsSection() {
 }
 
 /* ---------------------------------------------------------------- */
+/* Section: Events (p14-5) — the UI over p14-3's event routes       */
+/* ---------------------------------------------------------------- */
+
+type EventSort = "detected_at" | "status" | "project";
+type EventOrder = "asc" | "desc";
+type EventViewMode = "active" | "archived";
+
+const EVENT_STATUSES: EventStatus[] = ["new", "in_progress", "done", "dismissed"];
+
+/**
+ * p14-5: EventsSection owns the current project/status/sort/order filter
+ * state, the active-vs-archived view mode, the fetched event list, the
+ * scan-all trigger + its in-flight/error state, and which event (if any)
+ * has its propose-composer open — matching ProjectsSection/DocsSection's
+ * shape (local fetch state, a useCallback load function, filter-driven
+ * re-fetch via useEffect). Filters default to unset (null) so the initial
+ * load hits GET /api/events with no query params at all — a value only
+ * joins the querystring once the operator has actually picked it.
+ */
+function EventsSection() {
+  const [events, setEvents] = useState<EventRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [projects, setProjects] = useState<string[] | null>(null);
+
+  const [project, setProject] = useState<string | null>(null);
+  const [status, setStatus] = useState<EventStatus | null>(null);
+  const [sort, setSort] = useState<EventSort | null>(null);
+  const [order, setOrder] = useState<EventOrder | null>(null);
+  const [viewMode, setViewMode] = useState<EventViewMode>("active");
+
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanWarning, setScanWarning] = useState<string | null>(null);
+
+  const [statusError, setStatusError] = useState<string | null>(null);
+
+  const [proposingEvent, setProposingEvent] = useState<EventRow | null>(null);
+  const [proposeError, setProposeError] = useState<string | null>(null);
+
+  // Reuses the existing GET /api/projects fetch pattern already in
+  // ProjectsSection — a second independent fetch, matching how DocsSection
+  // and ProjectsSection already each fetch overlapping data with no shared
+  // cache (this story's own accepted low-severity risk).
+  useEffect(() => {
+    fetch("/api/projects")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((body) => setProjects(body.projects))
+      .catch(() => {
+        // best-effort — the project filter just degrades to "All projects
+        // only" if this fails; it must never block the events list itself.
+      });
+  }, []);
+
+  const load = useCallback(() => {
+    setError(null);
+    const params = new URLSearchParams();
+    if (project) params.set("project", project);
+    if (status) params.set("status", status);
+    if (sort) params.set("sort", sort);
+    if (order) params.set("order", order);
+    const base = viewMode === "archived" ? "/api/events/history" : "/api/events";
+    const qs = params.toString();
+
+    fetch(qs ? `${base}?${qs}` : base)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(setEvents)
+      .catch((e) => setError(e.message));
+  }, [project, status, sort, order, viewMode]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function handleStatusChange(id: string, nextStatus: EventStatus) {
+    setStatusError(null);
+    try {
+      const res = await fetch(`/api/events/${encodeURIComponent(id)}/status`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      const updated: EventRow = await res.json();
+      // The row's own state updates in place with no full re-fetch required
+      // — unless the status change moved it out of the view currently
+      // showing (active -> archived, or archived -> active), in which case
+      // it's optimistically removed so the operator doesn't have to
+      // manually refresh to see it leave the queue.
+      setEvents((prev) => {
+        if (!prev) return prev;
+        const stillBelongs = viewMode === "archived" ? updated.archived_at !== null : updated.archived_at === null;
+        if (!stillBelongs) {
+          return prev.filter((e) => e.id !== id);
+        }
+        return prev.map((e) => (e.id === id ? updated : e));
+      });
+    } catch (e) {
+      setStatusError((e as Error).message);
+    }
+  }
+
+  async function scanAll() {
+    setScanning(true);
+    setScanError(null);
+    setScanWarning(null);
+    try {
+      const res = await fetch("/api/projects/scan-all", { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      const body: { results: Array<{ project: string; ok: boolean; error?: string }> } = await res.json();
+      const failures = body.results.filter((r) => !r.ok);
+      if (failures.length > 0) {
+        setScanWarning(
+          `Some projects failed to scan: ${failures
+            .map((f) => `${f.project} (${f.error ?? "unknown error"})`)
+            .join(", ")}`,
+        );
+      }
+      load();
+    } catch (e) {
+      setScanError((e as Error).message);
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  function openPropose(event: EventRow) {
+    setProposeError(null);
+    setProposingEvent(event);
+  }
+
+  async function submitPropose(description: string) {
+    if (!proposingEvent) return;
+    setProposeError(null);
+    try {
+      const res = await fetch(`/api/events/${encodeURIComponent(proposingEvent.id)}/propose`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ description, requestedBy: "Mathew" }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      setProposingEvent(null);
+      load();
+    } catch (e) {
+      setProposeError((e as Error).message);
+    }
+  }
+
+  if (error) return <p className="state state--err">Could not load events: {error}</p>;
+
+  return (
+    <div>
+      <div className="consus__section-lead">
+        <h1>Events</h1>
+        <p>Detected doc changes and decisions needing review — scan a project, or wait for one to land here.</p>
+      </div>
+
+      <div className="project-actions">
+        <button type="button" onClick={scanAll} disabled={scanning}>
+          {scanning ? "Scanning…" : "Scan all projects"}
+        </button>
+        {scanError ? <p className="dv__err">{scanError}</p> : null}
+        {scanWarning ? <p className="dv__warn">{scanWarning}</p> : null}
+      </div>
+
+      <div className="consus__nav" style={{ marginBottom: 18, marginLeft: 0 }}>
+        <button
+          className={`consus__nav-btn ${viewMode === "active" ? "consus__nav-btn--active" : ""}`}
+          onClick={() => setViewMode("active")}
+        >
+          Active
+        </button>
+        <button
+          className={`consus__nav-btn ${viewMode === "archived" ? "consus__nav-btn--active" : ""}`}
+          onClick={() => setViewMode("archived")}
+        >
+          Archived
+        </button>
+      </div>
+
+      <div className="events-filters">
+        <label>
+          Project
+          <select
+            aria-label="Filter by project"
+            value={project ?? ""}
+            onChange={(e) => setProject(e.target.value || null)}
+          >
+            <option value="">All projects</option>
+            {(projects ?? []).map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Status
+          <select
+            aria-label="Filter by status"
+            value={status ?? ""}
+            onChange={(e) => setStatus((e.target.value || null) as EventStatus | null)}
+          >
+            <option value="">All statuses</option>
+            {EVENT_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Sort by
+          <select
+            aria-label="Sort by"
+            value={sort ?? ""}
+            onChange={(e) => setSort((e.target.value || null) as EventSort | null)}
+          >
+            <option value="">Default (detected_at)</option>
+            <option value="detected_at">Detected at</option>
+            <option value="status">Status</option>
+            <option value="project">Project</option>
+          </select>
+        </label>
+        <label>
+          Order
+          <select
+            aria-label="Sort order"
+            value={order ?? ""}
+            onChange={(e) => setOrder((e.target.value || null) as EventOrder | null)}
+          >
+            <option value="">Default (desc)</option>
+            <option value="asc">Ascending</option>
+            <option value="desc">Descending</option>
+          </select>
+        </label>
+      </div>
+
+      {statusError ? <p className="dv__err">{statusError}</p> : null}
+
+      {events === null ? (
+        <p className="state">Loading events…</p>
+      ) : (
+        <EventsList events={events} viewMode={viewMode} onStatusChange={handleStatusChange} onPropose={openPropose} />
+      )}
+
+      {proposingEvent ? (
+        <EventProposeComposer
+          event={proposingEvent}
+          onCancel={() => {
+            setProposingEvent(null);
+            setProposeError(null);
+          }}
+          onSubmit={submitPropose}
+          error={proposeError}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- */
 /* First-run onboarding (s3, phase6)                                */
 /* ---------------------------------------------------------------- */
 
@@ -760,13 +1032,14 @@ function OnboardingScreen({ onIngested }: { onIngested: () => void }) {
 /* App shell                                                        */
 /* ---------------------------------------------------------------- */
 
-type Tab = "decisions" | "projects" | "kb" | "docs";
+type Tab = "decisions" | "projects" | "kb" | "docs" | "events";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "decisions", label: "Decisions" },
   { id: "projects", label: "Projects" },
   { id: "kb", label: "KB" },
   { id: "docs", label: "Docs" },
+  { id: "events", label: "Events" },
 ];
 
 export function App() {
@@ -862,6 +1135,7 @@ export function App() {
         {tab === "projects" ? <ProjectsSection /> : null}
         {tab === "kb" ? <KbSection /> : null}
         {tab === "docs" ? <DocsSection /> : null}
+        {tab === "events" ? <EventsSection /> : null}
       </main>
     </div>
   );

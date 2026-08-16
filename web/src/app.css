@@ -392,6 +392,11 @@ body {
   font-size: 13px;
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
+.dv__warn {
+  color: var(--consus-warn);
+  font-size: 13px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
 
 /* ============================================================= */
 /* Shared answer control (decision-request/v1)                   */
@@ -812,6 +817,99 @@ body {
   cursor: pointer;
   font-weight: 600;
   font-size: 13px;
+}
+
+/* ============================================================= */
+/* Events (p14-5)                                                */
+/* ============================================================= */
+.events-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 18px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.events-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--consus-ink-muted);
+}
+.events-filters select {
+  padding: 7px 10px;
+  border: 1px solid var(--consus-line);
+  border-radius: 8px;
+  background: var(--consus-bg-subtle);
+  color: var(--consus-ink);
+  font: inherit;
+}
+.events-list {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 13.5px;
+}
+.events-list th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--consus-ink-muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--consus-line);
+}
+.events-list td {
+  padding: 10px;
+  border-bottom: 1px solid var(--consus-line);
+  color: var(--consus-ink);
+  vertical-align: middle;
+}
+.events-list__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.event-propose-composer {
+  border: 1px solid var(--consus-line);
+  border-radius: 14px;
+  background: var(--consus-bg-subtle);
+  padding: 20px 24px;
+  margin-top: 18px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  color: var(--consus-ink);
+}
+.event-propose-composer__diff {
+  overflow-x: auto;
+  background: color-mix(in srgb, var(--consus-ink) 6%, transparent);
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  white-space: pre-wrap;
+}
+.event-propose-composer__prompt {
+  color: var(--consus-ink-muted);
+  font-size: 13px;
+}
+.event-propose-composer__description {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 14px 0;
+  font-size: 13px;
+}
+.event-propose-composer__description input {
+  padding: 8px 12px;
+  border: 1px solid var(--consus-line);
+  border-radius: 8px;
+  background: var(--consus-bg);
+  color: var(--consus-ink);
+  font: inherit;
+}
+.event-propose-composer__actions {
+  display: flex;
+  gap: 10px;
 }
 
 /* ============================================================= */
