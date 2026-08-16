@@ -1,0 +1,10 @@
+name: consus-phase7-decision-push-endpoint
+title: Generic push endpoint for decisions and CBAs
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: tdd
+
+stories:
+  - id: s1-push-decision-endpoint
+    title: POST /api/decisions accepts a decision-request/v1 payload and creates a new item
+    complexity: low
+    depends_on: []

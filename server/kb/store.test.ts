@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import Database from "better-sqlite3";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { runMigration } from "../db/migrate.js";
-import { decideItem, getAuditLog, createKbEntry, getKbVersions } from "./store.js";
+import { decideItem, getAuditLog, createKbEntry, getKbVersions, saveKbDraft, getKbDraftVersions } from "./store.js";
 
 function insertItem(db: Database.Database, id: string) {
   const now = new Date().toISOString();
@@ -136,5 +139,100 @@ describe("KB Store — decide API", () => {
     expect(tables).toContain("kb_entries");
     expect(tables).toContain("kb_versions");
     freshDb.close();
+  });
+
+  it("defaults kb_versions.state to 'published' for the existing createKbEntry() publish path", () => {
+    createKbEntry(db, { id: "kb-published", title: "t", author: "mathew", content: "c" });
+
+    const versions = getKbVersions(db, "kb-published");
+    expect(versions).toHaveLength(1);
+    expect(versions[0].state).toBe("published");
+  });
+
+  it("rejects an invalid kb_versions.state value through the SQLite CHECK constraint", () => {
+    const now = new Date().toISOString();
+    db.prepare(
+      "INSERT INTO kb_entries (id, title, current_version_id, created_at) VALUES (?, ?, NULL, ?)",
+    ).run("kb-bad-state", "t", now);
+
+    expect(() =>
+      db
+        .prepare(
+          "INSERT INTO kb_versions (kb_entry_id, content, author, state, created_at) VALUES (?, ?, ?, ?, ?)",
+        )
+        .run("kb-bad-state", "c", "mathew", "not-a-real-state", now),
+    ).toThrow(/CHECK constraint/i);
+  });
+
+  it("saveKbDraft() inserts a kb_versions row with state='draft'", () => {
+    saveKbDraft(db, { id: "kb-draft-1", author: "mathew", content: "draft content" });
+
+    const drafts = getKbDraftVersions(db, "kb-draft-1");
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]).toMatchObject({ state: "draft", content: "draft content", author: "mathew" });
+  });
+
+  it("saveKbDraft() does NOT change kb_entries.current_version_id", () => {
+    saveKbDraft(db, { id: "kb-draft-2", author: "mathew", content: "draft content" });
+
+    const row = db.prepare("SELECT current_version_id FROM kb_entries WHERE id = ?").get("kb-draft-2") as {
+      current_version_id: number | null;
+    };
+    expect(row.current_version_id).toBeNull();
+  });
+
+  it("leaves an existing published entry's current_version_id unaffected by a draft save on the same entry", () => {
+    createKbEntry(db, { id: "kb-mixed", title: "t", author: "mathew", content: "published v1" });
+    const before = db.prepare("SELECT current_version_id FROM kb_entries WHERE id = ?").get("kb-mixed") as {
+      current_version_id: number;
+    };
+
+    saveKbDraft(db, { id: "kb-mixed", author: "mathew", content: "draft edit" });
+
+    const after = db.prepare("SELECT current_version_id FROM kb_entries WHERE id = ?").get("kb-mixed") as {
+      current_version_id: number;
+    };
+    expect(after.current_version_id).toBe(before.current_version_id);
+
+    const publishedVersion = db.prepare("SELECT * FROM kb_versions WHERE id = ?").get(before.current_version_id) as {
+      state: string;
+      content: string;
+    };
+    expect(publishedVersion.state).toBe("published");
+    expect(publishedVersion.content).toBe("published v1");
+  });
+
+  it("getKbDraftVersions() returns only draft-state rows for an entry, in chronological order, none published", () => {
+    createKbEntry(db, { id: "kb-drafts-many", title: "t", author: "mathew", content: "published v1" });
+    saveKbDraft(db, { id: "kb-drafts-many", author: "mathew", content: "draft edit 1" });
+    saveKbDraft(db, { id: "kb-drafts-many", author: "mathew", content: "draft edit 2" });
+
+    const drafts = getKbDraftVersions(db, "kb-drafts-many");
+    expect(drafts).toHaveLength(2);
+    expect(drafts.map((v) => v.content)).toEqual(["draft edit 1", "draft edit 2"]);
+    expect(drafts.every((v) => v.state === "draft")).toBe(true);
+    expect(drafts[0].id).toBeLessThan(drafts[1].id);
+
+    // getKbVersions() (the plain, unfiltered history read) still returns
+    // everything — draft rows only disappear from the state='draft' filter.
+    const allVersions = getKbVersions(db, "kb-drafts-many");
+    expect(allVersions).toHaveLength(3);
+    expect(allVersions.filter((v) => v.state === "published")).toHaveLength(1);
+  });
+
+  it("round-trips a very long draft content string byte-for-byte", () => {
+    const longContent = "x".repeat(50_000) + "END";
+    saveKbDraft(db, { id: "kb-draft-long", author: "mathew", content: longContent });
+
+    const drafts = getKbDraftVersions(db, "kb-draft-long");
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].content).toBe(longContent);
+    expect(drafts[0].content.length).toBe(50_003);
+  });
+
+  it("never imports from ./pipeline — the submit path (pipeline.ts) is only permitted to import FROM store.ts, never the reverse", () => {
+    const storeDir = dirname(fileURLToPath(import.meta.url));
+    const storeSource = readFileSync(join(storeDir, "store.ts"), "utf8");
+    expect(storeSource).not.toMatch(/from ["']\.\/pipeline(\.js|\.ts)?["']/);
   });
 });

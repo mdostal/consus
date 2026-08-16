@@ -1,0 +1,6 @@
+name: consus-phase12-sectional-diff-view
+title: Sectional diff view for doc edits (REQ-18, scoped)
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: bdd
+stories:
+  - sectional-edit-state

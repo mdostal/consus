@@ -1,11 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
-import type { MinervaTransport } from "../adapters/minerva/transport.js";
+import type { HarnessTransport } from "../harness/transport.js";
 import { proposeChange, reportProposalResult, listProposals } from "../proposals/store.js";
 
 export interface ProposalRoutesOptions {
   db: Database.Database;
-  transport: MinervaTransport;
+  transport: HarnessTransport;
 }
 
 interface CreateProposalBody {

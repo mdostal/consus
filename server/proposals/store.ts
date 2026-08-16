@@ -1,22 +1,18 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
-import type { MinervaTransport } from "../adapters/minerva/transport.js";
+import type { HarnessTransport } from "../harness/transport.js";
 
 /**
- * s3-propose-dispatch-mechanism: the foundation diagram editing (s4) and
- * doc editing (s5) ride on. Consus never writes the underlying .pHive/repo
- * content directly — it composes a change proposal (diff + description) and
- * fires it to a harness/agent via the Minerva adapter (the existing
- * stdio/ABI dispatch, extended with a new `proposeChange` method rather
- * than a second dispatch path). The harness applies the real change and
+ * The propose-a-change-and-fire-to-harness mechanism. Consus never writes
+ * the underlying .pHive/repo content directly — it composes a change
+ * proposal (diff + description) and fires it to a generic HarnessTransport
+ * (server/harness/transport.ts) — no specific system name or SDK, just a
+ * `proposeChange` method call. The harness applies the real change and
  * reports back via reportProposalResult, which is what transitions status
  * out of 'pending' and — on success — writes the audit_log entry.
  *
  * Deliberately generic: works identically for a decision, a diagram, or a
  * doc — targetType is a label carried on the row, never branched on here.
- * This is a distinct mechanism from consus-phase4-close-the-loop's
- * Multica-comment-based iterate path — related in shape (fire an agent, get
- * a result back), not the same code path.
  */
 
 export type ProposalStatus = "pending" | "applied" | "failed";
@@ -47,7 +43,7 @@ export type ProposeChangeResult = { ok: true; proposalId: string } | { ok: false
 
 export async function proposeChange(
   db: Database.Database,
-  transport: MinervaTransport,
+  transport: HarnessTransport,
   { itemId, targetType, diff, description, requestedBy }: ProposeChangeInput,
 ): Promise<ProposeChangeResult> {
   const item = db.prepare("SELECT id FROM items WHERE id = ?").get(itemId) as { id: string } | undefined;

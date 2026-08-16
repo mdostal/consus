@@ -73,27 +73,13 @@ export function runMigration(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_kb_versions_entry_id ON kb_versions(kb_entry_id);
 
-    CREATE TABLE IF NOT EXISTS human_requests (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      item_id TEXT NOT NULL REFERENCES items(id),
-      minerva_question_id TEXT NOT NULL UNIQUE,
-      text TEXT NOT NULL,
-      channel TEXT NOT NULL,
-      reason TEXT,
-      confidence REAL,
-      suggested_channel TEXT,
-      status TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_human_requests_minerva_id ON human_requests(minerva_question_id);
-
     CREATE TABLE IF NOT EXISTS comments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       item_id TEXT NOT NULL REFERENCES items(id),
       author TEXT NOT NULL,
       body TEXT NOT NULL,
       created_at TEXT NOT NULL,
-      multica_comment_id TEXT
+      external_ref TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_comments_item_id ON comments(item_id);
@@ -114,19 +100,12 @@ export function runMigration(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_artifact_links_item_id ON artifact_links(item_id);
 
-    CREATE TABLE IF NOT EXISTS surveys (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      minerva_survey_id TEXT NOT NULL UNIQUE,
-      title TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'open',
-      created_at TEXT NOT NULL
-    );
-
     -- s3-propose-dispatch-mechanism: a change proposal (diff + description)
-    -- fired to a harness via the Minerva adapter. Consus never writes the
-    -- underlying content directly — the harness applies it and reports
-    -- back via POST /api/proposals/:id/result, which is what transitions
-    -- status out of 'pending' and (on 'applied') writes an audit_log entry.
+    -- fired to a generic harness (server/harness/transport.ts). Consus never
+    -- writes the underlying content directly — the harness applies it and
+    -- reports back via POST /api/proposals/:id/result, which is what
+    -- transitions status out of 'pending' and (on 'applied') writes an
+    -- audit_log entry.
     CREATE TABLE IF NOT EXISTS proposals (
       id TEXT PRIMARY KEY,
       item_id TEXT NOT NULL REFERENCES items(id),
@@ -152,7 +131,6 @@ export function runMigration(db: Database.Database): void {
   addColumnIfMissing(db, "items", "decision_payload", "TEXT");
   addColumnIfMissing(db, "items", "decision_type", "TEXT");
   addColumnIfMissing(db, "items", "triage_bucket", "TEXT");
-  addColumnIfMissing(db, "human_requests", "survey_id", "INTEGER REFERENCES surveys(id)");
   addColumnIfMissing(db, "kb_entries", "source_repo", "TEXT");
   addColumnIfMissing(db, "audit_log", "chat_summary", "TEXT");
   // REQ (kb-01): collection grouping for KB entries. Ported from
@@ -163,6 +141,15 @@ export function runMigration(db: Database.Database): void {
     "kb_entries",
     "collection",
     "TEXT NOT NULL DEFAULT 'general' CHECK(collection IN ('marketing', 'boundary-decisions', 'plans', 'artifacts', 'general'))",
+  );
+  // p11-01: draft/published storage split (REQ-17, "Save != Submit").
+  // Defaults to 'published' so every existing row and every existing
+  // createKbEntry() call remains valid published content with zero backfill.
+  addColumnIfMissing(
+    db,
+    "kb_versions",
+    "state",
+    "TEXT NOT NULL DEFAULT 'published' CHECK(state IN ('published', 'draft'))",
   );
 
   db.exec("CREATE INDEX IF NOT EXISTS idx_kb_entries_collection ON kb_entries(collection)");

@@ -1,0 +1,106 @@
+id: s2-project-overview-with-docs
+epic: consus-phase6-standalone-onboarding
+title: Fold docs into the per-project view, with an Ingest repo button
+status: pending
+complexity: medium
+methodology: bdd
+depends_on: [s1-repo-ingest-endpoint]
+
+description: |
+  Consus's Projects tab already shows a per-project view: selecting a
+  project renders ProjectView (KB entries) plus ProjectDiagram (the
+  epic/story diagram cascade, via DiagramView) together. Docs live in a
+  completely separate, unscoped "Docs" tab today (DocsSection, reading
+  GET /api/docs with no project filter) — so seeing "everything for this
+  repo" today means clicking between two different tabs, and docs never
+  show anything until an ingest has happened at all (see s1).
+
+  This story does two things in the same per-project view area of
+  web/src/App.tsx:
+  1. Add a docs list for the selected project (GET /api/docs already
+     accepts a ?project= query param — server/routes/docs.ts's
+     registerDocRoutes already supports scoping, it's just never called
+     with it from the per-project view today).
+  2. Add an "Ingest repo" button in that same view that POSTs to
+     s1's new endpoint (/api/projects/:project/ingest) and, on success,
+     reloads the diagrams/docs/KB data for the currently selected project.
+
+acceptance_criteria:
+  - "Given a project is selected in the Projects tab, when the view renders, then it shows the diagram cascade, the KB entries, AND that project's docs together in one place."
+  - "Given a project with no docs ingested yet, when its docs list is empty, then an 'Ingest repo' button is visible and enabled."
+  - "Given the operator clicks 'Ingest repo,' when the request to POST /api/projects/:project/ingest succeeds, then the docs list (and any other project data) reloads to reflect the newly-ingested docs without a full page refresh."
+  - "Given the ingest request fails, when the error is caught, then a visible error message is shown rather than failing silently."
+
+steps:
+  - id: extend-docs-view
+    description: >
+      Add a docs-list rendering block to the per-project branch of
+      ProjectsSection in web/src/App.tsx (the branch currently rendering
+      ProjectView + ProjectDiagram when `project !== null`), fetching
+      /api/docs?project=<selected> and reusing the existing DocBrowser
+      component (web/src/features/docs/DocBrowser.tsx) for rendering,
+      the same way DocsSection already does.
+    agent: developer
+  - id: wire-ingest-button
+    description: >
+      Add an "Ingest repo" button in that same per-project view area that
+      POSTs to /api/projects/<selected>/ingest, shows a loading/error state,
+      and on success re-fetches the docs list (and diagram/KB data) for the
+      selected project.
+    agent: developer
+    depends_on: [extend-docs-view]
+  - id: write-component-tests
+    description: >
+      Write/extend @testing-library/react + vitest specs (co-located
+      *.test.tsx, following the existing pattern e.g.
+      web/src/features/docs/DocRenderer.test.tsx) covering the four
+      acceptance criteria — mock fetch for /api/docs?project=... and
+      /api/projects/:project/ingest.
+    agent: tester
+    depends_on: [wire-ingest-button]
+  - id: review
+    description: Review for consistency with the existing per-project view's data-loading patterns (loading/error states already used elsewhere in App.tsx, e.g. ProjectDiagram's useEffect/useState shape).
+    agent: reviewer
+    depends_on: [write-component-tests]
+  - id: integrate
+    description: Commit the view change, the button, and the tests.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: web/src/App.tsx
+      purpose: "ProjectsSection (~lines 280-341) is the per-project view to extend; ProjectDiagram (~lines 349-411) is the closest existing example of a per-project fetch-on-select-with-loading-state component to follow for the new docs block and ingest button."
+    - path: web/src/features/docs/DocBrowser.tsx
+      purpose: "Existing component for rendering a grouped-docs structure — reuse this rather than building new doc-list rendering; DocsSection (~line 466+) already shows the calling pattern (fetch /api/docs, pass grouped result to DocBrowser)."
+    - path: server/routes/docs.ts
+      purpose: "GET /api/docs already accepts an optional ?project= query param that scopes the result to one repo — confirm this still works before assuming any backend change is needed here (it should not be)."
+
+files_to_modify:
+  - file: web/src/App.tsx
+    change: "Extend the per-project branch of ProjectsSection to also fetch and render that project's docs (via DocBrowser) and add the Ingest repo button with its POST + reload logic."
+  - file: web/src/App.test.tsx
+    change: "New or extended test file covering the four acceptance criteria (create if App.tsx has no existing test file; check first)."
+
+design_decisions:
+  - decision: "Reuse DocBrowser rather than building a new doc-list component for the per-project view."
+    rationale: "DocBrowser already exists and is already used by DocsSection for the same GroupedDocs shape GET /api/docs returns — no new component needed, just a second call site."
+  - decision: "This story does not remove the existing global Docs tab."
+    rationale: "Out of scope — the global Docs tab still has value for cross-project browsing; this story is additive (per-project view gets docs too), not a tab consolidation. If tab consolidation is wanted later, it's a separate, explicit decision."
+
+risks:
+  - severity: low
+    description: "Duplicating doc-fetching logic between DocsSection and the new per-project block could drift if one is updated and not the other."
+    mitigation: "Both call the same GET /api/docs endpoint and both already reuse DocBrowser for rendering — the only difference is the ?project= query param, which is a one-line difference to keep in sync if the endpoint ever changes shape."
+
+references:
+  - path: web/src/App.tsx
+    relevant_excerpt: |
+      {project === null ? (
+        <GlobalView entries={entries} onSelect={() => {}} />
+      ) : (
+        <>
+          <ProjectView project={project} entries={...} onSelect={() => {}} />
+          <ProjectDiagram repo={project} />
+        </>
+      )}

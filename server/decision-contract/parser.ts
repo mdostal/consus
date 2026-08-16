@@ -32,6 +32,14 @@ export interface DecisionPayload {
   recommended: string;
   diagram?: boolean;
   doc?: DecisionDocPointer;
+  /**
+   * Set to "heuristic" by parseHeuristicPayload (tier 2); left unset
+   * (undefined) on the tier-1 structured path — undefined is the implicit
+   * "structured" default, which keeps every existing tier-1 assertion
+   * (including exact-shape .toEqual checks) unchanged. See s1-heuristic-
+   * extraction-tier-confidence.
+   */
+  extractionTier?: "structured" | "heuristic";
 }
 
 export type Verdict =
@@ -148,6 +156,7 @@ function parseHeuristicPayload(input: string): DecisionPayload | null {
     context: extractContext(input, extracted.firstIndex, title),
     options: extracted.options,
     recommended,
+    extractionTier: "heuristic",
   };
 }
 

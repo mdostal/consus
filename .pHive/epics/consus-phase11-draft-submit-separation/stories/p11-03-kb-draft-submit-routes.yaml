@@ -1,0 +1,130 @@
+id: p11-03-kb-draft-submit-routes
+epic: consus-phase11-draft-submit-separation
+title: PUT .../draft and POST .../submit HTTP routes
+status: pending
+complexity: small
+methodology: tdd
+depends_on:
+  - p11-02-kb-submit-pipeline
+
+description: |
+  p11-01 and p11-02 add saveKbDraft() and triggerApprovalPipeline() to the
+  server-side store/pipeline layer, but nothing exposes them over HTTP yet.
+  This story wires two new routes into server/routes/kb.ts, following the
+  existing file's own conventions (Fastify typed route generics, the
+  not-found error-message-prefix-matching pattern already used for
+  decideItem()'s 404 handling):
+
+  - `PUT /api/kb-entries/:id/draft` — body { author, content, title? } —
+    calls saveKbDraft() only. Never calls triggerApprovalPipeline.
+  - `POST /api/kb-entries/:id/submit` — body { actor, versionId? } —
+    calls triggerApprovalPipeline() only. If versionId is omitted, submits
+    the latest draft (via getKbDraftVersions()); 404s if no draft exists for
+    that entry, and 404s (via the not-found message prefixes established in
+    p11-02) for an unknown entry or version.
+  - `GET /api/kb-entries/:id/drafts` — returns getKbDraftVersions() for the
+    entry, mirroring the existing GET /api/kb-entries/:id/versions route
+    immediately below it.
+
+  Ported from archive/dev-2026-08-11-pantheon-coupled:server/routes/kb.ts
+  (the /draft, /submit, /drafts routes) and its test file
+  server/routes/kb.test.ts's "POST /api/kb-entries/:id/submit" describe
+  block. Both are confirmed free of Minerva/Multica coupling. The existing
+  PUT /api/kb-entries/:id (immediate publish) route is left completely
+  unchanged — per the design-discussion.md's open question 2, deprecating it
+  is explicitly out of scope here since no current UI caller exists to
+  migrate.
+
+  This story also closes the search-leak gap flagged in
+  design-discussion.md's risks: the existing GET /api/kb-entries `?q=`
+  search-join query (server/routes/kb.ts, inline SQL joining kb_versions) has
+  no state filter today because there was no draft state to leak; now that
+  drafts exist, that query must add `v.state = 'published'` to its WHERE
+  clause so draft content never surfaces in search results, matching the
+  archived getKbEntries()'s own equivalent filter.
+
+acceptance_criteria:
+  - "Given a kb_entry, when PUT /api/kb-entries/:id/draft is called with { author, content }, then a draft kb_versions row is persisted (verifiable via GET /api/kb-entries/:id/drafts) and GET /api/kb-entries/:id/versions' currently-published entry is unchanged."
+  - "Given a saved draft, when POST /api/kb-entries/:id/submit is called with { actor } and no versionId, then the latest draft is promoted to published (200, body includes phases: { approve: true, phaseSplit: true, kb: true } and a publishedVersionId), and GET /api/kb-entries/:id/versions shows a new published row with the draft's content."
+  - "Given no draft exists for an entry, when POST /api/kb-entries/:id/submit is called, then the response is 404."
+  - "Given an unknown kb_entry id, when POST /api/kb-entries/:id/submit is called with an explicit versionId, then the response is 404."
+  - "Given a kb_entry with both a published version and a draft version whose content differs, when GET /api/kb-entries?q=<term matching only the draft content> is called, then the entry is NOT returned (draft content must not leak into search results) — proving the state='published' filter was added to the search-join query."
+  - "Given the /draft route handler's source in server/routes/kb.ts, when read, then it references saveKbDraft only and does not import or call triggerApprovalPipeline — the HTTP layer preserves the same one-way isolation p11-02 established at the module layer."
+
+steps:
+  - id: add-draft-route
+    description: |
+      Add PUT /api/kb-entries/:id/draft to server/routes/kb.ts: reads
+      { author, content, title? } from the body, looks up the existing
+      entry's title/source_repo (same lookup pattern the existing PUT
+      /api/kb-entries/:id handler already uses), calls saveKbDraft(), and
+      returns { draft, currentVersionId }.
+    agent: developer
+  - id: add-submit-route
+    description: |
+      Add POST /api/kb-entries/:id/submit to server/routes/kb.ts: reads
+      { actor, versionId? } from the body; if versionId is omitted, looks up
+      getKbDraftVersions() and uses the last (most recent) one, returning
+      404 with a clear message if none exist. Calls triggerApprovalPipeline()
+      inside a try/catch that maps its "kb_entry not found"/"kb_version not
+      found" error-message prefixes to 404 responses (same pattern the
+      existing /decide route already uses for decideItem()'s not-found
+      error), and returns { ok: true, ...result } on success.
+    agent: developer
+  - id: add-drafts-list-route
+    description: |
+      Add GET /api/kb-entries/:id/drafts to server/routes/kb.ts, immediately
+      alongside the existing GET /api/kb-entries/:id/versions route,
+      returning getKbDraftVersions(db, id).
+    agent: developer
+  - id: fix-search-state-leak
+    description: |
+      In the existing GET /api/kb-entries handler's `?q=` search-join SQL
+      (server/routes/kb.ts), add `v.state = 'published'` to the WHERE
+      clause so draft rows can never match a search query, matching the
+      archived getKbEntries()'s equivalent filter. Add a regression test
+      proving a draft-only-matching search term returns no results.
+    agent: developer
+  - id: write-route-tests
+    description: |
+      Add a "POST /api/kb-entries/:id/submit" (and draft/drafts) describe
+      block to server/routes/kb.test.ts, following the archived
+      server/routes/kb.test.ts's structure: draft-then-submit round trip,
+      submitting an explicit older versionId instead of the latest draft,
+      404 when no draft exists, 404 for an unknown entry, and the new
+      search-leak regression test from the previous step.
+    agent: tester
+
+context:
+  key_files:
+    - path: server/routes/kb.ts
+      purpose: Existing route file this story extends; already owns the /decide 404-mapping pattern and the existing PUT /api/kb-entries/:id (immediate publish) route left unchanged alongside the new draft/submit routes.
+    - path: server/routes/kb.test.ts
+      purpose: Existing route test file this story extends with the new draft/submit/drafts describe blocks.
+  reference:
+    - path: "archive/dev-2026-08-11-pantheon-coupled:server/routes/kb.ts"
+      purpose: Source of the /draft, /submit, /drafts route shapes being ported; confirmed free of Minerva/Multica coupling.
+    - path: "archive/dev-2026-08-11-pantheon-coupled:server/routes/kb.test.ts"
+      purpose: Source of the submit-route test cases (round trip, explicit versionId, 404s) being ported.
+
+files_to_modify:
+  - file: server/routes/kb.ts
+    change: Add PUT .../draft, POST .../submit, GET .../drafts routes; add state='published' filter to the existing ?q= search-join query.
+  - file: server/routes/kb.test.ts
+    change: Add test coverage for the three new routes and the search-leak regression.
+
+design_decisions:
+  - decision: POST /api/kb-entries/:id/submit defaults to the latest draft when versionId is omitted, rather than requiring it.
+    rationale: The common case is "submit what I most recently drafted"; requiring the caller to always look up and pass a versionId first would be needless friction for the single-draft-in-flight case, while still allowing an explicit older versionId for the multi-draft case.
+  - decision: The existing PUT /api/kb-entries/:id (immediate publish) route is left unchanged, not merged into or deprecated in favor of the new draft/submit pair.
+    rationale: No current UI or script calls it, so there's no migration to force, and removing working, tested surface area with no replacement caller lined up is out of this story's small scope.
+  - decision: Fix the search-leak gap in this story rather than as a separate follow-up.
+    rationale: It's a direct, immediate consequence of this story's own routes making drafts reachable for the first time — shipping draft/submit without this filter would ship a real (if narrow) content-leak bug on day one, not a hypothetical future one.
+
+risks:
+  - severity: medium
+    description: Forgetting the state='published' filter fix (or a future refactor of the search query accidentally dropping it) reintroduces the draft-content-in-search leak silently.
+    mitigation: The dedicated regression test in acceptance criteria fails immediately if the filter is missing or removed.
+  - severity: low
+    description: Two structurally similar PUT routes (:id and :id/draft) on the same resource could confuse a future API consumer about which to call.
+    mitigation: Route naming (/draft suffix) and this story's design-discussion.md make the distinction explicit; acceptable at current small scope with no live UI consumer yet to actually confuse.

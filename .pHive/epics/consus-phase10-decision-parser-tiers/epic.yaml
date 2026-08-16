@@ -1,0 +1,10 @@
+name: consus-phase10-decision-parser-tiers
+title: Decision-request parser tiers — confidence signal for the heuristic fallback
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: tdd
+
+stories:
+  - id: s1-heuristic-extraction-tier-confidence
+    title: Signal heuristic (tier-2) vs structured (tier-1) origin on DecisionPayload and downgrade triage confidence accordingly
+    complexity: low
+    depends_on: []

@@ -1,0 +1,160 @@
+id: p9-01-mermaid-cascade-render
+epic: consus-phase9-mermaid-diagram-engine
+title: Render the epic/story cascade as a real Mermaid diagram
+status: pending
+complexity: medium
+methodology: bdd
+depends_on: []
+
+description: |
+  `DiagramView.tsx` (web/src/features/projects/DiagramView.tsx) currently
+  renders a repo's epic/story dependency cascade as plain nested `<ul>`
+  lists — an explicit, documented deferral (see the component's own source
+  comment and architecture.md decision #3: "DAG/diagram engine explicitly
+  deferred"). This story replaces the nested-list rendering with an actual
+  graphical diagram, built with the `mermaid` npm package, using the same
+  `epics` data the component already receives as a prop — no new backend
+  route or response-shape change.
+
+  The archived branch `archive/dev-2026-08-11-pantheon-coupled` built this
+  once already (`web/src/components/DiagramView.tsx`, ~275 lines, and
+  `DiagramViewer.tsx`, ~203 lines), using real Mermaid rendering
+  (`mermaid.render()` into a container div via `dangerouslySetInnerHTML` or
+  `innerHTML`), not hand-rolled SVG. That version fetched pre-built Mermaid
+  *source text* from the server, generated server-side by
+  `server/lib/cascade-tree-builder.ts`'s `renderCascadeMermaid` — which in
+  turn depended on `buildCascadeTree()` pulling live issues from a
+  `MulticaClient`. That Multica dependency is not being ported; instead, the
+  Mermaid source string is built client-side, directly from the `epics` prop
+  already passed into `DiagramView`, following the same simple
+  id-sanitize/label-escape/declare-nodes/declare-edges shape
+  `renderCascadeMermaid` used, re-derived fresh (not imported) since the
+  original also carried unrelated Multica-issue-classification logic that
+  doesn't apply to local `.pHive/epics/*/epic.yaml` data.
+
+  Everything else about `DiagramView` — the header, the "Propose a change"
+  form and its `onProposeChange` callback, the `pendingProposal` pill, and
+  the `AuditPanel` history section — stays exactly as it is today. This
+  story only replaces the `<ul>` rendering block with a Mermaid-rendered
+  graph.
+
+acceptance_criteria:
+  - "Given a repo with one or more epics, each with stories and dependsOn edges, when DiagramView renders, then it displays an actual Mermaid-rendered graph (an SVG produced by mermaid.render()) showing each epic and its stories as nodes and each dependsOn relationship as an edge, replacing the current nested <ul> markup."
+  - "Given a repo with zero epics, when DiagramView renders, then the existing 'No epics yet for {repo}' empty state is shown unchanged (no Mermaid render attempted with empty input)."
+  - "Given the diagram is rendering, when mermaid.render() throws or the rendering component unmounts before it resolves, then a readable inline error/fallback message is shown instead of a blank or broken panel, and the rest of the view (header, propose-change form, audit history) remains usable."
+  - "Given the existing propose-a-change flow (composing box, Fire to harness button, onProposeChange callback, pendingProposal pill) and the AuditPanel history section, when this story is complete, then both continue to work exactly as before — this story changes only the read-only rendering of the cascade, not the propose/audit surface."
+  - "Given DiagramView.test.tsx's existing test suite, when this story is complete, then it is updated (mocking the mermaid module, per the archived branch's vi.mock('mermaid', ...) pattern, since mermaid.render() does not run meaningfully under jsdom) so tests assert the diagram-rendering call happens with graph text derived from the given epics/stories, without depending on real Mermaid layout output."
+
+steps:
+  - id: add-mermaid-dependency
+    description: |
+      Add `mermaid` (^11.16.1, matching the version the archived branch used)
+      to package.json's dependencies. Confirmed: mainline's root
+      package.json (single package.json for the whole app, no separate
+      web/package.json) does not currently depend on mermaid or any other
+      diagramming library. Import it dynamically (`await import("mermaid")`)
+      inside the rendering effect rather than as a static top-level import,
+      so it code-splits into a chunk loaded only when a diagram view mounts
+      (matches the archived DiagramViewer.tsx's approach; the archived
+      DiagramView.tsx used a static import instead — prefer the dynamic
+      approach here for bundle size).
+    agent: developer
+  - id: build-mermaid-source-from-epics
+    description: |
+      Add a small, pure client-side function (e.g. in DiagramView.tsx or a
+      co-located helper module) that takes DiagramEpic[] (the type already
+      defined in DiagramView.tsx) and returns a Mermaid graph source string:
+      sanitize each epic/story id into a Mermaid-safe node id, escape labels
+      (quotes), declare one node per story (grouped/labeled by epic, e.g. via
+      Mermaid subgraphs keyed by epic id/title), and declare one edge per
+      dependsOn relationship. Follow the same node-declare-then-edge-declare
+      shape the archived cascade-tree-builder.ts's renderCascadeMermaid used
+      (graph direction: start with graph LR, matching the archived cascade
+      renderer, revisit if it doesn't read well against real multi-epic
+      data), but write it fresh against the local DiagramEpic/DiagramStory
+      types rather than importing the archived file (which mixed in
+      Multica-issue-classification concerns that don't apply here).
+    agent: developer
+  - id: render-mermaid-in-diagram-view
+    description: |
+      Replace DiagramView's current <ul className="diagram-view__epics">
+      block with a container div that mermaid.render() output is written
+      into, following the archived DiagramView.tsx's pattern: call
+      mermaid.initialize({ startOnLoad: false, ... }) once, then
+      mermaid.render(uniqueId, source) inside a useEffect keyed on the
+      epics prop, write the returned svg into the container (via a ref, not
+      raw innerHTML string interpolation, to avoid unnecessary
+      dangerouslySetInnerHTML if a safer path is available), and guard
+      against a stale/unmounted render per the archived version's
+      `cancelled` flag pattern. Add a render timeout (the archived
+      DiagramViewer.tsx used 5000ms via Promise.race) with a friendly
+      fallback message on timeout or render failure, matching the acceptance
+      criteria above. Preserve the empty-epics-array early return exactly as
+      it exists today.
+    agent: developer
+  - id: update-tests
+    description: |
+      Update web/src/features/projects/DiagramView.test.tsx to mock the
+      mermaid module (vi.mock("mermaid", () => ({ default: { initialize:
+      vi.fn(), render: vi.fn(async (id, source) => ({ svg: ..., bindFunctions:
+      vi.fn() })) } })), matching the archived branch's test pattern, since
+      mermaid.render() does not produce meaningful output under
+      jsdom/vitest. Assert: the mock's render is called with graph text
+      containing each epic/story's expected node content and dependsOn
+      edges; the empty-epics state still shows the unchanged 'No epics yet'
+      message without invoking render; the propose-change form and
+      AuditPanel-rendering behavior are unaffected (reuse/extend existing
+      assertions for those, don't remove them).
+    agent: tester
+  - id: manual-verification
+    description: |
+      Run the app locally (npm run dev), open a project with at least one
+      epic that has stories with dependsOn edges, and confirm: a real
+      rendered diagram appears instead of the nested list, the propose-a-
+      change form still fires proposals correctly, and the audit history
+      panel still populates as before.
+    agent: tester
+
+context:
+  key_files:
+    - path: web/src/features/projects/DiagramView.tsx
+      purpose: The component being changed — owns DiagramEpic/DiagramStory types, the current nested-list rendering being replaced, and the propose-a-change form/AuditPanel wiring that must be preserved unchanged.
+    - path: web/src/App.tsx
+      purpose: "ProjectDiagram (~line 402) fetches GET /api/diagrams?repo=X, wires onProposeChange to POST /api/proposals, and passes epics/auditEntries into DiagramView — confirmed this story needs no changes here since the epics data shape is unchanged."
+    - path: server/routes/diagrams.ts
+      purpose: "GET /api/diagrams handler — confirmed its response shape ({ repo, itemId, epics: [{ id, title, stories: [{ id, title, complexity, dependsOn }] }] }) already carries everything the diagram render needs; no backend change required for this story."
+    - path: archive/dev-2026-08-11-pantheon-coupled:web/src/components/DiagramView.tsx
+      purpose: "Reference implementation of client-side mermaid.render() usage, initialize() options, and error/loading state handling (git show to read; not a file present in the current working tree)."
+    - path: archive/dev-2026-08-11-pantheon-coupled:web/src/components/DiagramViewer.tsx
+      purpose: "Reference implementation of the dynamic-import + render-timeout + skeleton-loader pattern, worth reusing for robustness (git show to read; not present in the current working tree)."
+    - path: archive/dev-2026-08-11-pantheon-coupled:server/lib/cascade-tree-builder.ts
+      purpose: "Reference for renderCascadeMermaid's node/edge Mermaid-string-building shape (sanitizeMermaidId, escapeMermaidLabel, declare-then-link) — the part worth re-deriving fresh against local data; buildCascadeTree/buildMulticaForest in the same file is Multica-coupled and must not be ported (git show to read; not present in the current working tree)."
+
+files_to_modify:
+  - file: package.json
+    change: Add mermaid (^11.16.1) to dependencies.
+  - file: web/src/features/projects/DiagramView.tsx
+    change: Add a client-side epics-to-Mermaid-source builder function; replace the nested <ul> rendering with a container that mermaid.render() output is written into, with loading/error/timeout handling; keep all other props and the propose-change/audit sections unchanged.
+  - file: web/src/features/projects/DiagramView.test.tsx
+    change: Mock the mermaid module; update/add assertions for graph-source content, empty-state behavior, and unaffected propose-change/audit behavior.
+
+design_decisions:
+  - decision: Build the Mermaid source string client-side from the existing epics prop, rather than adding a server-side diagram-generation endpoint.
+    rationale: GET /api/diagrams already returns the full epics/stories/dependsOn tree; the archived version's server-side Mermaid-string generation was only server-side because it needed to combine Multica-fetched issues with on-disk epic.yaml data. Mainline has no such combination to do — it's local YAML only — so generating the graph text where it's consumed avoids a needless new backend route.
+  - decision: Dynamically import mermaid rather than a static top-level import.
+    rationale: mermaid is a large dependency; only the diagram view needs it, and the archived DiagramViewer.tsx already established the code-splitting pattern worth following for bundle size.
+  - decision: Re-derive the Mermaid-string-building logic fresh rather than importing/copying cascade-tree-builder.ts wholesale.
+    rationale: That file mixes genuinely reusable mechanics (id sanitizing, label escaping, node/edge declaration) with Multica-specific issue classification (classifyKind, buildMulticaForest) that has no equivalent in mainline's data model; copying the whole file would import dead/inapplicable code and risk quietly reintroducing a MulticaClient type dependency.
+  - decision: Keep the propose-a-change form, pendingProposal pill, and AuditPanel history section untouched in this story.
+    rationale: Explicit scope boundary — this story is a rendering swap only. Regressing the propose-change action (per the task's own constraint) would undermine the one thing already working well in this view.
+
+risks:
+  - severity: medium
+    description: mermaid is a large dependency that bundles its own layout engine; adding it could noticeably increase the app's bundle size.
+    mitigation: Dynamic import so it's only loaded when a diagram view actually mounts, not on initial app load.
+  - severity: medium
+    description: mermaid.render() runs against a real DOM and can hang or throw on malformed graph text or in constrained environments; it also doesn't render meaningfully under jsdom/vitest.
+    mitigation: Add a render timeout with a fallback message (per the archived DiagramViewer.tsx's 5s Promise.race pattern); mock the mermaid module entirely in tests rather than exercising real rendering.
+  - severity: low
+    description: A repo with many epics/stories could produce a visually dense, hard-to-read graph.
+    mitigation: No node cap proposed given current small data volumes (single-digit epics, low tens of stories per repo); revisit only if it becomes a measured problem.

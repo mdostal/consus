@@ -1,0 +1,19 @@
+name: consus-phase11-draft-submit-separation
+title: KB draft/submit separation (REQ-17, Save != Submit)
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: tdd
+stories:
+  - id: p11-01-kb-draft-storage
+    title: Draft-state storage for kb_versions (schema + saveKbDraft)
+    complexity: medium
+    depends_on: []
+  - id: p11-02-kb-submit-pipeline
+    title: Isolated submit pipeline that promotes a draft to published
+    complexity: medium
+    depends_on:
+      - p11-01-kb-draft-storage
+  - id: p11-03-kb-draft-submit-routes
+    title: PUT .../draft and POST .../submit HTTP routes
+    complexity: small
+    depends_on:
+      - p11-02-kb-submit-pipeline

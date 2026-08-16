@@ -25,7 +25,7 @@ describe("composeLivingDoc", () => {
       "INSERT INTO items (id, type, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
     ).run("item-1", "doc_ref", "Architecture note", "open", now, now);
     db.prepare(
-      "INSERT INTO comments (item_id, author, body, created_at, multica_comment_id) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO comments (item_id, author, body, created_at, external_ref) VALUES (?, ?, ?, ?, ?)",
     ).run("item-1", "mathew", "let's revisit this", now, "mc-1");
   });
 
@@ -34,7 +34,7 @@ describe("composeLivingDoc", () => {
     rmSync(repoDir, { recursive: true, force: true });
   });
 
-  it("composes references from Doc Scanner + local Multica-backed comments into one view", () => {
+  it("composes references from Doc Scanner + the local comment thread into one view", () => {
     const view = composeLivingDoc(db, { repoName: "consus", repoPath: repoDir, itemId: "item-1" });
 
     expect(view.docs).toHaveLength(1);
@@ -59,10 +59,10 @@ describe("composeLivingDoc", () => {
     expect(view.ideaBoard).toEqual({ available: false, reason: "idea board integration point not yet specified" });
   });
 
-  it("is confirmed distinct from Multica's board/task-state schema — an overlay, not a copy", () => {
+  it("is confirmed distinct from any external board/task-state schema — an overlay, not a copy", () => {
     const view = composeLivingDoc(db, { repoName: "consus", repoPath: repoDir, itemId: "item-1" });
 
-    // The overlay is a composed read-model; it carries no Multica board/task
+    // The overlay is a composed read-model; it carries no external board/task
     // fields (e.g. no `assignee`, `column`, `sprint`) — only references.
     expect(view).not.toHaveProperty("assignee");
     expect(view).not.toHaveProperty("column");

@@ -82,10 +82,23 @@ function classifyDecisionType(payload: DecisionPayload | null, title: string): D
  * — Source 1 notes those weren't fetched in full, only named, so there is
  * no literal pattern to port yet. "noise"/"research_plan" stay reachable
  * only via a human triage_overrides row until that source exists.
+ *
+ * s1-heuristic-extraction-tier-confidence: a tier-2 (extractionTier ===
+ * "heuristic") decision is a regex guess extracted out of free-form prose,
+ * not a deliberately structured decision-request — route it to
+ * "agent_task" instead of "open_question" so an agent pass can confirm/
+ * correct the guess before it's surfaced to a human as settled. The tier-1
+ * (structured, extractionTier unset) path is unchanged.
  */
-function heuristicTriageBucket(item: ItemRow, decisionType: DecisionType): TriageBucket {
+function heuristicTriageBucket(
+  item: ItemRow,
+  decisionType: DecisionType,
+  payload: DecisionPayload | null,
+): TriageBucket {
   if (item.type === "human_request") return "open_question";
-  if (decisionType !== "default") return "open_question";
+  if (decisionType !== "default") {
+    return payload?.extractionTier === "heuristic" ? "agent_task" : "open_question";
+  }
   return "agent_task";
 }
 
@@ -103,7 +116,7 @@ export function classifyItem(db: Database.Database, itemId: string): Classificat
   const override = db.prepare("SELECT bucket FROM triage_overrides WHERE item_id = ?").get(itemId) as
     | { bucket: TriageBucket }
     | undefined;
-  const triageBucket = override?.bucket ?? heuristicTriageBucket(item, decisionType);
+  const triageBucket = override?.bucket ?? heuristicTriageBucket(item, decisionType, payload);
 
   db.prepare("UPDATE items SET decision_type = ?, triage_bucket = ? WHERE id = ?").run(
     decisionType,

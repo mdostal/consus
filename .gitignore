@@ -26,6 +26,20 @@ build/
 !.pHive/epics/consus-phase4-close-the-loop/**
 !.pHive/epics/consus-phase5-live-and-interactive/
 !.pHive/epics/consus-phase5-live-and-interactive/**
+!.pHive/epics/consus-phase6-standalone-onboarding/
+!.pHive/epics/consus-phase6-standalone-onboarding/**
+!.pHive/epics/consus-phase7-decision-push-endpoint/
+!.pHive/epics/consus-phase7-decision-push-endpoint/**
+!.pHive/epics/consus-phase8-doc-editor-fire-action/
+!.pHive/epics/consus-phase8-doc-editor-fire-action/**
+!.pHive/epics/consus-phase9-mermaid-diagram-engine/
+!.pHive/epics/consus-phase9-mermaid-diagram-engine/**
+!.pHive/epics/consus-phase10-decision-parser-tiers/
+!.pHive/epics/consus-phase10-decision-parser-tiers/**
+!.pHive/epics/consus-phase11-draft-submit-separation/
+!.pHive/epics/consus-phase11-draft-submit-separation/**
+!.pHive/epics/consus-phase12-sectional-diff-view/
+!.pHive/epics/consus-phase12-sectional-diff-view/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/

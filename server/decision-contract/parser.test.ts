@@ -198,6 +198,26 @@ describe("decision-request/v1 parser", () => {
       expect(parsed?.title).toBe(SAMPLE_PAYLOAD.title);
       expect(parsed?.recommended).toBe("A");
     });
+
+    it("leaves extractionTier unset on a tier-1 (structured) parse", () => {
+      const parsed = parseDecisionPayload(JSON.stringify(SAMPLE_PAYLOAD));
+
+      expect(parsed?.extractionTier).toBeUndefined();
+      expect(parsed).not.toHaveProperty("extractionTier");
+    });
+
+    it("sets extractionTier to \"heuristic\" on a tier-2 parse", () => {
+      const ticketBody = [
+        "A) WRAP: keep our own shell, host Multica as a tab",
+        "B) EMBED: mount our plugins inside Multica",
+        "",
+        "Recommendation: B is recommended because upstream is stable.",
+      ].join("\n");
+
+      const parsed = parseDecisionPayload(ticketBody);
+
+      expect(parsed?.extractionTier).toBe("heuristic");
+    });
   });
 
   describe("verdictStatus", () => {

@@ -1,0 +1,90 @@
+id: p8-01-inplace-edit-toggle
+epic: consus-phase8-doc-editor-fire-action
+title: In-place edit/view toggle for doc content
+status: pending
+complexity: medium
+methodology: bdd
+depends_on: []
+
+description: |
+  Today, viewing a doc in Consus (web/src/features/docs/DocRenderer.tsx,
+  opened from DocsSection in web/src/App.tsx) only ever shows rendered
+  markdown/HTML. To propose a change, the operator has to switch into a
+  separate "Propose a change" form and hand-type a raw diff against content
+  they can no longer see edited in place — there is no way to actually edit
+  the doc's text.
+
+  This story borrows the view/edit toggle pattern from the archived reference
+  implementation (archive/dev-2026-08-11-pantheon-coupled:web/src/features/docs/DocEditor.tsx):
+  a `mode` of "view" | "edit", an Edit button that appears only in view mode,
+  and edit mode swapping the rendered content for a plain textarea seeded
+  with the doc's current content, with Cancel reverting to the original
+  content and back to view mode. This story does NOT compute or submit a
+  diff yet, and does NOT port any of the archived version's `doc_edits`
+  persistence, `/api/docs/:id/fire` endpoint, or issue-tracker fields — those
+  are Minerva/Multica-coupled plumbing that has been deliberately removed
+  from this codebase. This story is UI-only: get the operator from "reading
+  rendered markdown" to "editing the real text," nothing more.
+
+acceptance_criteria:
+  - "Given a doc is open in view mode, when the operator clicks Edit, then the rendered content is replaced by a textarea pre-filled with the doc's current content, and Edit mode UI (Cancel, and a submit action wired in the next story) is shown."
+  - "Given the operator is in edit mode with modified textarea content, when they click Cancel, then the textarea's content reverts to the original fetched content and the view returns to rendered (view) mode with no change submitted."
+  - "Given a doc has not been opened/loaded yet, when the doc view first renders, then no Edit button is shown until content has successfully loaded (matching the archived reference's loading/error guard before rendering the editor chrome)."
+  - "Given the operator is in edit mode, when they navigate away or reopen a different doc, then the in-progress edit is discarded (no autosave, no draft persistence layer) and the newly opened doc starts fresh in view mode."
+
+steps:
+  - id: implement-edit-mode-toggle
+    description: |
+      Add edit/view mode state to the doc-viewing surface (either inside
+      DocRenderer.tsx directly, or in a thin wrapper around it used by
+      DocsSection in App.tsx — pick whichever keeps DocRenderer's existing
+      pure-render behavior intact for callers that don't need editing).
+      Add an "Edit" button visible only in view mode. In edit mode, render a
+      textarea bound to the doc's content instead of the rendered
+      HTML/markdown, seeded from the currently loaded content. Add a Cancel
+      button that resets the textarea to the original content and returns to
+      view mode.
+    agent: developer
+  - id: write-component-tests
+    description: |
+      Add/extend tests (following the existing pattern in
+      web/src/features/docs/DocRenderer.test.tsx if present, or create one)
+      covering: Edit button toggles to a textarea with the original content;
+      Cancel restores original content and returns to view mode; edit mode
+      does not appear before content has loaded; switching to a different
+      doc resets edit state back to view mode.
+    agent: tester
+  - id: manual-verification
+    description: |
+      Run the app locally, open a doc, verify Edit/Cancel toggling behaves
+      as specified, and confirm the existing "Propose a change" raw-diff box
+      still works unmodified (it is only replaced in the follow-up story,
+      p8-02-autodiff-fire-action).
+    agent: tester
+
+context:
+  key_files:
+    - path: web/src/features/docs/DocRenderer.tsx
+      purpose: The component that currently only renders read-only content plus a separate raw-diff "Propose a change" form; this story adds the edit/view toggle and editable textarea here (or in a thin wrapper around it).
+    - path: web/src/App.tsx
+      purpose: DocsSection owns fetching/opening a doc and rendering DocRenderer; may need to pass through additional state/handlers for edit mode depending on where the toggle is implemented.
+    - path: server/proposals/store.ts
+      purpose: The existing propose-change endpoint this doc-editing flow will eventually submit to (wired in the next story, p8-02) — not touched by this story.
+
+files_to_modify:
+  - file: web/src/features/docs/DocRenderer.tsx
+    change: Add view/edit mode state, an Edit button, and a textarea-based edit mode that replaces the rendered content when active, with Cancel reverting to original content.
+
+design_decisions:
+  - decision: No draft/save persistence layer (no equivalent of the archived version's doc_edits table or PUT /api/docs/:id).
+    rationale: Consus's architecture deliberately never writes doc content directly outside the propose-change pipeline; an in-progress edit is ephemeral client state until it's fired as a proposal in the follow-up story.
+  - decision: Reuse DocRenderer as the single doc-viewing surface rather than introducing a separate full-page DocEditor route/component like the archived version's DocEditor.tsx.
+    rationale: Consus already opens docs inline within DocsSection (no dedicated /docs/:id route exists), and DiagramView shares this same component shape per DocRenderer's own comments; keeping one component avoids duplicating the propose-change plumbing DocRenderer already has.
+
+risks:
+  - severity: low
+    description: Placing edit-mode state inside DocRenderer could tangle it with DiagramView's shared usage if not scoped carefully, since DocRenderer's comments note it intentionally mirrors DiagramView's UI shape.
+    mitigation: Keep edit-mode props/state additive and optional (similar to the existing onProposeChange prop), so DiagramView's callers are unaffected if they don't opt in.
+  - severity: low
+    description: Losing an in-progress edit on navigation with no warning could frustrate an operator who edited a long doc.
+    mitigation: Accepted for this scope per the design discussion; a beforeunload-style warning is a reasonable low-effort follow-up if it becomes a real complaint, not required here.

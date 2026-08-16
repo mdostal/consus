@@ -1,11 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
-import { resolveMulticaProjectId, type MulticaClient } from "../adapters/multica/client.js";
-import { syncMulticaQueue } from "../adapters/multica/ingest.js";
+import type { DecisionPayload } from "../decision-contract/parser.js";
 
 export interface DecisionRoutesOptions {
   db: Database.Database;
-  client: MulticaClient;
 }
 
 interface ItemRow {
@@ -21,37 +19,54 @@ interface ItemRow {
   triage_bucket: string | null;
 }
 
+interface CreateDecisionBody {
+  id?: string;
+  title?: string;
+  source_repo?: string;
+  decision_payload?: DecisionPayload;
+}
+
+/** Structural validation only — this route stores what a caller supplies, it
+ *  never composes a decision_payload itself. Returns the first problem found,
+ *  or null when the payload is well-formed. */
+function validateDecisionPayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") {
+    return "decision_payload is required";
+  }
+  const p = payload as Partial<DecisionPayload>;
+  if (p.version !== "dostal:decision-request/v1") {
+    return `decision_payload.version must be "dostal:decision-request/v1"`;
+  }
+  if (!Array.isArray(p.options) || p.options.length < 2) {
+    return "decision_payload.options must have at least 2 entries";
+  }
+  if (!p.options.some((o) => o.id === p.recommended)) {
+    return "decision_payload.recommended must match one of decision_payload.options[].id";
+  }
+  return null;
+}
+
 /**
- * REQ-28 + s1-multica-live-ingest: the "list decisions" endpoint an
- * agent-harness (and the Consus web shell) needs. Syncs live Multica issues
- * into the store on every request (s1) before reading — this is what turns
- * an otherwise-empty local queue into real, current data.
+ * REQ-28: the "list decisions" endpoint an agent-harness (and the Consus
+ * web shell) needs — purely local. Consus has no live external data source;
+ * items land in the `items` table via the KB store or the propose-a-change
+ * mechanism, not a background sync.
  *
  * By default returns only the *open* queue — every item carrying a
- * decision_payload, or ingested from Multica, that hasn't been decided yet
- * (decided_at IS NULL, the same amnesia-fix rule REQ-08's decide flow
- * enforces so decided items never resurface). A raw Multica issue with no
- * decision-request/v1 block still has a decision_type/triage_bucket from the
- * heuristic classifier and is included — the queue would otherwise show
- * almost nothing, since most real tickets don't carry the fenced block.
+ * decision_payload that hasn't been decided yet (decided_at IS NULL, the
+ * same amnesia-fix rule REQ-08's decide flow enforces so decided items
+ * never resurface).
  *
  * `?all=1` additionally returns already-decided items (decided_at NOT NULL) so
  * the shell can present a "Decided" section that stays reviewable.
  */
-export function registerDecisionRoutes(app: FastifyInstance, { db, client }: DecisionRoutesOptions): void {
-  app.get<{ Querystring: { all?: string } }>("/api/decisions", async (request, reply) => {
-    const synced = await syncMulticaQueue(db, client, { project: resolveMulticaProjectId() });
-    if (!synced.ok) {
-      reply.code(503);
-      return { error: `Multica sync failed: ${synced.error}` };
-    }
-
+export function registerDecisionRoutes(app: FastifyInstance, { db }: DecisionRoutesOptions): void {
+  app.get<{ Querystring: { all?: string } }>("/api/decisions", async (request) => {
     const includeDecided = request.query?.all === "1" || request.query?.all === "true";
-    const isDecisionItem = "(decision_payload IS NOT NULL OR id LIKE 'multica:%')";
 
     const sql = includeDecided
-      ? `SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket FROM items WHERE ${isDecisionItem} ORDER BY (decided_at IS NULL) DESC, updated_at DESC, created_at ASC`
-      : `SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket FROM items WHERE ${isDecisionItem} AND decided_at IS NULL ORDER BY created_at ASC`;
+      ? "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket FROM items WHERE decision_payload IS NOT NULL ORDER BY (decided_at IS NULL) DESC, updated_at DESC, created_at ASC"
+      : "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket FROM items WHERE decision_payload IS NOT NULL AND decided_at IS NULL ORDER BY created_at ASC";
 
     const rows = db.prepare(sql).all() as ItemRow[];
 
@@ -59,5 +74,50 @@ export function registerDecisionRoutes(app: FastifyInstance, { db, client }: Dec
       ...row,
       decision_payload: row.decision_payload ? JSON.parse(row.decision_payload) : null,
     }));
+  });
+
+  /**
+   * s1-push-decision-endpoint: lets an outside agent/harness create a new
+   * decision item — today's only other write paths (the KB store, the
+   * propose-a-change mechanism) are Consus-internal. `id` is caller-supplied
+   * and required, never server-generated: the calling agent is the one that
+   * knows whether this is a genuinely new decision or the same one asked
+   * twice, so a duplicate `id` is a 409, not a silent upsert.
+   */
+  app.post<{ Body: CreateDecisionBody }>("/api/decisions", async (request, reply) => {
+    const { id, title, source_repo: sourceRepo, decision_payload: decisionPayload } = request.body ?? {};
+
+    if (!id) {
+      return reply.code(400).send({ error: "id is required" });
+    }
+    if (!title) {
+      return reply.code(400).send({ error: "title is required" });
+    }
+    const payloadError = validateDecisionPayload(decisionPayload);
+    if (payloadError) {
+      return reply.code(400).send({ error: payloadError });
+    }
+
+    const existing = db.prepare("SELECT id FROM items WHERE id = ?").get(id);
+    if (existing) {
+      return reply.code(409).send({ error: `item already exists: ${id}` });
+    }
+
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO items (id, type, title, status, source_repo, created_at, updated_at, decision_payload)
+       VALUES (?, 'decision_request', ?, 'open', ?, ?, ?, ?)`,
+    ).run(id, title, sourceRepo ?? null, now, now, JSON.stringify(decisionPayload));
+
+    const row = db
+      .prepare(
+        "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket FROM items WHERE id = ?",
+      )
+      .get(id) as ItemRow;
+
+    return reply.code(201).send({
+      ...row,
+      decision_payload: row.decision_payload ? JSON.parse(row.decision_payload) : null,
+    });
   });
 }

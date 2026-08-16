@@ -1,0 +1,110 @@
+id: s3-first-run-onboarding-screen
+epic: consus-phase6-standalone-onboarding
+title: First-run onboarding screen replaces the default blank view
+status: pending
+complexity: medium
+methodology: bdd
+depends_on: [s1-repo-ingest-endpoint]
+
+description: |
+  A fresh Consus install (empty doc_index, empty kb_entries, no decisions)
+  currently just shows the default Decisions tab, which renders an empty
+  "Nothing waiting on you" state with no explanation of what Consus is for
+  or what to do next. There is no onboarding path anywhere in the app.
+
+  Add a first-run onboarding screen, shown instead of the normal tab shell
+  when there is nothing ingested anywhere yet, with:
+  1. An "Ingest repo to create initial knowledge base" call to action,
+     wired to POST /api/projects/consus/ingest (s1's endpoint) — on
+     success, transition into the normal tab shell.
+  2. An "Install into harness" section pointing at the existing
+     skills/consus/SKILL.md doc (a link/reference, not new functionality).
+  3. Plain, non-functional, forward-looking copy about "Interact with
+     plugin-hive" — this is intentionally just copy in this pass, not a
+     working feature; do not build anything behind it.
+
+  The bar for "nothing ingested yet": docs are empty (GET /api/docs returns
+  an empty object) AND kb_entries are empty AND there are no decisions.
+  Docs-empty is really the deciding signal in practice (diagrams need no
+  ingest and always reflect disk state; KB entries come from a separate,
+  unrelated decision-approval flow) — but check all three so the screen
+  correctly disappears the moment there's any real content to look at,
+  not only right after an ingest click.
+
+acceptance_criteria:
+  - "Given a totally fresh install (empty doc_index, empty kb_entries, zero decisions), when the app loads, then the onboarding screen is shown instead of the normal tab shell."
+  - "Given the operator clicks 'Ingest repo to create initial knowledge base' on the onboarding screen, when the ingest request succeeds, then the app transitions into the normal tab shell (Decisions/Projects/KB/Docs) without a manual page reload."
+  - "Given docs, KB entries, OR decisions already exist, when the app loads, then the normal tab shell is shown directly — the onboarding screen never appears."
+  - "Given the onboarding screen is shown, then it displays the 'Install into harness' pointer to skills/consus/SKILL.md and the 'Interact with plugin-hive' copy, matching the operator's stated first-run UX."
+
+steps:
+  - id: add-emptiness-check
+    description: >
+      In web/src/App.tsx's top-level App component, after the existing
+      reload() effect fetches decisions, also fetch GET /api/docs and
+      GET /api/kb-entries once on mount to determine whether all three
+      are empty; derive a single isFirstRun boolean from those three
+      results.
+    agent: developer
+  - id: build-onboarding-screen
+    description: >
+      Add an OnboardingScreen component rendered instead of the normal
+      <main> tab shell when isFirstRun is true, containing the ingest
+      call-to-action (reusing the same POST /api/projects/:project/ingest
+      call pattern introduced in s2), the harness-install pointer, and the
+      plugin-hive copy described in the story description.
+    agent: developer
+    depends_on: [add-emptiness-check]
+  - id: write-component-tests
+    description: >
+      Write @testing-library/react + vitest specs covering all four
+      acceptance criteria — mock fetch for /api/docs, /api/kb-entries,
+      /api/decisions, and /api/projects/:project/ingest to exercise both
+      the first-run and normal-shell paths.
+    agent: tester
+    depends_on: [build-onboarding-screen]
+  - id: review
+    description: Review that the emptiness check correctly covers all three data sources and that the screen correctly hands off into the normal shell after a successful ingest.
+    agent: reviewer
+    depends_on: [write-component-tests]
+  - id: integrate
+    description: Commit the onboarding screen, the emptiness check, and the tests.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: web/src/App.tsx
+      purpose: "The App() component (~line 685 onward) is where the top-level reload()/useEffect and the <main> tab-shell rendering live — isFirstRun and the OnboardingScreen conditional render slot in here."
+    - path: skills/consus/SKILL.md
+      purpose: "The existing agent-facing skill doc the 'Install into harness' section should point to — do not duplicate its content, just link/reference it."
+    - path: server/routes/kb.ts
+      purpose: "Confirms the shape of GET /api/kb-entries (used for the kb_entries-empty check) — read to get the exact response shape before writing the fetch."
+
+files_to_modify:
+  - file: web/src/App.tsx
+    change: "Add the isFirstRun derivation and a new OnboardingScreen component, rendered in place of the normal <main> tab shell when true."
+  - file: web/src/App.test.tsx
+    change: "New or extended test file covering the four acceptance criteria (same file as s2's test additions if s2 lands first — check before creating a duplicate)."
+
+design_decisions:
+  - decision: "'Interact with plugin-hive' is copy-only in this pass, not a working feature."
+    rationale: "Per the requirement's explicit scope: cross-plugin integration is future Pantheon L2 adapter work, not part of this epic. Building a fake or stubbed interaction here would misrepresent what's actually wired up."
+  - decision: "The onboarding screen replaces the tab shell entirely rather than appearing as a banner above it."
+    rationale: "Matches the operator's verbatim description of wanting to see 'a nice blank page for consus with...' as the first thing, not a banner bolted onto existing empty tabs."
+
+risks:
+  - severity: low
+    description: "If s2 and s3 are implemented in the wrong order or independently duplicate the ingest-button fetch logic, there's a small chance of divergent behavior between the per-project ingest button and the onboarding-screen ingest button."
+    mitigation: "Both stories depend only on s1's endpoint contract (POST /api/projects/:project/ingest -> {project, docsScanned}), which is stable and simple enough that two independent call sites calling it is acceptable for this pass; consider extracting a shared hook only if a third call site appears later."
+
+references:
+  - path: web/src/App.tsx
+    relevant_excerpt: |
+      export function App() {
+        const [tab, setTab] = useState<Tab>("decisions");
+        const [decisions, setDecisions] = useState<DecisionItem[] | null>(null);
+        const reload = useCallback(() => {
+          fetch("/api/decisions?all=1")...
+        }, []);
+        useEffect(() => { reload(); }, [reload]);

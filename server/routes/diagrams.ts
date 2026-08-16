@@ -70,12 +70,9 @@ function readEpic(epicYamlPath: string): DiagramEpic | null {
 
 /**
  * Cascade org-tree: every epic in a repo's .pHive/epics/, each with its
- * stories and dependency edges — the reference shape is hive's
- * routes/diagrams.ts cascade endpoint (PAN-7956), scoped down to what's
- * buildable from this repo's own planning YAML on disk (no cross-project
- * Multica issue hierarchy — that's hive's cascade, not this one). Read-only
- * in this story; s4-diagram-viewer-and-propose-ui adds the propose-a-change
- * action via s3's dispatch mechanism.
+ * stories and dependency edges — built entirely from this repo's own
+ * planning YAML on disk. Read-only in this story; s4-diagram-viewer-and-
+ * propose-ui adds the propose-a-change action via s3's dispatch mechanism.
  */
 export function registerDiagramRoutes(app: FastifyInstance, { db, repos }: DiagramRoutesOptions): void {
   app.get<{ Querystring: { repo?: string } }>("/api/diagrams", async (request, reply) => {

@@ -14,9 +14,7 @@ export interface CommentThreadProps {
 
 /**
  * REQ-04: item-type-agnostic comment/chat thread, attached to any item view
- * (docs, human_requests, KB entries). Renders identically whether a comment
- * originated in Consus or another Multica-connected surface — it just reads
- * author/body/createdAt, with no Consus-origin-only fields.
+ * (docs, decisions, KB entries) — just reads author/body/createdAt.
  */
 export function CommentThread({ comments, onSubmit }: CommentThreadProps) {
   const [draft, setDraft] = useState("");

@@ -3,7 +3,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import Database from "better-sqlite3";
 import { runMigration } from "../db/migrate.js";
 import { registerProposalRoutes } from "./proposals.js";
-import type { MinervaTransport, MinervaResult } from "../adapters/minerva/transport.js";
+import type { HarnessTransport, HarnessResult } from "../harness/transport.js";
 
 function insertItem(db: Database.Database, id: string) {
   const now = new Date().toISOString();
@@ -12,10 +12,10 @@ function insertItem(db: Database.Database, id: string) {
   ).run(id, "doc_ref", "Test item", "open", now, now);
 }
 
-function fakeTransport(): MinervaTransport {
+function fakeTransport(): HarnessTransport {
   return {
     async invoke<T>() {
-      return { ok: true, result: {} } as MinervaResult<T>;
+      return { ok: true, result: {} } as HarnessResult<T>;
     },
   };
 }

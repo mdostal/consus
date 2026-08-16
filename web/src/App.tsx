@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { marked } from "marked";
 import { AnswerControl } from "./features/decisions/answer-shapes/AnswerControl";
 import { CommentThread, type Comment } from "./features/comments/CommentThread";
-import { QAQueue, type QueuedQuestion } from "./features/minerva/QAQueue";
 import { GlobalView, type KbEntrySummary } from "./features/projects/GlobalView";
 import { ProjectView } from "./features/projects/ProjectView";
 import { DiagramView, type DiagramEpic } from "./features/projects/DiagramView";
@@ -11,8 +10,6 @@ import { BacklogBrowser, type BacklogEntry, type KbCollection } from "./features
 import { DocBrowser, type GroupedDocs } from "./features/docs/DocBrowser";
 import { DocRenderer } from "./features/docs/DocRenderer";
 import type { DecisionPayload, Verdict } from "./features/decisions/answer-shapes/types";
-import { FireAgentTrigger, type FireAgentInput, type FireAgentResult } from "./features/decisions/FireAgentTrigger";
-import { VersionsView, type DecisionLogEntry } from "./features/decisions/VersionsView";
 import "./theme/tokens.css";
 import "./app.css";
 
@@ -20,9 +17,17 @@ import "./app.css";
 /* Types + shared helpers                                           */
 /* ---------------------------------------------------------------- */
 
+/** GET /api/docs (and its ?project= scoped form) always includes an entry
+ *  for every registered repo, even with zero docs indexed — e.g. `{consus:
+ *  {}}`, never a bare `{}`. So "any docs at all" means every repo's grouped
+ *  phase map is itself empty, not that the top-level object has no keys. */
+function docsAreEmpty(grouped: GroupedDocs): boolean {
+  return Object.values(grouped).every((byPhase) => Object.keys(byPhase).length === 0);
+}
+
 /** A decision as returned by GET /api/decisions (payload parsed server-side).
- *  decision_payload is null for a raw Multica issue with no fenced
- *  decision-request block (s1) — most real tickets don't carry one. */
+ *  decision_payload is null for an item with no fenced decision-request
+ *  block — not every item carries one. */
 interface DecisionItem {
   id: string;
   type: string;
@@ -74,9 +79,6 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
   const [recorded, setRecorded] = useState<Verdict | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [auditEntries, setAuditEntries] = useState<AuditTrailEntry[]>([]);
-  const [versionsEntries, setVersionsEntries] = useState<DecisionLogEntry[]>([]);
-  const [fireAgentError, setFireAgentError] = useState<string | null>(null);
-  const [fireAgentResult, setFireAgentResult] = useState<FireAgentResult | null>(null);
 
   const loadComments = useCallback(async () => {
     try {
@@ -96,41 +98,10 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
     }
   }, [item.id]);
 
-  const loadVersions = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/log?issueId=${encodeURIComponent(item.id)}`);
-      if (res.ok) setVersionsEntries(await res.json());
-    } catch {
-      /* history is best-effort */
-    }
-  }, [item.id]);
-
   useEffect(() => {
     loadComments();
     loadAuditTrail();
-    loadVersions();
-  }, [loadComments, loadAuditTrail, loadVersions]);
-
-  async function fireAgent(input: FireAgentInput) {
-    setFireAgentError(null);
-    try {
-      const res = await fetch(`/api/decisions/${encodeURIComponent(item.id)}/iterate`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(input),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        setFireAgentError(body.error ?? `HTTP ${res.status}`);
-        return;
-      }
-      setFireAgentResult({ log_id: body.log_id, comment_id: body.comment_id });
-      loadVersions();
-      loadAuditTrail();
-    } catch (e) {
-      setFireAgentError((e as Error).message);
-    }
-  }
+  }, [loadComments, loadAuditTrail]);
 
   async function submitVerdict(verdict: Verdict) {
     setErr(null);
@@ -235,8 +206,7 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
         ) : (
           <>
             <p className="dv__hint">
-              No structured decision-request on this ticket — a plain Multica item. Accept to mark it reviewed, or
-              use Discussion below.
+              No structured decision-request on this item. Accept to mark it reviewed, or use Discussion below.
             </p>
             {recorded ? (
               <div className="dv__recorded">✓ Recorded: {verdictLabel(recorded)}</div>
@@ -253,16 +223,6 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
       <section>
         <h3 className="dv__section-title">Discussion</h3>
         <CommentThread comments={comments} onSubmit={submitComment} />
-      </section>
-
-      <section>
-        <h3 className="dv__section-title">Iterate</h3>
-        <FireAgentTrigger onFire={fireAgent} error={fireAgentError} result={fireAgentResult} />
-      </section>
-
-      <section>
-        <h3 className="dv__section-title">Versions</h3>
-        <VersionsView originalContent={item.title} entries={versionsEntries} />
       </section>
 
       <section>
@@ -319,84 +279,68 @@ function DecisionsSection({
 }
 
 /* ---------------------------------------------------------------- */
-/* Section: Minerva Q&A (human-request items + surveys)             */
-/* ---------------------------------------------------------------- */
-
-function MinervaSection({
-  decisions,
-  reload,
-}: {
-  decisions: DecisionItem[] | null;
-  reload: () => void;
-}) {
-  if (!decisions) return <p className="state">Loading Minerva questions…</p>;
-
-  const questions: QueuedQuestion[] = decisions
-    .filter((d) => d.type === "human_request" && !d.decided_at)
-    .map((d) => ({
-      minervaQuestionId: d.id,
-      text: d.title,
-      ticketId: d.source_repo,
-      decisionPayload: d.decision_payload,
-    }));
-
-  async function onAnswer(id: string, verdict: Verdict) {
-    await postVerdict(id, verdict);
-    reload();
-  }
-
-  return (
-    <div>
-      <div className="consus__section-lead">
-        <h1>Minerva Q&amp;A</h1>
-        <p>Escalated questions and surveys from Minerva, answerable async and linked to their ticket.</p>
-      </div>
-      {questions.length === 0 ? (
-        <div className="empty">
-          <strong>No open Minerva questions</strong>
-          When Minerva escalates a question or a survey through the bridge, it appears here. Answered items move
-          to the Decisions history.
-        </div>
-      ) : (
-        <QAQueue questions={questions} onAnswer={onAnswer} />
-      )}
-    </div>
-  );
-}
-
-/* ---------------------------------------------------------------- */
 /* Section: Projects (cross-project + per-project KB views)         */
 /* ---------------------------------------------------------------- */
 
 function ProjectsSection() {
   const [entries, setEntries] = useState<KbEntrySummary[] | null>(null);
+  const [projects, setProjects] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [project, setProject] = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const [ingesting, setIngesting] = useState(false);
+  const [ingestError, setIngestError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadEntries = useCallback(() => {
     fetch("/api/kb-entries")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(setEntries)
       .catch((e) => setError(e.message));
   }, []);
 
-  if (error) return <p className="state state--err">Could not load projects: {error}</p>;
-  if (!entries) return <p className="state">Loading projects…</p>;
+  useEffect(() => {
+    loadEntries();
+  }, [loadEntries]);
 
-  const projects = [...new Set(entries.map((e) => e.source_repo ?? "unassigned"))];
+  useEffect(() => {
+    fetch("/api/projects")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((body) => setProjects(body.projects))
+      .catch((e) => setError(e.message));
+  }, []);
+
+  async function ingestRepo(repoName: string) {
+    setIngesting(true);
+    setIngestError(null);
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(repoName)}/ingest`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      loadEntries();
+      setRefreshToken((t) => t + 1);
+    } catch (e) {
+      setIngestError((e as Error).message);
+    } finally {
+      setIngesting(false);
+    }
+  }
+
+  if (error) return <p className="state state--err">Could not load projects: {error}</p>;
+  if (!entries || !projects) return <p className="state">Loading projects…</p>;
 
   return (
     <div>
       <div className="consus__section-lead">
         <h1>Projects</h1>
-        <p>Every project's shared-truth KB — scope to one project or see the shape of things across all.</p>
+        <p>Every registered project — scope to one to see its diagrams, docs, and KB entries, or see the shape of things across all.</p>
       </div>
 
-      {entries.length === 0 ? (
+      {projects.length === 0 ? (
         <div className="empty">
-          <strong>No KB entries yet</strong>
-          Approved decisions and CBAs become durable, versioned KB entries here — grouped by project. Nothing has
-          been promoted to the KB store yet.
+          <strong>No projects registered</strong>
+          Configure at least one project (see .pHive/consus-projects.json) so there's a repo to select and ingest.
         </div>
       ) : (
         <>
@@ -418,15 +362,30 @@ function ProjectsSection() {
             ))}
           </div>
           {project === null ? (
-            <GlobalView entries={entries} onSelect={() => {}} />
+            entries.length === 0 ? (
+              <div className="empty">
+                <strong>No KB entries yet</strong>
+                Approved decisions and CBAs become durable, versioned KB entries here — grouped by project. Select a
+                project above to see its docs and diagrams even before anything's been approved.
+              </div>
+            ) : (
+              <GlobalView entries={entries} onSelect={() => {}} />
+            )
           ) : (
             <>
+              <div className="project-actions">
+                <button type="button" onClick={() => ingestRepo(project)} disabled={ingesting}>
+                  {ingesting ? "Ingesting…" : "Ingest repo"}
+                </button>
+                {ingestError ? <p className="dv__err">{ingestError}</p> : null}
+              </div>
               <ProjectView
                 project={project}
                 entries={entries.filter((e) => (e.source_repo ?? "unassigned") === project)}
                 onSelect={() => {}}
               />
-              <ProjectDiagram repo={project} />
+              <ProjectDiagram repo={project} refreshToken={refreshToken} />
+              <ProjectDocs repo={project} refreshToken={refreshToken} />
             </>
           )}
         </>
@@ -440,7 +399,7 @@ function ProjectsSection() {
  * action through POST /api/proposals (s3) — fire, then poll once for a
  * result so "pending" doesn't hang silently forever in the UI.
  */
-function ProjectDiagram({ repo }: { repo: string }) {
+function ProjectDiagram({ repo, refreshToken }: { repo: string; refreshToken?: number }) {
   const [data, setData] = useState<{ itemId: string; epics: DiagramEpic[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingProposalId, setPendingProposalId] = useState<string | null>(null);
@@ -464,7 +423,7 @@ function ProjectDiagram({ repo }: { repo: string }) {
         loadAuditTrail(body.itemId);
       })
       .catch((e) => setError(e.message));
-  }, [repo, loadAuditTrail]);
+  }, [repo, refreshToken, loadAuditTrail]);
 
   const proposeChange = useCallback(
     ({ diff, description }: { diff: string; description: string }) => {
@@ -501,6 +460,67 @@ function ProjectDiagram({ repo }: { repo: string }) {
       onProposeChange={proposeChange}
       auditEntries={auditEntries}
     />
+  );
+}
+
+/**
+ * s2 (phase6): this project's generated docs, alongside its diagram + KB
+ * entries — folding the previously-separate global Docs tab's data into
+ * the per-project view too. Read-only here (no propose-change wiring);
+ * the global Docs tab remains the full-featured surface for that.
+ */
+function ProjectDocs({ repo, refreshToken }: { repo: string; refreshToken?: number }) {
+  const [grouped, setGrouped] = useState<GroupedDocs | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [openDoc, setOpenDoc] = useState<{ format: "md" | "html"; content: string; path: string } | null>(null);
+
+  useEffect(() => {
+    setGrouped(null);
+    setOpenDoc(null);
+    fetch(`/api/docs?project=${encodeURIComponent(repo)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(setGrouped)
+      .catch((e) => setError(e.message));
+  }, [repo, refreshToken]);
+
+  async function open(docRepo: string, filePath: string) {
+    const res = await fetch(
+      `/api/docs/content?repo=${encodeURIComponent(docRepo)}&path=${encodeURIComponent(filePath)}`,
+    );
+    if (res.ok) {
+      const data = await res.json();
+      setOpenDoc({ format: data.format, content: data.content, path: filePath });
+    }
+  }
+
+  if (error) return <p className="state state--err">Could not load docs: {error}</p>;
+  if (!grouped) return <p className="state">Loading docs…</p>;
+
+  const empty = docsAreEmpty(grouped);
+
+  if (openDoc) {
+    return (
+      <div>
+        <button className="doc-back" onClick={() => setOpenDoc(null)}>
+          ← Back to docs
+        </button>
+        <DocRenderer format={openDoc.format} content={openDoc.content} />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h3 className="dv__section-title">Docs</h3>
+      {empty ? (
+        <div className="empty">
+          <strong>No docs indexed yet</strong>
+          Click "Ingest repo" above to pull this project's generated docs into Consus.
+        </div>
+      ) : (
+        <DocBrowser grouped={grouped} onOpen={open} />
+      )}
+    </div>
   );
 }
 
@@ -627,7 +647,7 @@ function DocsSection() {
   if (error) return <p className="state state--err">Could not load docs: {error}</p>;
   if (!grouped) return <p className="state">Loading docs…</p>;
 
-  const empty = Object.keys(grouped).length === 0;
+  const empty = docsAreEmpty(grouped);
 
   if (openDoc) {
     return (
@@ -669,14 +689,81 @@ function DocsSection() {
 }
 
 /* ---------------------------------------------------------------- */
+/* First-run onboarding (s3, phase6)                                */
+/* ---------------------------------------------------------------- */
+
+/**
+ * s3 (phase6): shown instead of the normal tab shell when there's nothing
+ * ingested anywhere yet (no docs, no KB entries, no decisions) — a fresh
+ * install otherwise just shows empty tabs with no explanation.
+ */
+function OnboardingScreen({ onIngested }: { onIngested: () => void }) {
+  const [ingesting, setIngesting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function ingest() {
+    setIngesting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/projects/consus/ingest", { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      onIngested();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setIngesting(false);
+    }
+  }
+
+  return (
+    <div className="onboarding">
+      <span className="onboarding__mark">◈</span>
+      <h1>Consus</h1>
+      <p className="onboarding__lede">
+        A knowledgebase, graph, and file editor for this repo's own decisions, docs, and
+        architecture — plus a surface to work through them with an agent harness.
+      </p>
+
+      <section className="onboarding__step">
+        <h2>Ingest repo</h2>
+        <p>Pull this repo's generated docs, architecture, and diagrams into Consus's own store.</p>
+        <button type="button" onClick={ingest} disabled={ingesting}>
+          {ingesting ? "Ingesting…" : "Ingest repo to create initial knowledge base"}
+        </button>
+        {error ? <p className="dv__err">{error}</p> : null}
+      </section>
+
+      <section className="onboarding__step">
+        <h2>Install into harness</h2>
+        <p>
+          Any Claude-Code-compatible agent harness can read Consus's open-decision queue and
+          submit verdicts directly — see <code>skills/consus/SKILL.md</code> for the full
+          agent-facing contract.
+        </p>
+      </section>
+
+      <section className="onboarding__step">
+        <h2>Interact with plugin-hive</h2>
+        <p>
+          Deeper integration with plugin-hive's own planning and execution loop is on the
+          roadmap — for now, Consus stands entirely on its own.
+        </p>
+      </section>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- */
 /* App shell                                                        */
 /* ---------------------------------------------------------------- */
 
-type Tab = "decisions" | "minerva" | "projects" | "kb" | "docs";
+type Tab = "decisions" | "projects" | "kb" | "docs";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "decisions", label: "Decisions" },
-  { id: "minerva", label: "Minerva" },
   { id: "projects", label: "Projects" },
   { id: "kb", label: "KB" },
   { id: "docs", label: "Docs" },
@@ -686,6 +773,7 @@ export function App() {
   const [tab, setTab] = useState<Tab>("decisions");
   const [decisions, setDecisions] = useState<DecisionItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [onboardingCheck, setOnboardingCheck] = useState<{ docsEmpty: boolean; kbEmpty: boolean } | null>(null);
 
   const reload = useCallback(() => {
     fetch("/api/decisions?all=1")
@@ -694,11 +782,57 @@ export function App() {
       .catch((e) => setError(e.message));
   }, []);
 
+  const checkOnboarding = useCallback(() => {
+    Promise.all([
+      fetch("/api/docs").then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))),
+      fetch("/api/kb-entries").then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))),
+    ])
+      .then(([docs, kbEntries]) => {
+        setOnboardingCheck({
+          docsEmpty: docsAreEmpty(docs as GroupedDocs),
+          kbEmpty: Array.isArray(kbEntries) ? kbEntries.length === 0 : true,
+        });
+      })
+      .catch(() => {
+        // best-effort — a failed check must never block the app; assume not first-run
+        setOnboardingCheck({ docsEmpty: false, kbEmpty: false });
+      });
+  }, []);
+
   useEffect(() => {
     reload();
-  }, [reload]);
+    checkOnboarding();
+  }, [reload, checkOnboarding]);
 
   const openCount = decisions?.filter((d) => !d.decided_at).length ?? 0;
+
+  const isFirstRun =
+    onboardingCheck !== null &&
+    decisions !== null &&
+    onboardingCheck.docsEmpty &&
+    onboardingCheck.kbEmpty &&
+    decisions.length === 0;
+
+  if (!error && (onboardingCheck === null || decisions === null)) {
+    return (
+      <div className="consus">
+        <p className="state">Loading…</p>
+      </div>
+    );
+  }
+
+  if (isFirstRun) {
+    return (
+      <div className="consus">
+        <OnboardingScreen
+          onIngested={() => {
+            reload();
+            checkOnboarding();
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="consus">
@@ -725,7 +859,6 @@ export function App() {
       <main className="consus__main">
         {error ? <p className="state state--err">Could not load decisions: {error}</p> : null}
         {tab === "decisions" ? <DecisionsSection decisions={decisions} reload={reload} /> : null}
-        {tab === "minerva" ? <MinervaSection decisions={decisions} reload={reload} /> : null}
         {tab === "projects" ? <ProjectsSection /> : null}
         {tab === "kb" ? <KbSection /> : null}
         {tab === "docs" ? <DocsSection /> : null}

@@ -4,7 +4,6 @@ import Database from "better-sqlite3";
 import { runMigration } from "../db/migrate.js";
 import { registerDecisionRoutes } from "./decisions.js";
 import { decideItem } from "../kb/store.js";
-import type { MulticaClient, MulticaListResult } from "../adapters/multica/client.js";
 
 function insertItem(db: Database.Database, id: string, payload: string | null, decided = false) {
   const now = new Date().toISOString();
@@ -14,15 +13,6 @@ function insertItem(db: Database.Database, id: string, payload: string | null, d
   if (decided) {
     decideItem(db, { itemId: id, actor: "mathew", newStatus: "approved" });
   }
-}
-
-function fakeClient(listResult: MulticaListResult = { ok: true, issues: [] }): MulticaClient {
-  return {
-    writeComment: async () => ({ ok: false, error: "unused in these tests" }),
-    listIssues: async () => listResult,
-    getIssue: async () => ({ ok: false, error: "unused in these tests" }),
-    updateIssueStatus: async () => ({ ok: false, error: "unused in these tests" }),
-  };
 }
 
 const PAYLOAD = JSON.stringify({
@@ -44,7 +34,7 @@ describe("GET /api/decisions", () => {
     db = new Database(":memory:");
     runMigration(db);
     app = Fastify();
-    registerDecisionRoutes(app, { db, client: fakeClient() });
+    registerDecisionRoutes(app, { db });
     await app.ready();
   });
 
@@ -84,92 +74,108 @@ describe("GET /api/decisions", () => {
   });
 });
 
-describe("GET /api/decisions — live Multica sync", () => {
+describe("POST /api/decisions", () => {
   let db: Database.Database;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    runMigration(db);
+    app = Fastify();
+    registerDecisionRoutes(app, { db });
+    await app.ready();
+  });
 
   afterEach(async () => {
+    await app.close();
     db.close();
   });
 
-  it("syncs live Multica issues into the queue on every request", async () => {
-    db = new Database(":memory:");
-    runMigration(db);
-    const app = Fastify();
-    registerDecisionRoutes(app, {
-      db,
-      client: fakeClient({
-        ok: true,
-        issues: [
-          {
-            id: "i-1",
-            identifier: "DOS-1",
-            title: "Ship v1?",
-            description: "body",
-            status: "todo",
-            priority: null,
-            labels: [],
-            updatedAt: null,
-            createdAt: null,
-            parentId: null,
-          },
-        ],
-      }),
-    });
-    await app.ready();
+  const VALID_PAYLOAD = JSON.parse(PAYLOAD);
 
-    const res = await app.inject({ method: "GET", url: "/api/decisions" });
-    const body = res.json();
+  function post(body: unknown) {
+    return app.inject({ method: "POST", url: "/api/decisions", payload: body });
+  }
 
-    expect(body.map((i: { id: string }) => i.id)).toContain("multica:i-1");
-    await app.close();
+  it("creates a new item that shows up in a subsequent GET with the same decision_payload", async () => {
+    const res = await post({ id: "pushed-1", title: "Should we do X?", decision_payload: VALID_PAYLOAD });
+    expect(res.statusCode).toBe(201);
+
+    const get = await app.inject({ method: "GET", url: "/api/decisions" });
+    const body = get.json();
+    expect(body).toHaveLength(1);
+    expect(body[0].id).toBe("pushed-1");
+    expect(body[0].decision_payload).toEqual(VALID_PAYLOAD);
   });
 
-  it("includes ingested Multica items even without a decision_payload — classification alone is enough to surface them", async () => {
-    db = new Database(":memory:");
-    runMigration(db);
-    const app = Fastify();
-    registerDecisionRoutes(app, {
-      db,
-      client: fakeClient({
-        ok: true,
-        issues: [
-          {
-            id: "i-2",
-            identifier: "DOS-2",
-            title: "some raw ticket with no decision-request block",
-            description: "just prose",
-            status: "todo",
-            priority: null,
-            labels: [],
-            updatedAt: null,
-            createdAt: null,
-            parentId: null,
-          },
-        ],
-      }),
-    });
-    await app.ready();
-
-    const res = await app.inject({ method: "GET", url: "/api/decisions" });
-    const body = res.json();
-    const item = body.find((i: { id: string }) => i.id === "multica:i-2");
-
-    expect(item).toBeDefined();
-    expect(item.decision_payload).toBeNull();
-    expect(item.decision_type).toBeDefined();
-    await app.close();
+  it("rejects a request missing id with 400 naming the missing field", async () => {
+    const res = await post({ title: "no id", decision_payload: VALID_PAYLOAD });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/id/i);
   });
 
-  it("returns 503 when the Multica sync fails, rather than crashing or silently returning nothing", async () => {
-    db = new Database(":memory:");
-    runMigration(db);
-    const app = Fastify();
-    registerDecisionRoutes(app, { db, client: fakeClient({ ok: false, error: "ECONNREFUSED" }) });
-    await app.ready();
+  it("rejects a request missing title with 400 naming the missing field", async () => {
+    const res = await post({ id: "no-title", decision_payload: VALID_PAYLOAD });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/title/i);
+  });
 
-    const res = await app.inject({ method: "GET", url: "/api/decisions" });
+  it("rejects a decision_payload with the wrong version string", async () => {
+    const res = await post({
+      id: "bad-version",
+      title: "t",
+      decision_payload: { ...VALID_PAYLOAD, version: "not-the-right-version" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/version/i);
+  });
 
-    expect(res.statusCode).toBe(503);
-    await app.close();
+  it("rejects a decision_payload with fewer than 2 options", async () => {
+    const res = await post({
+      id: "one-option",
+      title: "t",
+      decision_payload: { ...VALID_PAYLOAD, options: [{ id: "A", title: "Only", tradeoffs: "" }] },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/option/i);
+  });
+
+  it("rejects a decision_payload whose recommended letter doesn't match any option id", async () => {
+    const res = await post({
+      id: "bad-recommended",
+      title: "t",
+      decision_payload: { ...VALID_PAYLOAD, recommended: "Z" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/recommended/i);
+  });
+
+  it("returns 409 and modifies nothing when id already exists", async () => {
+    await post({ id: "dup-1", title: "first", decision_payload: VALID_PAYLOAD });
+    const res = await post({ id: "dup-1", title: "second, should be rejected", decision_payload: VALID_PAYLOAD });
+    expect(res.statusCode).toBe(409);
+
+    const get = await app.inject({ method: "GET", url: "/api/decisions" });
+    const body = get.json();
+    expect(body).toHaveLength(1);
+    expect(body[0].title).toBe("first");
+  });
+
+  it("returns the created item in the same shape GET /api/decisions returns", async () => {
+    const res = await post({
+      id: "shape-check",
+      title: "Shape check",
+      source_repo: "consus",
+      decision_payload: VALID_PAYLOAD,
+    });
+    const body = res.json();
+    expect(body).toMatchObject({
+      id: "shape-check",
+      type: expect.any(String),
+      title: "Shape check",
+      status: expect.any(String),
+      source_repo: "consus",
+      decision_payload: VALID_PAYLOAD,
+    });
   });
 });
