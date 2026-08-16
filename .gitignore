@@ -40,6 +40,8 @@ build/
 !.pHive/epics/consus-phase11-draft-submit-separation/**
 !.pHive/epics/consus-phase12-sectional-diff-view/
 !.pHive/epics/consus-phase12-sectional-diff-view/**
+!.pHive/epics/consus-phase13-multirepo-doc-resolution/
+!.pHive/epics/consus-phase13-multirepo-doc-resolution/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/

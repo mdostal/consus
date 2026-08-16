@@ -1,0 +1,134 @@
+id: s2-gitdocs-ref-aware-read-and-routes
+epic: consus-phase13-multirepo-doc-resolution
+title: Port readGitDoc (ref-aware via git show) and wire ref support + a resolve endpoint into the docs routes
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: [s1-gitdocs-candidate-extraction-and-resolution]
+
+description: |
+  s1 ported extractDocCandidates and resolveInRepos into server/adapters/gitdocs/index.ts. This
+  story finishes the three-part reference pipeline (docs/delphi-lineage-inventory.md, Source 2)
+  by adding readGitDoc — a ref-aware read (`git show ref:path` for a specific commit/branch/tag,
+  falling back to the working-tree file when no ref is given) — and wires the whole pipeline
+  into the HTTP surface the existing docs routes already expose, per
+  docs/api-reference.md's documented `GET /api/docs/content?repo=&path=` route
+  (server/routes/docs.ts), extending it rather than adding a parallel content-fetch mechanism:
+
+  - `GET /api/docs/content?repo=&path=&ref=` — add an optional `ref` query param. When present,
+    reads via the new `readGitDoc(repoPath, path, ref)` instead of the existing working-tree-only
+    `readDocContent`. Response shape unchanged (`{ repo, path, format, content, itemId }`), with
+    `ref` echoed back when it was supplied.
+  - `GET /api/docs/resolve?text=` (new route) — runs extractDocCandidates then resolveInRepos
+    (both from s1) against every configured repo in the server's `repos` map, returning each
+    candidate's resolution (or that it didn't resolve anywhere). This is the minimal UI hook
+    point: a caller extracts candidates from some doc's rendered text, then fetches each
+    resolved hit through the *existing* `/api/docs/content` route — one read mechanism, not two.
+
+  readGitDoc only ever runs against a repoPath that was already resolved through s1's
+  boundary-checked resolveInRepos, or against repos[repo] the same way the existing
+  `/api/docs/content` route already trusts it (an already-configured repo). `git show` is
+  invoked with `execFileSync("git", ["show", \`${ref}:${relPath}\`], { cwd: repoPath })` —
+  argument-array form, never a concatenated/interpolated shell string — so neither ref nor path
+  can inject shell metacharacters or break out of repoPath via the shell.
+
+acceptance_criteria:
+  - "Given a repo with a committed file at a known ref and a different (or absent) version in the working tree, when readGitDoc is called with that ref, then it returns the content as it existed at that ref, not the current working-tree content."
+  - "Given a repo and a path with no ref argument, when readGitDoc is called, then it returns the current working-tree content (same behavior as the existing readDocContent)."
+  - "Given a ref value containing shell metacharacters (e.g. \"; rm -rf /\" or \"$(whoami)\"), when readGitDoc is called with it, then git show fails/returns no such ref rather than the metacharacters being interpreted by a shell — asserted by confirming execFileSync is invoked with an argument array, not a template-interpolated command string passed to a shell-invoking exec variant."
+  - "Given GET /api/docs/content?repo=&path= with no ref param, when requested, then behavior is byte-for-byte unchanged from before this story (working-tree read, same response shape) — existing docs.test.ts specs for this route must not need modification."
+  - "Given GET /api/docs/content?repo=&path=&ref=<validref>, when requested, then the response content reflects that ref's version of the file, and the response includes the ref that was used."
+  - "Given GET /api/docs/resolve?text=<text mentioning a real cross-repo doc path>, when requested, then the response identifies which configured repo resolves that candidate, using only repos already present in the server's configured project registry — never an arbitrary filesystem path supplied by the request."
+  - "Given GET /api/docs/resolve?text=<text with a candidate that doesn't exist in any configured repo>, when requested, then that candidate is reported as unresolved (not a 500, not silently omitted without explanation) — response 200."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Extend server/adapters/gitdocs/index.test.ts with readGitDoc specs: a real git repo built
+      in a temp dir (git init, commit a file, commit a change, so a ref and the working tree
+      differ), asserting ref-aware read returns the ref's content and no-ref read returns the
+      working-tree content. Add server/routes/docs.test.ts specs for the ref param on
+      /api/docs/content (following the existing describe block's mkdtempSync-repo pattern, but
+      with an actual git repo in the temp dir this time) and for the new /api/docs/resolve route
+      (multi-repo resolve + unresolved-candidate case), reusing the two-repo
+      (repoDir/otherRepoDir) fixture already in that file.
+    agent: tester
+  - id: implement-read-git-doc
+    description: >
+      Add readGitDoc(repoPath, relPath, ref?) to server/adapters/gitdocs/index.ts: when ref is
+      given, execFileSync("git", ["show", `${ref}:${relPath}`], { cwd: repoPath, encoding:
+      "utf-8" }) and derive format from relPath's extension the same way readDocContent does;
+      when ref is omitted, delegate to the existing readDocContent from
+      server/adapters/doc-scanner/index.ts rather than duplicating the working-tree read. Make
+      the new gitdocs readGitDoc specs pass without modifying the tests.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: wire-routes
+    description: >
+      In server/routes/docs.ts: add an optional ref to the GET /api/docs/content querystring
+      type, branch to readGitDoc when present (else keep the existing readDocContent call
+      unchanged), and echo ref in the response when it was supplied. Add the new GET
+      /api/docs/resolve route: read text from the querystring, call extractDocCandidates then
+      resolveInRepos (imported from ../adapters/gitdocs/index.js) against the route's existing
+      repos option (same DocRoutesOptions.repos already used by every other route in this file —
+      no new option added), and return each candidate's resolution. Make the new docs.test.ts
+      specs pass without modifying existing ones.
+    agent: developer
+    depends_on: [implement-read-git-doc]
+  - id: review
+    description: >
+      Review server/routes/docs.ts's new /api/docs/resolve route specifically for the security
+      constraint: confirm it never accepts a repo path or filesystem root from the request body/
+      query, only free text to extract candidates from, and that resolution goes exclusively
+      through resolveInRepos against the server-configured repos map. Confirm the git show
+      invocation is exec*File*Sync with an argument array, not a shell-string exec/execSync
+      variant anywhere in the diff.
+    agent: reviewer
+    depends_on: [wire-routes]
+  - id: integrate
+    description: Commit the readGitDoc addition and the two route changes together with their tests.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: server/adapters/gitdocs/index.ts
+      purpose: "s1's extractDocCandidates/resolveInRepos live here; this story adds readGitDoc to the same file."
+    - path: server/adapters/gitdocs/index.test.ts
+      purpose: "s1's test file; this story extends it with readGitDoc specs against a real temp git repo."
+    - path: server/routes/docs.ts
+      purpose: "registerDocRoutes and the existing GET /api/docs/content handler this story extends with an optional ref param, plus the new GET /api/docs/resolve handler added alongside it. DocRoutesOptions.repos (already Record<string,string>) is passed straight to resolveInRepos with no new option."
+    - path: server/routes/docs.test.ts
+      purpose: "Existing route specs (grouped-by-repo listing, project scoping, content fetch, item upsert) this story's new specs sit alongside without modifying."
+    - path: server/adapters/doc-scanner/index.ts
+      purpose: "readDocContent is what readGitDoc's no-ref branch delegates to, and its extension-to-format derivation (relFilePath.endsWith('.html') ? 'html' : 'md') is reused rather than reimplemented."
+    - path: docs/api-reference.md
+      purpose: "Documents the current GET /api/docs/content response shape ({ repo, path, format, content, itemId }) this story must keep backward compatible when ref is absent, and is the doc this story's route additions should keep accurate (doc content itself is out of scope for this story to edit; noting for whoever updates it after this story ships)."
+    - path: docs/delphi-lineage-inventory.md
+      purpose: "Source 2's readGitDoc/currentBranch description is the reference this story's ref-aware read implements."
+
+files_to_modify:
+  - file: server/adapters/gitdocs/index.ts
+    change: "Add readGitDoc(repoPath, relPath, ref?) — git show ref:path via execFileSync when ref given, else delegates to readDocContent."
+  - file: server/adapters/gitdocs/index.test.ts
+    change: "Add readGitDoc specs using a real temp git repo (init/commit/commit)."
+  - file: server/routes/docs.ts
+    change: "Add optional ref querystring param to GET /api/docs/content (branches to readGitDoc); add new GET /api/docs/resolve route (extractDocCandidates + resolveInRepos against the existing repos option)."
+  - file: server/routes/docs.test.ts
+    change: "Add specs for the ref param and the new /api/docs/resolve route."
+
+design_decisions:
+  - decision: "ref is an additional optional query param on the existing GET /api/docs/content route, not a separate GET /api/docs/content-at-ref route."
+    rationale: "Per the task's framing and docs/api-reference.md's existing documented shape, a multi-repo/ref-aware variant should extend the one content-fetch mechanism rather than add a parallel one. Keeps callers (and docs.test.ts's existing specs) that never pass ref completely unaffected."
+  - decision: "GET /api/docs/resolve only returns resolution results (repo/path per candidate); it does not also inline each resolved doc's content."
+    rationale: "Keeps the new route single-purpose and keeps content-fetching on the one existing mechanism (/api/docs/content) instead of duplicating readDocContent/readGitDoc's response shape a second time. A caller does two small requests (resolve, then content per hit) rather than Consus growing a second bespoke response shape for the same content."
+  - decision: "readGitDoc's no-ref path delegates to the existing readDocContent rather than reimplementing a working-tree read."
+    rationale: "Avoids duplicating the format-derivation logic (and the small risk of it drifting between two implementations) — one working-tree read implementation, one ref-aware wrapper around it plus the git-show branch."
+
+risks:
+  - severity: medium
+    description: "git show ref:path resolves relative to the repo's git root, not necessarily repoPath if repoPath is itself a subdirectory of a larger git repo (Consus's own repos map entries are expected to be repo roots, but this isn't enforced anywhere)."
+    mitigation: "Out of scope to enforce in this story — repos map entries already come from loadProjectRegistry(), which is an operator-configured list; documented as an assumption here rather than silently relied upon. A future validation (e.g. checking repoPath is a git top-level via `git rev-parse --show-toplevel`) is reasonable follow-up if this causes confusion in practice, not blocking for this story's scope."
+  - severity: low
+    description: "An invalid or non-existent ref makes git show exit non-zero; execFileSync throws in that case, and an unhandled throw inside a Fastify route handler would surface as a generic 500 rather than a clear error."
+    mitigation: "wire-routes step's handler wraps the readGitDoc call for the ref branch and returns a clear 400/404 with the git error message on failure, rather than letting the throw propagate as an opaque 500 — covered by an acceptance-criteria-adjacent test the tester step should include (an invalid ref returns a non-500, informative response) even though not enumerated as a separate top-level acceptance criterion."
