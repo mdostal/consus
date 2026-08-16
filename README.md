@@ -82,3 +82,18 @@ The full HTTP contract lives in [`docs/api-reference.md`](docs/api-reference.md)
 **v0.6.0.** The server, HTTP API, SQLite store, on-demand doc scanner, decision contract, KB store (with draft/submit separation and versioning), the generic proposal/harness mechanism, and the Mermaid-rendered diagram cascade are **live and tested**. The SPA shell (`web/src/App.tsx`) is assembled and wired: a per-project view shows a project's diagrams, docs, and KB entries together, with an in-place doc editor and a "Fire to harness" propose-a-change action.
 
 Consus went through a real architectural correction along the way: it briefly grew live integrations with several other systems, and that coupling was fully stripped back out (see `CHANGELOG.md`'s `[0.6.0]` entry) — the codebase today has no adapter for, client for, or dependency on any external system beyond what's listed in `package.json`. See [VISION.md](VISION.md) for the current state and where things go next.
+
+<!-- shared:support -->
+## Support this project
+
+Free and open source, always. A few ways to help — or just say hi:
+
+- **Use it, star it, file an issue.** Honestly the best support an open-source project can get. → [this project](https://github.com/mdostal/consus)
+- **Hire me.** I do fractional-CTO and consulting work — fixing and scaling tech stacks. → [mdostal.com/contact](https://mdostal.com/contact)
+- **[Buy me a coffee](https://www.buymeacoffee.com/mdostal)** if it saved you time.
+- **More tools like this** → [tools.mdostal.com](https://tools.mdostal.com)
+- **Life outside the terminal** → [life.mdostal.com](https://life.mdostal.com)
+- **What we're building at Firefly Events** — event discovery, 8,000+ events/day from 7+ sources → [ff.events](https://ff.events)
+
+Always up for a conversation if any of it's useful to you.
+<!-- /shared:support -->
