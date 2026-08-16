@@ -1,0 +1,124 @@
+id: s1-gitdocs-candidate-extraction-and-resolution
+epic: consus-phase13-multirepo-doc-resolution
+title: Port extractDocCandidates + resolveInRepos as a new gitdocs adapter, scoped to the configured project registry
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: []
+
+description: |
+  REQ-20 (`.pHive/planning/roadmap.md`, `.pHive/planning/backlog.md`) asks Consus to resolve a
+  doc path across every configured repo, not just the one repo currently being viewed, porting
+  `mdostal/delphi`'s `server/gitdocs.mjs` (documented in `docs/delphi-lineage-inventory.md`,
+  Source 2). Confirmed via grep (`gitdocs|extractDocCandidates|resolveInRepos|readGitDoc`
+  across `server/**/*.ts` — no matches) that no part of this exists on mainline today;
+  `server/adapters/doc-scanner/index.ts` only ever walks the single `repoPath` it's called with.
+
+  This story ports the first two pieces of the three-part reference pipeline as pure,
+  independently-testable functions in a new `server/adapters/gitdocs/index.ts` module:
+
+  - `extractDocCandidates(text: string): string[]` — regex-extracts doc-path-like references
+    (e.g. `docs/foo.md`, `.pHive/planning/bar.md`) out of arbitrary text such as a ticket body
+    or a planning doc's prose, filtering out noise references that aren't real cross-repo
+    pointers (bare `README.md`/`CLAUDE.md` mentions, per the reference implementation).
+  - `resolveInRepos(candidate: string, repos: Record<string, string>): { repo: string; path: string } | null`
+    — tries `candidate` against each repo root in the already-existing
+    `server/config/project-registry.ts` `ProjectRegistry` map (name -> absolute path), returning
+    the first repo whose filesystem actually has that path, or `null` if none do.
+
+  The security-relevant piece of this story is `resolveInRepos`'s boundary check: every
+  `(repoRoot, candidate)` pair is resolved with `path.resolve(repoRoot, candidate)` and the
+  result is verified to still fall under `repoRoot` before any `existsSync`/`readFileSync` call —
+  a candidate with `../` segments or an absolute-path override must be rejected for that repo,
+  not silently clamped or resolved against a location outside the repo root. `resolveInRepos`
+  only ever iterates the `repos` map it's given (itself sourced from `loadProjectRegistry()`,
+  which already filters to paths that exist at load time) — no code path in this story accepts
+  an arbitrary filesystem root from a caller.
+
+acceptance_criteria:
+  - "Given ticket text containing 'see docs/architecture.md for details', when extractDocCandidates is called, then \"docs/architecture.md\" is included in the returned candidates."
+  - "Given ticket text mentioning only 'README.md' or 'CLAUDE.md' with no other path-like reference, when extractDocCandidates is called, then those bare filenames are excluded from the returned candidates (noise filter, matching the reference implementation's behavior)."
+  - "Given plain prose with no path-like substring at all, when extractDocCandidates is called, then it returns an empty array."
+  - "Given a candidate path that exists under one of two configured repo roots (repos = {a: pathA, b: pathB}), when resolveInRepos is called, then it returns { repo: the-matching-name, path: candidate } for the repo that actually has the file, and does not report a match for the repo that doesn't."
+  - "Given a candidate path that exists under none of the configured repo roots, when resolveInRepos is called, then it returns null."
+  - "Given a candidate containing path-traversal segments (e.g. \"../../../etc/passwd\") or an absolute path, when resolveInRepos is called against any configured repo root, then it returns null for that repo rather than resolving to a path outside the repo root — this is the story's security-relevant acceptance criterion (resolution never escapes a configured repo root)."
+  - "Given an empty repos map, when resolveInRepos is called with any candidate, then it returns null without throwing."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Add server/adapters/gitdocs/index.test.ts covering extractDocCandidates (path-like
+      extraction, README.md/CLAUDE.md noise filtering, no-match case) and resolveInRepos
+      (match found in one of several repo roots via real mkdtempSync temp dirs, no match
+      anywhere, and the path-traversal / absolute-path rejection case), following the
+      mkdtempSync/rmSync temp-repo-dir pattern already used in
+      server/adapters/doc-scanner/index.test.ts and server/routes/docs.test.ts.
+    agent: tester
+  - id: implement-extract-candidates
+    description: >
+      Create server/adapters/gitdocs/index.ts and implement extractDocCandidates: a regex over
+      path-like substrings (dir-segment(s) + filename + known doc extension, e.g. .md/.html),
+      then filter out bare README.md/CLAUDE.md matches. Make the extractDocCandidates specs pass
+      without modifying the tests.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: implement-resolve-in-repos
+    description: >
+      Implement resolveInRepos in the same module: for each [name, repoRoot] entry in the
+      supplied repos map, compute path.resolve(repoRoot, candidate), verify the result starts
+      with repoRoot + path.sep (or equals repoRoot) before doing anything filesystem-touching,
+      reject (skip to the next repo) if the boundary check fails, otherwise existsSync-check the
+      resolved path and return { repo: name, path: candidate } on the first hit. Return null if
+      no repo matches. Make the resolveInRepos specs — including the traversal-rejection one —
+      pass without modifying the tests.
+    agent: developer
+    depends_on: [implement-extract-candidates]
+  - id: review
+    description: >
+      Review resolveInRepos's boundary check specifically for correctness against edge cases
+      beyond the tests (e.g. a repoRoot that is itself a prefix of a sibling repo root's name,
+      like /repos/foo vs /repos/foobar, where a naive startsWith check without the path.sep
+      suffix would falsely admit a candidate meant for the sibling). Confirm no filesystem read
+      happens before the boundary check in the code path (order matters for the security
+      property, not just the test outcome).
+    agent: reviewer
+    depends_on: [implement-resolve-in-repos]
+  - id: integrate
+    description: Commit the new gitdocs adapter module and its tests.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: server/adapters/gitdocs/index.ts
+      purpose: "New module this story creates — extractDocCandidates and resolveInRepos live here. s2 adds readGitDoc to the same file."
+    - path: server/adapters/gitdocs/index.test.ts
+      purpose: "New test file this story creates."
+    - path: server/config/project-registry.ts
+      purpose: "ProjectRegistry type (Record<string,string>, name -> absolute repo path) is resolveInRepos's input shape — reused as-is, no new registry concept. loadProjectRegistry() already filters to existsSync paths at load time, which is why resolveInRepos's own repo-universe is closed by construction."
+    - path: server/adapters/doc-scanner/index.ts
+      purpose: "readDocContent's existing join(repoPath, relFilePath) pattern is the precedent this story's boundary-checked version in resolveInRepos extends with an explicit traversal check, since resolveInRepos (unlike readDocContent) tries a caller-influenced candidate against every configured repo rather than one server-trusted repoPath."
+    - path: docs/delphi-lineage-inventory.md
+      purpose: "Source 2's gitdocs.mjs section is the documented reference this module ports — extractDocCandidates/resolveInRepos/readGitDoc's names and pipeline order come directly from it."
+    - path: .pHive/epics/consus-phase13-multirepo-doc-resolution/docs/design-discussion.md
+      purpose: "This epic's design rationale, including the two-point security enforcement (candidate normalization + closed repo universe) this story's acceptance criteria are drawn from."
+
+files_to_modify:
+  - file: server/adapters/gitdocs/index.ts
+    change: "New file: extractDocCandidates and resolveInRepos."
+  - file: server/adapters/gitdocs/index.test.ts
+    change: "New file: unit specs for both functions, including the path-traversal rejection case."
+
+design_decisions:
+  - decision: "resolveInRepos takes a plain repos: Record<string,string> map (the same shape as ProjectRegistry) rather than a new registry/config type."
+    rationale: "Consus already has server/config/project-registry.ts's ProjectRegistry threaded through every route module as `repos`. Reusing the exact shape means the route layer (s2) can pass its existing repos object straight through with no adapter/mapping layer."
+  - decision: "The path-traversal boundary check lives inside resolveInRepos itself, not in a separate shared utility."
+    rationale: "Keeps this story's file count minimal (one new module) and keeps the security-critical check co-located with the only code path that needs it right now. If a second caller needs the same check later, it can be extracted then — premature extraction isn't justified by a single call site."
+
+risks:
+  - severity: high
+    description: "If the boundary check is implemented as a naive startsWith(repoRoot) without the path.sep suffix, a repo root like /repos/foo would incorrectly accept a candidate that resolves into a sibling directory /repos/foobar/secret.md, since \"/repos/foobar\".startsWith(\"/repos/foo\") is true."
+    mitigation: "Acceptance criteria and the review step explicitly call out the path.sep-suffixed (or exact-equals) check; the tester is asked to include a same-prefix-different-directory case if straightforward, and the reviewer step is scoped specifically to check this before implement-resolve-in-repos is considered done."
+  - severity: low
+    description: "extractDocCandidates's regex is necessarily heuristic (per the reference implementation, which is also described only at the summary level in delphi-lineage-inventory.md, not re-read from original source) — it may under- or over-match doc-path-like substrings in unusual prose."
+    mitigation: "Scoped as best-effort port, not a byte-for-byte-verified match to the original .mjs source (which wasn't re-fetched for this epic). Acceptable because downstream (s2's resolve route) only acts on candidates that also successfully resolveInRepos — an over-matched candidate that isn't a real path anywhere simply resolves to null and is dropped, not surfaced as a false positive."

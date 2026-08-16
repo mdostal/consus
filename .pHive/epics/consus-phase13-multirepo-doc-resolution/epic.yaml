@@ -1,0 +1,14 @@
+name: consus-phase13-multirepo-doc-resolution
+title: Multi-repo live-git doc resolution (REQ-20)
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: tdd
+
+stories:
+  - id: s1-gitdocs-candidate-extraction-and-resolution
+    title: Port extractDocCandidates + resolveInRepos as a new gitdocs adapter, scoped to the configured project registry
+    complexity: medium
+    depends_on: []
+  - id: s2-gitdocs-ref-aware-read-and-routes
+    title: Port readGitDoc (ref-aware via git show) and wire ref support + a resolve endpoint into the docs routes
+    complexity: medium
+    depends_on: [s1-gitdocs-candidate-extraction-and-resolution]
