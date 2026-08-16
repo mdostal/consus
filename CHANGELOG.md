@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`consus-phase15-wire-decision-classifier`:** `classifyItem` (the existing, fully tested decision-type + triage-bucket classifier) is now actually called — previously no route invoked it, so `decision_type`/`triage_bucket` were always `null` in every API response. Wired into `POST /api/decisions` (classify on create), `GET /api/decisions` (opportunistic backfill for any row whose `decision_type` is still `null`, leaving already-classified rows untouched), and the `decision_needed` event-detection pass (classifies inline, including on content-drift re-upserts). No changes to the classifier's own logic.
+
 ## [0.7.0] - 2026-08-16
 
 ### Added
