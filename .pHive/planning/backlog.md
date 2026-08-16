@@ -66,6 +66,12 @@ This is the loop's thinnest link today — read the vision doc's core-loop secti
 | A second, independently-built KB collection schema + API filter | `superseded-do-not-build` | archived-dev, `afe4c3b` (PAN-6478), `f93d4f1` (kb-02-collection-api). Same capability as mainline's kb-01 — redundant, not a gap. Noting only so it isn't mistaken for missing scope. |
 | Multi-project "different areas" — a `project` dimension across items/KB, per-project + cross-project views | `done` | mainline `ProjectsSection`/`ProjectView`/`GlobalView`, roadmap.md's REQ-27 |
 
+## Multi-repo event pipeline
+
+| Item | Status | Source |
+|---|---|---|
+| Multi-repo scan (`POST /api/projects/scan-all`, alongside the existing per-project ingest) feeding a new event-detection pipeline (`doc_changed`/`decision_needed` triggers, composed prompt, manual status lifecycle with archival), plus a cross-repo docs search endpoint+UI | `done` | consus-phase14-multirepo-event-pipeline, `43d3e20`+`e732b65`+`47604ae`+`622aec0`+`cc178b1`+`6168b63`, merged to `dev` via PR #96. Fresh operator-requested scope (not from this backlog originally) — see `.pHive/epics/consus-phase14-multirepo-event-pipeline/docs/design-discussion.md` for the full design, including the events-vs-proposals data-model decision. `proposal_id` is the seam a future Pantheon ticket-adapter would consume for auto-fire in paired mode — deliberately not built here. |
+
 ## PR/branch-level surfacing (backlogged, not started)
 
 | Item | Status | Source |
