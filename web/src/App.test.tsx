@@ -703,3 +703,157 @@ describe("App — Events tab (p14-5)", () => {
     expect(screen.getByRole("button", { name: /^propose$/i })).toBeEnabled();
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* App — Docs tab search (p14-6): a search box wired to               */
+/* GET /api/docs/search, reusing DocsSection's existing open() flow.  */
+/* ------------------------------------------------------------------ */
+
+interface DocSearchResultLike {
+  repo: string;
+  file_path: string;
+  epic: string | null;
+  phase: string | null;
+  matched: Array<"path" | "content">;
+  content_hash: string;
+  last_scanned_at: string;
+}
+
+function buildDocsSearchFetchMock(opts: { searchResults?: DocSearchResultLike[]; searchError?: boolean }) {
+  const calls: { method: string; url: string }[] = [];
+  const fn = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.toString();
+    const method = init?.method ?? "GET";
+    calls.push({ method, url });
+
+    // Checked before the plain /api/docs branch below, since
+    // /api/docs/search also starts with "/api/docs".
+    if (url.startsWith("/api/docs/search")) {
+      if (opts.searchError) {
+        return Promise.resolve({ ok: false, status: 500, json: async () => ({ error: "search failed" }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ query: "x", results: opts.searchResults ?? [] }) });
+    }
+    if (url.startsWith("/api/docs")) return Promise.resolve({ ok: true, json: async () => DOCS_WITH_ENTRY });
+    if (url.startsWith("/api/decisions")) return Promise.resolve({ ok: true, json: async () => [] });
+    if (url.startsWith("/api/kb-entries")) return Promise.resolve({ ok: true, json: async () => [KB_ENTRY] });
+    if (url.startsWith("/api/diagrams")) return Promise.resolve({ ok: true, json: async () => DIAGRAM_RESPONSE });
+    if (url.startsWith("/api/items/")) return Promise.resolve({ ok: true, json: async () => [] });
+    if (url.startsWith("/api/projects")) return Promise.resolve({ ok: true, json: async () => ({ projects: ["consus"] }) });
+    return Promise.resolve({ ok: true, json: async () => [] });
+  });
+  return { fn, calls };
+}
+
+async function openDocsTab() {
+  fireEvent.click(await screen.findByRole("button", { name: "Docs" }));
+}
+
+describe("App — Docs tab search (p14-6)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("fires GET /api/docs/search?q=<query> once the debounce elapses, and renders matching results", async () => {
+    const { fn, calls } = buildDocsSearchFetchMock({
+      searchResults: [
+        {
+          repo: "consus",
+          file_path: "docs/other.md",
+          epic: null,
+          phase: "docs",
+          matched: ["path"],
+          content_hash: "x",
+          last_scanned_at: "2026-08-01T00:00:00Z",
+        },
+      ],
+    });
+    vi.stubGlobal("fetch", fn);
+
+    render(<App />);
+    await openDocsTab();
+    await screen.findByText("architecture.md");
+
+    fireEvent.change(screen.getByRole("searchbox", { name: /search docs/i }), { target: { value: "other" } });
+
+    await waitFor(
+      () => {
+        const call = calls.find((c) => c.method === "GET" && c.url.startsWith("/api/docs/search"));
+        expect(call?.url).toBe("/api/docs/search?q=other");
+      },
+      { timeout: 2000 },
+    );
+
+    expect(await screen.findByText("docs/other.md", {}, { timeout: 2000 })).toBeInTheDocument();
+  });
+
+  it("shows a visible error near the search box when the search request fails, without breaking the tree underneath", async () => {
+    const { fn } = buildDocsSearchFetchMock({ searchError: true });
+    vi.stubGlobal("fetch", fn);
+
+    render(<App />);
+    await openDocsTab();
+    await screen.findByText("architecture.md");
+
+    fireEvent.change(screen.getByRole("searchbox", { name: /search docs/i }), { target: { value: "boom" } });
+
+    expect(await screen.findByText(/search failed/i, {}, { timeout: 2000 })).toBeInTheDocument();
+    // A failed search never blocks browsing — the tree stays usable.
+    const treeButton = screen.getByText("architecture.md");
+    expect(treeButton).toBeInTheDocument();
+    expect(treeButton.closest("button")).toBeEnabled();
+  });
+
+  it("shows an empty-results message distinct from the 'no docs indexed yet' empty state", async () => {
+    const { fn } = buildDocsSearchFetchMock({ searchResults: [] });
+    vi.stubGlobal("fetch", fn);
+
+    render(<App />);
+    await openDocsTab();
+    await screen.findByText("architecture.md");
+
+    fireEvent.change(screen.getByRole("searchbox", { name: /search docs/i }), {
+      target: { value: "nothing-matches" },
+    });
+
+    expect(await screen.findByText(/no docs match/i, {}, { timeout: 2000 })).toBeInTheDocument();
+    expect(screen.queryByText("No docs indexed yet")).not.toBeInTheDocument();
+  });
+
+  it("clearing the search box returns to the plain tree view with no stale results", async () => {
+    const { fn } = buildDocsSearchFetchMock({
+      searchResults: [
+        {
+          repo: "consus",
+          file_path: "docs/other.md",
+          epic: null,
+          phase: "docs",
+          matched: ["path"],
+          content_hash: "x",
+          last_scanned_at: "2026-08-01T00:00:00Z",
+        },
+      ],
+    });
+    vi.stubGlobal("fetch", fn);
+
+    render(<App />);
+    await openDocsTab();
+    await screen.findByText("architecture.md");
+
+    const input = screen.getByRole("searchbox", { name: /search docs/i });
+    fireEvent.change(input, { target: { value: "other" } });
+
+    expect(await screen.findByText("docs/other.md", {}, { timeout: 2000 })).toBeInTheDocument();
+    expect(screen.queryByText("architecture.md")).not.toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "" } });
+
+    await waitFor(
+      () => {
+        expect(screen.queryByText("docs/other.md")).not.toBeInTheDocument();
+      },
+      { timeout: 2000 },
+    );
+    expect(await screen.findByText("architecture.md")).toBeInTheDocument();
+  });
+});

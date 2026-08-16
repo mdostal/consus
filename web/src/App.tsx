@@ -8,6 +8,7 @@ import { DiagramView, type DiagramEpic } from "./features/projects/DiagramView";
 import { AuditPanel, type AuditTrailEntry } from "./features/audit/AuditPanel";
 import { BacklogBrowser, type BacklogEntry, type KbCollection } from "./features/kb/BacklogBrowser";
 import { DocBrowser, type GroupedDocs } from "./features/docs/DocBrowser";
+import { DocSearch, type DocSearchResult } from "./features/docs/DocSearch";
 import { DocRenderer } from "./features/docs/DocRenderer";
 import { EventsList, type EventRow, type EventStatus } from "./features/events/EventsList";
 import { EventProposeComposer } from "./features/events/EventProposeComposer";
@@ -589,12 +590,33 @@ function DocsSection() {
   const [proposalFailureReason, setProposalFailureReason] = useState<string | null>(null);
   const [auditEntries, setAuditEntries] = useState<AuditTrailEntry[]>([]);
 
+  // p14-6: search state — searchResults null means no search performed yet
+  // (or the query was cleared), so the plain DocBrowser tree stays the
+  // default view; [] means searched with zero matches.
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<DocSearchResult[] | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
   useEffect(() => {
     fetch("/api/docs")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(setGrouped)
       .catch((e) => setError(e.message));
   }, []);
+
+  function handleSearch(query: string) {
+    setSearchQuery(query);
+    setSearchError(null);
+    if (!query) {
+      // An empty query never hits the network — just drop back to the tree.
+      setSearchResults(null);
+      return;
+    }
+    fetch(`/api/docs/search?q=${encodeURIComponent(query)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((body: { query: string; results: DocSearchResult[] }) => setSearchResults(body.results))
+      .catch((e) => setSearchError(e.message));
+  }
 
   const loadAuditTrail = useCallback((itemId: string) => {
     fetch(`/api/items/${encodeURIComponent(itemId)}/audit-trail`)
@@ -677,15 +699,18 @@ function DocsSection() {
         <h1>Docs</h1>
         <p>Generated briefs, PRDs, architecture, and plans — browsed by repo, epic, and phase, rendered in-app.</p>
       </div>
-      {empty ? (
-        <div className="empty">
-          <strong>No docs indexed yet</strong>
-          The doc scanner indexes each configured repo's <code>.pHive/planning</code> and <code>docs/</code>
-          output. Run a scan or add a project to populate this.
-        </div>
-      ) : (
-        <DocBrowser grouped={grouped} onOpen={open} />
-      )}
+      <DocSearch onSearch={handleSearch} results={searchResults} onOpen={open} error={searchError} />
+      {searchResults === null ? (
+        empty ? (
+          <div className="empty">
+            <strong>No docs indexed yet</strong>
+            The doc scanner indexes each configured repo's <code>.pHive/planning</code> and <code>docs/</code>
+            output. Run a scan or add a project to populate this.
+          </div>
+        ) : (
+          <DocBrowser grouped={grouped} onOpen={open} />
+        )
+      ) : null}
     </div>
   );
 }
