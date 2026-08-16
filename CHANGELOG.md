@@ -2,7 +2,23 @@
 
 ## [Unreleased]
 
-## [0.5.0] - 2026-08-13
+## [0.6.0] - 2026-08-15
+
+### Changed
+
+- **Consus is now fully standalone.** Removed every adapter, transport, and client class tied to a specific external system (Multica, Minerva, Auriga, Vesta, Votem) — `server/adapters/` now contains only the local `doc-scanner`. Consus's server has zero live network coupling to anything outside itself; it reads and writes only local SQLite + the filesystem. The generic `HarnessTransport` seam (`server/harness/transport.ts`) is the sole, optional, system-agnostic integration point for the propose-a-change mechanism — it defaults to a no-op. The prior Multica/Minerva-coupled work is preserved for reference on `archive/pantheon-coupled-consus`.
+- `dev` and `main` were reconciled after diverging into two incompatible histories (a separate, more deeply Multica/Minerva-coupled development line had accumulated on `dev`). That line is preserved on `archive/dev-2026-08-11-pantheon-coupled`; `dev` now tracks `main`'s standalone lineage going forward, with the conventional feature-branch → `dev` → `main` flow.
+
+### Added
+
+- **`consus-phase6-standalone-onboarding`:** the entire "get started" loop, working standalone for the first time. `POST /api/projects/:project/ingest` wires the existing (previously untriggered) doc-scanner to an on-demand HTTP route; the per-project view now shows a project's diagrams, docs, and KB entries together with an "Ingest repo" action; a first-run onboarding screen replaces the blank tab shell on a fresh install.
+- **`consus-phase7-decision-push-endpoint`:** `POST /api/decisions` — a generic endpoint so any local agent/harness can push a decision or CBA (cost-benefit analysis) into Consus's queue, using the same `decision-request/v1` contract Consus already parses. Documented in `skills/consus/SKILL.md` and `docs/api-reference.md`.
+- **`consus-phase8-doc-editor-fire-action`:** in-place doc editing — an edit/view toggle plus a "Fire to harness" action that computes the diff automatically, replacing the old hand-typed raw-diff box. Reuses the existing `POST /api/proposals` endpoint unchanged.
+- **`consus-phase9-mermaid-diagram-engine`:** the epic/story diagram cascade now renders as a real Mermaid graph (client-side, dynamically imported) instead of a plain nested list, with click-to-detail on individual story nodes.
+- **`consus-phase10-decision-parser-tiers`:** decisions extracted heuristically from free-form prose (rather than a structured fenced block) are now distinguishable from structured ones via an `extractionTier` field, and route to a lower-confidence triage bucket (`agent_task` instead of `open_question`) so a heuristic guess isn't surfaced to a human with the same weight as a deliberate decision.
+- **`consus-phase11-draft-submit-separation`:** KB entries can now be saved as a draft (`PUT /api/kb-entries/:id/draft`) without publishing, then explicitly promoted (`POST /api/kb-entries/:id/submit`) through the existing publish path — "Save ≠ Submit." Also fixes a real bug found along the way: KB search had no filter excluding draft content, which would have leaked unpublished drafts into search results.
+- **`consus-phase12-sectional-diff-view`:** doc editing is now section-scoped (split at markdown heading boundaries) — editing or firing one section can never touch another section's in-progress edit.
+- A living planning backlog (`.pHive/planning/backlog.md`) and refreshed vision doc (`.pHive/planning/vision-and-way-of-working.md`), grounded in a real inventory across every prior Delphi/Consus development line, distinguishing what's actually shipped from what's still open.
 
 ### Added
 
