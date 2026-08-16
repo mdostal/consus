@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import { queryDocIndex, readDocContent, type DocIndexRow } from "../adapters/doc-scanner/index.js";
 import { readGitDoc } from "../adapters/gitdocs/index.js";
 import { parseDecisionPayload, serializeDecisionPayload, type DecisionPayload } from "../decision-contract/parser.js";
+import { classifyItem } from "../decision-contract/classifier.js";
 import { computeLineDiff } from "./diff.js";
 import { createEvent } from "./store.js";
 
@@ -272,6 +273,8 @@ function detectDecisionNeededForRow(
     decision_payload: serializeDecisionPayload(payload),
     now,
   });
+
+  classifyItem(db, decisionItemId);
 
   const composedPrompt = composePrompt({
     kind: "decision_needed",

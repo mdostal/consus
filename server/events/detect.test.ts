@@ -231,6 +231,45 @@ describe("detectEvents", () => {
       expect(listEvents(db, { project: "proj" }).filter((e) => e.trigger_kind === "decision_needed")).toHaveLength(1);
     });
 
+    it("populates decision_type/triage_bucket on the items row directly, without needing a follow-up GET /api/decisions call", () => {
+      const path = join(".pHive", "planning", "decision.md");
+      writeFileSync(join(repoDir, path), decisionRequestDoc(SAMPLE_DECISION_PAYLOAD));
+
+      scanAndDetect(db, "proj", "repo", repoDir);
+
+      const itemId = `decision:repo:${path}`;
+      const item = db.prepare("SELECT decision_type, triage_bucket FROM items WHERE id = ?").get(itemId) as {
+        decision_type: string | null;
+        triage_bucket: string | null;
+      };
+      // SAMPLE_DECISION_PAYLOAD has no `diagram` flag -> classifyItem's
+      // decisionType is "choose"; a non-default decisionType with no
+      // extractionTier -> triageBucket "open_question".
+      expect(item.decision_type).toBe("choose");
+      expect(item.triage_bucket).toBe("open_question");
+    });
+
+    it("re-classifies on content drift — a redraft that flips diagram:true updates decision_type to 'cba'", () => {
+      const path = join(".pHive", "planning", "decision.md");
+      writeFileSync(join(repoDir, path), decisionRequestDoc(SAMPLE_DECISION_PAYLOAD));
+      scanAndDetect(db, "proj", "repo", repoDir);
+
+      const itemId = `decision:repo:${path}`;
+      const before = db.prepare("SELECT decision_type FROM items WHERE id = ?").get(itemId) as {
+        decision_type: string | null;
+      };
+      expect(before.decision_type).toBe("choose");
+
+      const redrafted = { ...SAMPLE_DECISION_PAYLOAD, diagram: true };
+      writeFileSync(join(repoDir, path), decisionRequestDoc(redrafted));
+      scanAndDetect(db, "proj", "repo", repoDir);
+
+      const after = db.prepare("SELECT decision_type FROM items WHERE id = ?").get(itemId) as {
+        decision_type: string | null;
+      };
+      expect(after.decision_type).toBe("cba");
+    });
+
     it("decisionItemId ('decision:repo:path') never collides with docItemIdFor's namespace ('doc:repo:path')", () => {
       const path = join(".pHive", "planning", "decision.md");
       writeFileSync(join(repoDir, path), decisionRequestDoc(SAMPLE_DECISION_PAYLOAD));

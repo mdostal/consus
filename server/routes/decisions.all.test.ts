@@ -74,4 +74,17 @@ describe("GET /api/decisions?all=1", () => {
 
     expect(body.map((i: { id: string }) => i.id)).toEqual(["open-3"]);
   });
+
+  it("backfills decision_type/triage_bucket for both open and decided items under ?all=1", async () => {
+    insertItem(db, "open-4", PAYLOAD);
+    insertItem(db, "decided-4", PAYLOAD, true);
+
+    const res = await app.inject({ method: "GET", url: "/api/decisions?all=1" });
+    const body = res.json();
+
+    for (const item of body) {
+      expect(item.decision_type).toBe("choose");
+      expect(item.triage_bucket).toBe("open_question");
+    }
+  });
 });
