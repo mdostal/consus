@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-16
+
+### Added
+
+- **`consus-phase13-multirepo-doc-resolution` (REQ-20):** a `gitdocs` adapter (`extractDocCandidates` -> `resolveInRepos` -> `readGitDoc`) resolves a doc path across every configured repo, not just the one currently open, and can read it at a specific git ref via `git show` (`execFileSync` argument-array form — no shell, immune to metacharacter injection). `GET /api/docs/content` gains an optional `ref` param; a new `GET /api/docs/resolve` finds which configured repo a text reference actually points at. `resolveInRepos`'s path-traversal boundary check was independently code-reviewed (not just test-verified) before merging.
+- **`consus-phase14-multirepo-event-pipeline`:** a new `POST /api/projects/scan-all` sweeps every configured project in one action (per-project ingest stays available alongside it). Every scan — all-projects or single-project — now runs two detection passes: `doc_changed` (a doc's content changed or is new) and `decision_needed` (an unresolved decision-request block). Each hit becomes a reviewable `events` row — deliberately a new table, separate from `proposals` (a proposal always means "fired at a harness"; an event is a pre-decision review-queue item that may never become one) — carrying a diff and a composed prompt (diff + surrounding doc content + area context), built once at detection time. Events have a manual status lifecycle (`new -> in_progress -> done/dismissed`), with `done`/`dismissed` automatically archived out of the active queue (`GET /api/events/history` surfaces the archive). An event can optionally graduate into a real proposal (`POST /api/events/:id/propose`, reusing the existing propose-a-change mechanism unmodified) — the seam a future Pantheon L2 ticket-adapter would consume for automatic dispatch in paired mode, deliberately not built here. Also ships a new Events tab (filters, sort, scan-all button, archived view, a purpose-built propose composer) and cross-repo doc search (`GET /api/docs/search`, path + live-content match, plus a search box on the Docs tab).
+- A support section in `README.md`.
+
 ## [0.6.0] - 2026-08-15
 
 ### Changed
