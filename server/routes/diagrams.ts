@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { load as parseYaml } from "js-yaml";
+import { generateArchitectureDiagrams } from "../lib/diagram-generator.js";
 
 export interface DiagramRoutesOptions {
   db: Database.Database;
@@ -112,5 +113,24 @@ export function registerDiagramRoutes(app: FastifyInstance, { db, repos }: Diagr
       .sort((a, b) => a.id.localeCompare(b.id));
 
     return { repo, itemId, epics };
+  });
+
+  /**
+   * A second, independent diagram kind: a real per-repo architecture diagram
+   * derived from the repo's actual directory structure (not planning docs),
+   * generated fresh on every request — no cache table, see this story's
+   * design-discussion.md. Kept as a distinct path segment rather than a
+   * query-param variant of the cascade endpoint above, so that endpoint's
+   * contract, route registration, and tests stay untouched.
+   */
+  app.get<{ Params: { repo: string } }>("/api/diagrams/:repo/architecture", async (request, reply) => {
+    const { repo } = request.params;
+    const repoPath = repos[repo];
+    if (!repoPath) {
+      return reply.code(404).send({ error: `unknown repo: ${repo}` });
+    }
+
+    const { topLevel, fullComponent } = generateArchitectureDiagrams(repoPath);
+    return { repo, topLevel, fullComponent };
   });
 }
