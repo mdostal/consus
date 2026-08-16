@@ -122,3 +122,50 @@ describe("GET /api/diagrams", () => {
     expect(count.n).toBe(1);
   });
 });
+
+describe("GET /api/diagrams/:repo/architecture", () => {
+  let repoDir: string;
+  let app: FastifyInstance;
+  let db: Database.Database;
+
+  beforeAll(async () => {
+    repoDir = mkdtempSync(join(tmpdir(), "consus-arch-diagram-repo-"));
+    mkdirSync(join(repoDir, "src"), { recursive: true });
+    mkdirSync(join(repoDir, "lib"), { recursive: true });
+    mkdirSync(join(repoDir, "node_modules"), { recursive: true });
+    mkdirSync(join(repoDir, ".git"), { recursive: true });
+
+    db = new Database(":memory:");
+    runMigration(db);
+    app = Fastify();
+    registerDiagramRoutes(app, { db, repos: { "test-repo": repoDir } });
+    await app.ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+    db.close();
+    rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it("returns 200 with the repo's real directory structure reflected in both graphs", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/diagrams/test-repo/architecture" });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.repo).toBe("test-repo");
+    expect(body.topLevel).toContain("graph TD");
+    expect(body.topLevel).toContain('["src"]');
+    expect(body.topLevel).toContain('["lib"]');
+    expect(body.topLevel).not.toContain("node_modules");
+    expect(body.topLevel).not.toMatch(/\.git/);
+    expect(body.fullComponent).toContain("graph TD");
+  });
+
+  it("404s with the same error shape the cascade endpoint uses, for an unregistered repo", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/diagrams/unknown-repo/architecture" });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: "unknown repo: unknown-repo" });
+  });
+});

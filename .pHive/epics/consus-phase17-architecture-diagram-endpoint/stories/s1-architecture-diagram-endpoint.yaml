@@ -1,0 +1,165 @@
+id: s1-architecture-diagram-endpoint
+epic: consus-phase17-architecture-diagram-endpoint
+title: Add GET /api/diagrams/:repo/architecture with a directory-scanning Mermaid generator and a small frontend view
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: []
+
+description: |
+  server/routes/diagrams.ts (77 lines total today) serves exactly one diagram kind: the epic/story
+  dependency cascade built from .pHive/epics/*/epic.yaml (registerDiagramRoutes, lines 77-116). It says
+  nothing about a repo's real code shape. This story adds a second, independent diagram kind — a
+  per-repo architecture diagram derived from the repo's actual directory structure — without touching
+  the existing cascade handler, its route, or its tests. A new generator module,
+  server/lib/diagram-generator.ts, scans a repo's directories (depth-2, capped at 50 components, common
+  build/vcs/tooling dirs ignored) into a Mermaid `graph TD` "topLevel" view and a richer
+  "fullComponent" view, the latter additionally folding in file-path-shaped mentions found in
+  .pHive/epics/*/docs/design-discussion.md files. A new route, GET /api/diagrams/:repo/architecture,
+  exposes `{ repo, topLevel, fullComponent }`, 404ing with the same `{ error: "unknown repo: ${repo}"
+  }` shape the existing cascade endpoint already uses for an unregistered repo. Ported as design
+  precedent from archive/dev-2026-08-11-pantheon-coupled commit d01e078 (server/lib/diagram-generator.ts
+  there), re-derived fresh against this standalone tree rather than cherry-picked, since that generator
+  logic was already pure local fs I/O with no coupling to any external system. Per this epic's
+  design-discussion.md, no new diagrams cache table is added — server/db/migrate.ts has none today, and
+  the bounded (depth-2, 50-node-capped) walk is cheap enough at this repo's local, single-operator
+  scale to generate on every request. On the frontend, mermaid (^11.16.1) is already a dependency —
+  DiagramView.tsx (web/src/features/projects/DiagramView.tsx) already uses it via dynamic import for
+  the cascade — but that component is structurally built around DiagramEpic[]/DiagramStory[] (node
+  lookup by story/epic id, click-to-detail, propose-a-change UI), none of which applies to a raw
+  two-graph Mermaid response. A small new component, ArchitectureDiagramView.tsx, is added instead;
+  DiagramView.tsx and its test file are not modified.
+
+acceptance_criteria:
+  - "Given a registered repo with a real directory structure (e.g. top-level src/, lib/, and node_modules/, .git/ dirs), when GET /api/diagrams/:repo/architecture is called, then it returns 200 with topLevel and fullComponent Mermaid `graph TD` source strings whose node labels include the real directories (src, lib) and exclude ignored ones (node_modules, .git)."
+  - "Given a repo whose directory tree would produce more than 50 components at the depth the generator walks, when the architecture endpoint is called, then the returned fullComponent graph contains at most 50 component nodes (root excluded), never more."
+  - "Given a repo name not present in the configured project registry, when GET /api/diagrams/:repo/architecture is called, then it returns 404 with body `{ error: \"unknown repo: <repo>\" }` — the same error shape server/routes/diagrams.ts already returns from the existing cascade endpoint for an unknown repo."
+  - "Given the existing GET /api/diagrams?repo= cascade endpoint and its full existing test suite (server/routes/diagrams.test.ts), when this story's changes land, then that endpoint's handler code is unmodified and every existing test in that file still passes unchanged — no regression."
+  - "Given a repo with a .pHive/epics/*/docs/design-discussion.md file containing a backtick-quoted, path-shaped span (e.g. `server/adapters/foo.ts`), when the architecture endpoint is called for that repo, then fullComponent includes a node for that mentioned path; given a malformed or unreadable design-discussion.md, the endpoint still returns 200 rather than erroring."
+  - "Given a project is selected in the Projects tab (ProjectsSection, web/src/App.tsx), when the page renders, then a new architecture-diagram view (ArchitectureDiagramView, fed by GET /api/diagrams/:repo/architecture) is visibly rendered alongside the existing epic/story diagram view, without altering what ProjectDiagram/DiagramView renders today."
+  - "Given DiagramView.tsx and DiagramView.test.tsx, when this story's changes land, then neither file is modified and DiagramView.test.tsx passes unchanged."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Add server/lib/diagram-generator.test.ts covering: top-level scan includes real dirs and excludes
+      ignored ones (node_modules, dist, .git, dotfile dirs); both topLevel and fullComponent are valid
+      Mermaid `graph TD` source (a source-level line-shape assertion, mirroring the archived
+      precedent's assertValidMermaid helper); the 50-component cap is respected when a repo has more
+      than 50 top-level/nested dirs; design-discussion.md path mentions are folded into fullComponent;
+      a malformed design-discussion.md is tolerated without throwing; a repo with no .pHive/epics at
+      all still returns a valid (if sparse) fullComponent. Extend server/routes/diagrams.test.ts with a
+      new describe block for GET /api/diagrams/:repo/architecture covering: 200 with real repo
+      structure reflected in the response, 404 with the exact `{ error: "unknown repo: ..." }" }` shape
+      for an unregistered repo, and re-run (not modify) the existing cascade describe block to confirm
+      it still passes. Add web/src/features/projects/ArchitectureDiagramView.test.tsx covering: it
+      renders given { repo, topLevel, fullComponent } props, and it does not import from or alter
+      DiagramView.tsx. Follow each existing test file's own conventions (mkdtempSync tmp repos for the
+      generator/route tests, existing RTL/vitest patterns for the component test).
+    agent: tester
+  - id: add-generator-and-route
+    description: >
+      Add server/lib/diagram-generator.ts exporting generateArchitectureDiagrams(repoPath): {
+      topLevel, fullComponent }, ported from archive/dev-2026-08-11-pantheon-coupled commit d01e078's
+      server/lib/diagram-generator.ts (sanitizeId, escapeLabel, IGNORED_DIRS, MAX_COMPONENTS = 50,
+      buildTopLevelGraph, depth-2 walkComponents, findDesignDiscussionDocs/extractComponentMentions/
+      collectDesignMentions, buildFullComponentGraph) with no material algorithm changes — it was
+      already pure local fs I/O. In server/routes/diagrams.ts, add a second route,
+      GET /api/diagrams/:repo/architecture, alongside (not replacing) the existing GET /api/diagrams
+      handler: look up repoPath in repos, 404 with the existing `{ error: "unknown repo: ${repo}" }`
+      shape on miss (reuse the identical error-message format the cascade handler already uses), else
+      call generateArchitectureDiagrams(repoPath) and return `{ repo, topLevel, fullComponent }`. No
+      cache table — generate on every request, per design-discussion.md's cache-table decision.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: add-frontend-architecture-view
+    description: >
+      Add web/src/features/projects/ArchitectureDiagramView.tsx: a small component taking { repo,
+      topLevel, fullComponent } and rendering both Mermaid graphs (tabbed or stacked — implementation's
+      call) via the same dynamic `import("mermaid")` + render-with-timeout pattern DiagramView.tsx
+      already uses (mermaid.initialize({ startOnLoad: false, securityLevel: "strict" }),
+      mermaid.render() raced against a timeout). This is a standalone implementation — DiagramView.tsx
+      is not imported from, modified, or refactored. Wire it into web/src/App.tsx's ProjectsSection: add
+      a ProjectArchitectureDiagram component (fetches GET /api/diagrams/:repo/architecture, same
+      fetch/error/loading pattern as the existing ProjectDiagram at App.tsx:420-482) and render it
+      alongside the existing <ProjectDiagram .../> and <ProjectDocs .../> calls at App.tsx:405-406,
+      without altering either of those lines.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: make-tests-pass
+    description: >
+      Run the full server and web test suites and adjust the generator/route/component/wiring code as
+      needed until every new test from write-failing-tests passes without modifying the tests
+      themselves, and until the full existing suite — including server/routes/diagrams.test.ts's
+      existing cascade describe block and web/src/features/projects/DiagramView.test.tsx — still passes
+      unchanged.
+    agent: developer
+    depends_on: [add-generator-and-route, add-frontend-architecture-view]
+  - id: review
+    description: >
+      Review for: the existing cascade GET /api/diagrams handler and its test file are genuinely
+      untouched aside from the new describe block being additive; the 50-component cap is enforced
+      identically to the ported precedent (root excluded from the count, deterministic ordering);
+      design-discussion.md mentions are best-effort (tolerant of malformed docs, never 500s); the new
+      route's 404 body exactly matches the existing cascade endpoint's error shape; DiagramView.tsx and
+      DiagramView.test.tsx have zero diff; no test was weakened to make it pass.
+    agent: reviewer
+    depends_on: [make-tests-pass]
+  - id: integrate
+    description: Commit the architecture-diagram generator, route, and frontend view changes and their tests.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: server/routes/diagrams.ts
+      purpose: "Existing cascade handler (lines 77-116), untouched aside from adding the new architecture route alongside it in the same registerDiagramRoutes call."
+    - path: server/routes/diagrams.test.ts
+      purpose: "Existing cascade test suite (all passing tests kept as-is) plus a new describe block for the architecture route."
+    - path: server/db/migrate.ts
+      purpose: "Confirmed to have no diagrams cache table today; not modified by this story per the no-cache-table design decision."
+    - path: server/config/project-registry.ts
+      purpose: "loadProjectRegistry (lines 11-36) is the source of the repos map passed into registerDiagramRoutes — read-only context confirming every repo path is already fs-verified before reaching the route handler."
+    - path: web/src/features/projects/DiagramView.tsx
+      purpose: "Existing cascade renderer, explicitly NOT modified — structurally built around DiagramEpic[]/DiagramStory[], not reusable for a raw two-graph Mermaid response. Its dynamic-import + render-with-timeout pattern is followed (duplicated, not shared) in the new component."
+    - path: web/src/features/projects/DiagramView.test.tsx
+      purpose: "Existing coverage that must keep passing unmodified since DiagramView.tsx is not changed."
+    - path: web/src/App.tsx
+      purpose: "ProjectsSection (around line 405) and ProjectDiagram (420-482) are the integration point — a new ProjectArchitectureDiagram is added alongside the existing calls, which stay as-is."
+
+files_to_modify:
+  - file: server/lib/diagram-generator.ts
+    change: "New file: generateArchitectureDiagrams(repoPath) producing topLevel + fullComponent Mermaid graph TD strings via a capped, ignored-dir-aware directory walk plus design-discussion.md mention folding."
+  - file: server/lib/diagram-generator.test.ts
+    change: "New test file covering the generator in isolation, including the 50-component cap and tolerant malformed-doc handling."
+  - file: server/routes/diagrams.ts
+    change: "Add GET /api/diagrams/:repo/architecture alongside the existing GET /api/diagrams handler; existing handler body unchanged."
+  - file: server/routes/diagrams.test.ts
+    change: "Add a new describe block for the architecture route; existing cascade describe block unchanged."
+  - file: web/src/features/projects/ArchitectureDiagramView.tsx
+    change: "New component rendering { repo, topLevel, fullComponent } as two Mermaid graphs."
+  - file: web/src/features/projects/ArchitectureDiagramView.test.tsx
+    change: "New test file covering the component in isolation."
+  - file: web/src/App.tsx
+    change: "Add a ProjectArchitectureDiagram fetch/render component and render it in ProjectsSection alongside the existing ProjectDiagram/ProjectDocs calls, which are otherwise unchanged."
+
+design_decisions:
+  - decision: "No new diagrams cache table — the architecture endpoint generates on every request."
+    rationale: "server/db/migrate.ts has no diagrams-cache table today. The precedent's cache existed to avoid re-hitting a slow external issue tracker for the cascade diagram; this generator is a bounded (depth-2, 50-node-capped) local fs walk with no such dependency, and this repo's real scale is a handful of local, single-operator repos. A cache table would add a migration and invalidation reasoning for a benefit that doesn't materialize here. See design-discussion.md."
+  - decision: "New route is GET /api/diagrams/:repo/architecture, a distinct path from the existing GET /api/diagrams?repo= cascade endpoint, not a merge or a query-param variant."
+    rationale: "Keeps the existing cascade endpoint's contract, route registration, and test file completely untouched, per this epic's explicit small-scope constraint — this is a new endpoint, not a rewrite of the existing one."
+  - decision: "A new ArchitectureDiagramView component is added; DiagramView.tsx is not modified or refactored to share rendering code."
+    rationale: "DiagramView.tsx is structurally coupled to DiagramEpic[]/DiagramStory[] (node-lookup-by-id click-to-detail, propose-a-change UI) that doesn't apply to a raw two-graph Mermaid response. Extracting a shared render helper would mean touching DiagramView.tsx and its test file for an unrelated feature, raising regression risk on the cascade view for no functional benefit at this scope. The ~15-line render-with-timeout pattern is duplicated instead."
+  - decision: "Design-discussion.md file-path mention folding is ported from the archived precedent."
+    rationale: "It was already pure local file reads with a per-doc try/catch (no coupling to any external system) and adds real value — surfacing files planning docs call out that a bare directory walk wouldn't show — so there's no standalone-only reason to drop it."
+
+risks:
+  - severity: low
+    description: "The 50-component cap can cut off mid-walk on a repo with many top-level/nested directories, omitting some real directories from fullComponent (alphabetical order, not importance order)."
+    mitigation: "Same tradeoff the archived precedent made; documented at the MAX_COMPONENTS constant. Acceptable for a diagram meant to give a shape overview, not an exhaustive inventory."
+  - severity: low
+    description: "The design-discussion.md mention regex is heuristic — can miss real paths not backtick-quoted, or match backtick spans that merely look path-like."
+    mitigation: "Treated as best-effort enrichment only; the directory walk remains the primary, reliable signal. Not a source of truth for correctness-sensitive use."
+  - severity: low
+    description: "On-demand generation re-walks the filesystem on every request, with no caching."
+    mitigation: "Bounded by the depth-2/50-node cap regardless of true repo size; acceptable at this repo's local, single-operator scale per design-discussion.md's cache-table decision. Revisit if scale assumptions change."

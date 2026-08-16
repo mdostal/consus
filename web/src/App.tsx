@@ -5,6 +5,7 @@ import { CommentThread, type Comment } from "./features/comments/CommentThread";
 import { GlobalView, type KbEntrySummary } from "./features/projects/GlobalView";
 import { ProjectView } from "./features/projects/ProjectView";
 import { DiagramView, type DiagramEpic } from "./features/projects/DiagramView";
+import { ArchitectureDiagramView } from "./features/projects/ArchitectureDiagramView";
 import { AuditPanel, type AuditTrailEntry } from "./features/audit/AuditPanel";
 import { BacklogBrowser, type BacklogEntry, type KbCollection } from "./features/kb/BacklogBrowser";
 import { DocBrowser, type GroupedDocs } from "./features/docs/DocBrowser";
@@ -403,6 +404,7 @@ function ProjectsSection() {
                 onSelect={() => {}}
               />
               <ProjectDiagram repo={project} refreshToken={refreshToken} />
+              <ProjectArchitectureDiagram repo={project} refreshToken={refreshToken} />
               <ProjectDocs repo={project} refreshToken={refreshToken} />
             </>
           )}
@@ -479,6 +481,33 @@ function ProjectDiagram({ repo, refreshToken }: { repo: string; refreshToken?: n
       auditEntries={auditEntries}
     />
   );
+}
+
+/**
+ * consus-phase17-architecture-diagram-endpoint: fetches a repo's real
+ * directory-structure architecture diagram (a second, independent diagram
+ * kind from the epic/story cascade above) and renders it via
+ * ArchitectureDiagramView. Same fetch/error/loading pattern as
+ * ProjectDiagram, but no propose-a-change wiring — this endpoint has no
+ * item id to target.
+ */
+function ProjectArchitectureDiagram({ repo, refreshToken }: { repo: string; refreshToken?: number }) {
+  const [data, setData] = useState<{ topLevel: string; fullComponent: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setData(null);
+    setError(null);
+    fetch(`/api/diagrams/${encodeURIComponent(repo)}/architecture`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(setData)
+      .catch((e) => setError(e.message));
+  }, [repo, refreshToken]);
+
+  if (error) return <p className="state state--err">Could not load the architecture diagram: {error}</p>;
+  if (!data) return <p className="state">Loading architecture diagram…</p>;
+
+  return <ArchitectureDiagramView repo={repo} topLevel={data.topLevel} fullComponent={data.fullComponent} />;
 }
 
 /**
