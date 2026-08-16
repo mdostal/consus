@@ -1,12 +1,14 @@
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve, sep } from "node:path";
+import { readDocContent } from "../doc-scanner/index.js";
 
 /**
  * REQ-20 foundation: port of `mdostal/delphi`'s `server/gitdocs.mjs` pipeline
  * (documented in `docs/delphi-lineage-inventory.md`, Source 2). This module
- * carries the first two stages — candidate extraction and closed-universe
- * repo resolution — as pure, independently-testable functions. `readGitDoc`
- * (git show / working-tree read) is added by a later story in this epic.
+ * carries all three stages of that pipeline as independently-testable
+ * functions: candidate extraction, closed-universe repo resolution, and
+ * (below) `readGitDoc`'s ref-aware read.
  */
 
 // A doc-path-like substring: one or more directory segments followed by a
@@ -58,4 +60,36 @@ export function resolveInRepos(
   }
 
   return null;
+}
+
+/**
+ * Ref-aware doc read. When `ref` is given, reads the file's content as it
+ * existed at that commit/branch/tag via `git show ref:relPath`. When `ref`
+ * is omitted, delegates to the existing `readDocContent` working-tree read
+ * rather than reimplementing it.
+ *
+ * SECURITY: `git show` is invoked via execFileSync with an argument array
+ * (`["show", \`${ref}:${relPath}\`]`), never a concatenated/interpolated
+ * shell command string passed to exec/execSync. execFileSync's argument-array
+ * form passes each element as a single literal argv entry directly to the
+ * `git` process — no shell is ever invoked to parse it — so shell
+ * metacharacters in `ref` or `relPath` (e.g. `; rm -rf /` or `$(whoami)`)
+ * cannot be interpreted as shell syntax; at worst `git show` fails to
+ * resolve a bogus ref and throws.
+ */
+export function readGitDoc(
+  repoPath: string,
+  relPath: string,
+  ref?: string,
+): { content: string; format: "md" | "html" } {
+  if (!ref) {
+    return readDocContent(repoPath, relPath);
+  }
+
+  const content = execFileSync("git", ["show", `${ref}:${relPath}`], {
+    cwd: repoPath,
+    encoding: "utf-8",
+  });
+  const format = relPath.endsWith(".html") ? "html" : "md";
+  return { content, format };
 }

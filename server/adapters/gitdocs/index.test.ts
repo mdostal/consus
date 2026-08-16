@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { extractDocCandidates, resolveInRepos } from "./index.js";
+import { extractDocCandidates, resolveInRepos, readGitDoc } from "./index.js";
 
 describe("extractDocCandidates", () => {
   it("finds a path-like reference in prose", () => {
@@ -113,5 +114,72 @@ describe("resolveInRepos", () => {
     // foobar/secret.md — must be rejected for the "foo" repo.
     const result = resolveInRepos("../foobar/secret.md", { foo: fooRoot });
     expect(result).toBeNull();
+  });
+});
+
+describe("readGitDoc", () => {
+  let repoDir: string;
+  let firstCommitSha: string;
+
+  beforeEach(() => {
+    repoDir = mkdtempSync(join(tmpdir(), "consus-gitdocs-readgitdoc-"));
+    execFileSync("git", ["init"], { cwd: repoDir });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: repoDir });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: repoDir });
+
+    writeFileSync(join(repoDir, "doc.md"), "# v1 (first commit)");
+    execFileSync("git", ["add", "doc.md"], { cwd: repoDir });
+    execFileSync("git", ["commit", "-m", "v1"], { cwd: repoDir });
+    firstCommitSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoDir, encoding: "utf-8" }).trim();
+
+    writeFileSync(join(repoDir, "doc.md"), "# v2 (second commit)");
+    execFileSync("git", ["add", "doc.md"], { cwd: repoDir });
+    execFileSync("git", ["commit", "-m", "v2"], { cwd: repoDir });
+
+    // Uncommitted working-tree change, distinct from both commits above, so
+    // ref-aware reads and the working-tree read are provably different.
+    writeFileSync(join(repoDir, "doc.md"), "# v3 (uncommitted working tree)");
+  });
+
+  afterEach(() => {
+    rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it("returns the content as it existed at the given ref, not the current working-tree content", () => {
+    const result = readGitDoc(repoDir, "doc.md", firstCommitSha);
+    expect(result.content).toContain("v1 (first commit)");
+    expect(result.content).not.toContain("v3");
+    expect(result.format).toBe("md");
+  });
+
+  it("returns the current working-tree content when no ref argument is given", () => {
+    const result = readGitDoc(repoDir, "doc.md");
+    expect(result.content).toContain("v3 (uncommitted working tree)");
+    expect(result.format).toBe("md");
+  });
+
+  it("throws (rather than hanging or crashing the process) for an invalid/nonexistent ref", () => {
+    expect(() => readGitDoc(repoDir, "doc.md", "not-a-real-ref")).toThrow();
+  });
+
+  it("does not let shell metacharacters in ref be interpreted by a shell (execFileSync argument-array safety)", () => {
+    const markerFile = join(repoDir, "pwned");
+    const maliciousRef = `; touch ${markerFile}`;
+
+    // A shell-interpolated `git show "${ref}:${path}"` run via exec/execSync
+    // would let this ref break out and run `touch pwned` as a second command.
+    // execFileSync's argument-array form passes the whole string as a single
+    // literal argv entry to git, so git show fails to find such a ref and no
+    // shell ever gets a chance to split/interpret the `;`.
+    expect(() => readGitDoc(repoDir, "doc.md", maliciousRef)).toThrow();
+    expect(existsSync(markerFile)).toBe(false);
+  });
+
+  it("does not let command substitution in ref execute (execFileSync argument-array safety)", () => {
+    const markerFile = join(repoDir, "pwned-subshell");
+    const maliciousRef = `$(touch ${markerFile})`;
+
+    expect(() => readGitDoc(repoDir, "doc.md", maliciousRef)).toThrow();
+    expect(existsSync(markerFile)).toBe(false);
   });
 });
