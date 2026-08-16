@@ -1,0 +1,239 @@
+id: p14-1-events-table-and-store
+epic: consus-phase14-multirepo-event-pipeline
+title: New events table (guarded migration) + a store module for creating, listing, updating status, and fetching events
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: []
+
+description: |
+  Foundation story for the whole epic (docs/design-discussion.md, "Event data model — NEW table,
+  deliberately separate from `proposals`"). Adds a brand-new `events` table via the existing
+  guarded-migration pattern in server/db/migrate.ts, and a new server/events/store.ts module with
+  pure data-access functions: create a row, list rows (project/status/sort/order filters, archived
+  rows excluded by default), update a row's status (with the archive-on-terminal-status rule the
+  operator resolved), and fetch one row by id.
+
+  This story is deliberately narrow: no HTTP route, no scan/detection logic, nothing that composes
+  a prompt or a diff. It only makes the events table and its CRUD-ish primitives exist and be
+  correct, so p14-2 (detection) and p14-3 (routes) each have a settled, tested foundation to build
+  on without re-deriving the schema or the archive semantics themselves.
+
+  Schema (add to the big `db.exec(...)` block in server/db/migrate.ts, alongside the existing
+  `proposals` table — this is a wholly new table, so plain `CREATE TABLE IF NOT EXISTS` is the
+  correct guarded form here; no `addColumnIfMissing` calls are needed since no column is being
+  added to a pre-existing table):
+
+  ```sql
+  CREATE TABLE IF NOT EXISTS events (
+    id TEXT PRIMARY KEY,
+    project TEXT NOT NULL,
+    trigger_kind TEXT NOT NULL CHECK(trigger_kind IN ('doc_changed', 'decision_needed')),
+    source_repo TEXT NOT NULL,
+    source_path TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    previous_hash TEXT,
+    diff TEXT,
+    item_id TEXT REFERENCES items(id),
+    composed_prompt TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new','in_progress','done','dismissed')),
+    detected_at TEXT NOT NULL,
+    status_updated_at TEXT NOT NULL,
+    archived_at TEXT,
+    proposal_id TEXT REFERENCES proposals(id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_events_project ON events(project);
+  CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
+  CREATE INDEX IF NOT EXISTS idx_events_archived_at ON events(archived_at);
+  ```
+
+  `proposals` must already exist when this runs (the `REFERENCES proposals(id)` line) — it's created
+  earlier in the same `db.exec` block, so ordering is already correct as long as the events block is
+  appended after it, matching how the existing block is laid out top-to-bottom.
+
+  Store module — server/events/store.ts, mirroring server/proposals/store.ts's shape/style
+  (snake_case row fields, `randomUUID()` ids, `new Date().toISOString()` timestamps, `db.prepare`
+  called directly, no ORM):
+
+  ```ts
+  export interface EventRow {
+    id: string;
+    project: string;
+    trigger_kind: "doc_changed" | "decision_needed";
+    source_repo: string;
+    source_path: string;
+    content_hash: string;
+    previous_hash: string | null;
+    diff: string | null;
+    item_id: string | null;
+    composed_prompt: string;
+    status: "new" | "in_progress" | "done" | "dismissed";
+    detected_at: string;
+    status_updated_at: string;
+    archived_at: string | null;
+    proposal_id: string | null;
+  }
+
+  export interface CreateEventInput {
+    project: string;
+    triggerKind: "doc_changed" | "decision_needed";
+    sourceRepo: string;
+    sourcePath: string;
+    contentHash: string;
+    previousHash?: string | null;
+    diff?: string | null;
+    itemId?: string | null;
+    composedPrompt: string;
+  }
+
+  export function createEvent(db: Database.Database, input: CreateEventInput): EventRow;
+
+  export interface ListEventsFilters {
+    project?: string;
+    status?: "new" | "in_progress" | "done" | "dismissed";
+    sort?: "detected_at" | "status" | "project";
+    order?: "asc" | "desc";
+    /** false (default) excludes archived rows (archived_at IS NULL); true returns only
+     *  archived rows (archived_at IS NOT NULL) — the p14-3 history route's backing query. */
+    archived?: boolean;
+  }
+
+  export function listEvents(db: Database.Database, filters?: ListEventsFilters): EventRow[];
+
+  export function updateEventStatus(
+    db: Database.Database,
+    id: string,
+    status: "new" | "in_progress" | "done" | "dismissed",
+  ): EventRow | null;
+
+  export function getEvent(db: Database.Database, id: string): EventRow | undefined;
+  ```
+
+  `updateEventStatus`'s archive rule (design-discussion.md, "Retention — RESOLVED: archival
+  history"): moving status to `done` or `dismissed` sets `archived_at = now` (only if it isn't
+  already set); moving status to `new` or `in_progress` clears `archived_at` back to `NULL`. Every
+  status write also bumps `status_updated_at = now`, regardless of which status. `updateEventStatus`
+  returns `null` (not a throw) when `id` doesn't match any row, so p14-3's route can turn that into a
+  clean 404 without a try/catch around a thrown error.
+
+  `createEvent` does not validate that `triggerKind`-specific fields are present (e.g. that
+  `previousHash`/`diff` are only set for `doc_changed`, or `itemId` only for `decision_needed`) —
+  that shaping is p14-2's job, at the call site that builds `CreateEventInput`. The store stays a
+  thin, honest wrapper over the table: it persists whatever it's given.
+
+acceptance_criteria:
+  - "Given a fresh (freshly migrated) database, when runMigration runs, then an `events` table exists with exactly the columns id/project/trigger_kind/source_repo/source_path/content_hash/previous_hash/diff/item_id/composed_prompt/status/detected_at/status_updated_at/archived_at/proposal_id, and status defaults to 'new' when not supplied via a raw insert."
+  - "Given runMigration is called twice in a row against the same database file (matching the existing idempotency guarantee every other table in migrate.ts already has), when it runs the second time, then it does not error and does not duplicate or alter the events table or any existing row in it."
+  - "Given a CreateEventInput with all required fields, when createEvent is called, then it returns an EventRow with a generated id, status 'new', detected_at and status_updated_at both set to the same 'now' timestamp, and archived_at/proposal_id both null."
+  - "Given three events across two different projects and two different statuses, when listEvents is called with no filters, then it returns all three, excluding none, with archived rows (if any) excluded by default."
+  - "Given an event whose status was moved to 'done' (and so archived_at got set), when listEvents is called with its default filters, then that event is excluded from the results; when listEvents is called with archived: true, then that event (and only archived events) is returned."
+  - "Given events with distinct detected_at timestamps, when listEvents is called with sort: 'detected_at', order: 'asc' vs order: 'desc', then the returned order is ascending vs descending by detected_at respectively; the same holds for sort: 'status' and sort: 'project'."
+  - "Given listEvents is called with project: 'foo' and/or status: 'in_progress', then only rows matching every supplied filter are returned."
+  - "Given an existing event with status 'new', when updateEventStatus is called with 'in_progress', then the returned row has status 'in_progress', a bumped status_updated_at, and archived_at still null."
+  - "Given an existing event with status 'new', when updateEventStatus is called with 'done', then archived_at is set to a non-null timestamp and status_updated_at is bumped."
+  - "Given an existing event whose status is 'dismissed' (archived_at already set), when updateEventStatus is called with 'in_progress', then archived_at is cleared back to null and status is 'in_progress'."
+  - "Given updateEventStatus is called with an id that doesn't exist, then it returns null and does not throw or modify any row."
+  - "Given an existing event id, when getEvent is called with it, then it returns the full matching EventRow; given a non-existent id, it returns undefined."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Add server/db/migrate.test.ts coverage (or extend the existing migrate test file if one
+      exists — check first) asserting the events table's columns via PRAGMA table_info and
+      double-run idempotency, matching the style already used for other tables in that file. Add
+      server/events/store.test.ts (new file, mirroring server/proposals/store.test.ts's structure:
+      an in-memory better-sqlite3 db, runMigration(db) in beforeEach, no HTTP layer) covering every
+      acceptance criterion above: createEvent's defaults, listEvents' project/status/sort/order
+      filters and archived default-exclusion, updateEventStatus's archive-set/archive-clear
+      transitions on all four status values, and getEvent's found/not-found cases.
+    agent: tester
+  - id: add-migration
+    description: >
+      Add the events CREATE TABLE IF NOT EXISTS block (columns and indexes exactly as specified
+      above) to server/db/migrate.ts's existing db.exec(...) template string, positioned after the
+      proposals table definition (proposals must exist first, since events.proposal_id references
+      it). No addColumnIfMissing calls needed — this is a new table, not a new column on an
+      existing one. Make the new migrate tests pass without modifying any existing migration
+      statement.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: add-store-module
+    description: >
+      Create server/events/store.ts exporting EventRow, CreateEventInput, ListEventsFilters,
+      createEvent, listEvents, updateEventStatus, and getEvent exactly as specified above —
+      snake_case row shape and db.prepare-per-call style matching server/proposals/store.ts.
+      listEvents builds its WHERE clause and ORDER BY dynamically from the supplied filters
+      (default sort 'detected_at', default order 'desc', default archived false ->
+      "archived_at IS NULL", archived true -> "archived_at IS NOT NULL"). Make the new
+      store.test.ts specs pass.
+    agent: developer
+    depends_on: [add-migration]
+  - id: review
+    description: >
+      Review server/events/store.ts specifically for: the archive-set/archive-clear rule in
+      updateEventStatus being unconditional on every status transition (not just the four
+      explicitly-tested ones, in case a caller passes an already-current status), SQL built with
+      parameterized `?` placeholders everywhere a filter value is interpolated (never string-
+      concatenated user input, matching every existing store/route in this codebase), and that
+      listEvents' sort/order params are validated against a fixed allow-list before being used to
+      build the ORDER BY clause (never interpolating the raw sort/order query value directly into
+      SQL, since column/direction names can't be parameterized with `?`).
+    agent: reviewer
+    depends_on: [add-store-module]
+  - id: integrate
+    description: Commit the migration addition and the new store module together with their tests.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: server/db/migrate.ts
+      purpose: >
+        The guarded-migration pattern this story follows: one big idempotent db.exec(...) of
+        CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS statements, plus a separate
+        addColumnIfMissing(db, table, column, definition) helper (PRAGMA table_info check, then a
+        guarded ALTER TABLE) used only for columns added to a table that predates them. Since
+        `events` is a wholly new table, only the CREATE TABLE IF NOT EXISTS form is needed here —
+        addColumnIfMissing has no role in this story. The existing `proposals` table
+        (status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','applied','failed')),
+        defined at lines ~109-121) is the closest structural precedent: a status enum with a CHECK
+        constraint, an id TEXT PRIMARY KEY, and an index on the foreign-key column.
+    - path: server/proposals/store.ts
+      purpose: >
+        The store-module style this story's server/events/store.ts matches: exported row
+        interface with snake_case fields (ProposalRow), a *Input interface for the create
+        function's camelCase params, randomUUID() for ids, new Date().toISOString() for
+        timestamps, db.prepare(...).run(...)/.get(...)/.all(...) called directly per function, no
+        shared query builder or ORM.
+    - path: server/proposals/store.test.ts
+      purpose: >
+        The test-file structure this story's server/events/store.test.ts matches: `new
+        Database(":memory:")` + `runMigration(db)` in beforeEach, a small local helper
+        (insertItem) for row fixtures, describe blocks per exported function.
+
+files_to_modify:
+  - file: server/db/migrate.ts
+    change: "Add the events CREATE TABLE IF NOT EXISTS block + three indexes to the existing db.exec(...) template, after the proposals table definition."
+  - file: server/events/store.ts
+    change: "New file: EventRow, CreateEventInput, ListEventsFilters, createEvent, listEvents, updateEventStatus, getEvent."
+  - file: server/events/store.test.ts
+    change: "New file: full coverage of the store module per the acceptance criteria above."
+  - file: server/db/migrate.test.ts
+    change: "New coverage (or extend an existing migration test file) for the events table's shape and double-run idempotency — check first whether a migrate.test.ts already exists before assuming a new file."
+
+design_decisions:
+  - decision: "events is a wholly new table, independent of proposals, with its own status enum (new/in_progress/done/dismissed) rather than a new proposals.status value."
+    rationale: "Decided in docs/design-discussion.md's 'Event data model' section: a proposals row always represents an attempted harness dispatch; an event is a pre-decision review-queue item that may never become a proposal. Conflating the two enums would teach every existing proposals consumer (UI polling, reportProposalResult, the applied-status audit-log write) to treat a new, unrelated status as inert. This story just builds the table the design settled on — no new judgment call here."
+  - decision: "Archival is modeled as an archived_at timestamp column on the same events row, not a separate history table, and it is derived automatically by updateEventStatus from the status value rather than being a caller-supplied field."
+    rationale: "Matches the operator's resolution ('Retention — RESOLVED: archival history... Modeled as an archived_at timestamp on the same events row... GET /api/events excludes archived rows by default'). Deriving it inside updateEventStatus (rather than requiring every caller to remember to set it) makes the done/dismissed <-> archived relationship a single-source-of-truth invariant instead of a convention callers could get wrong."
+  - decision: "listEvents' sort/order values are validated against a small fixed allow-list (detected_at/status/project, asc/desc) before being spliced into the ORDER BY clause, rather than being parameterized with `?` (which SQL does not support for column/direction names)."
+    rationale: "The only safe way to accept a caller-influenced column/direction name in a hand-written SQL string is an allow-list lookup, not string interpolation of the raw value — flagged explicitly for the reviewer step so this doesn't get missed under the pressure of 'it's just an internal filter param.'"
+
+risks:
+  - severity: low
+    description: "No migrate.test.ts may currently exist as a dedicated file (other tables' schema might only be indirectly exercised via route tests) — the write-failing-tests step may need to create one rather than extend an existing file, changing the shape of that step's diff slightly."
+    mitigation: "Step description explicitly says 'check first' rather than assuming; either outcome (new file or extended file) satisfies the same acceptance criteria."
+  - severity: low
+    description: "SQLite does not enforce FOREIGN KEY constraints by default (PRAGMA foreign_keys is off unless explicitly enabled), so events.item_id/proposal_id referencing items/proposals is documentation-level, not an enforced invariant — an orphaned reference wouldn't raise a database error."
+    mitigation: "Matches the existing behavior of every other REFERENCES column already in this schema (e.g. proposals.item_id, audit_log.item_id) — not a new gap introduced by this story, and out of scope to change the codebase's FK enforcement posture here."

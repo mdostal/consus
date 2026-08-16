@@ -1,0 +1,30 @@
+name: consus-phase14-multirepo-event-pipeline
+title: Multi-repo scan + event review pipeline
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: hybrid
+
+stories:
+  - id: p14-1-events-table-and-store
+    title: New events table (guarded migration) + a store module for creating, listing, updating status, and fetching events
+    complexity: medium
+    depends_on: []
+  - id: p14-2-scan-all-and-event-detection
+    title: POST /api/projects/scan-all looping every configured project through scanRepo, plus doc_changed/decision_needed event-detection wired into both scan-all and the existing single-project ingest route
+    complexity: large
+    depends_on: [p14-1-events-table-and-store]
+  - id: p14-3-events-http-routes
+    title: GET /api/events (+ ?archived=1 history), PATCH /api/events/:id/status, and POST /api/events/:id/propose (graduate an event to a real proposal)
+    complexity: medium
+    depends_on: [p14-2-scan-all-and-event-detection]
+  - id: p14-4-docs-cross-repo-search
+    title: GET /api/docs/search — path/repo substring match against doc_index plus an on-demand live-content match, no new index table
+    complexity: medium
+    depends_on: []
+  - id: p14-5-events-view-ui
+    title: New Events section in the web app — list, filters, sort, scan-all button, status controls, archived view, and a propose-a-change handoff per event
+    complexity: large
+    depends_on: [p14-3-events-http-routes]
+  - id: p14-6-docs-search-ui
+    title: A search box wired to GET /api/docs/search, results linking into the existing doc-viewing flow
+    complexity: small
+    depends_on: [p14-4-docs-cross-repo-search]

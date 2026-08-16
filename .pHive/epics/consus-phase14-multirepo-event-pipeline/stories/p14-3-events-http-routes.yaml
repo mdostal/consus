@@ -1,0 +1,240 @@
+id: p14-3-events-http-routes
+epic: consus-phase14-multirepo-event-pipeline
+title: "GET /api/events (+ ?archived=1 history), PATCH /api/events/:id/status, and POST /api/events/:id/propose (graduate an event to a real proposal)"
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: [p14-2-scan-all-and-event-detection]
+
+description: |
+  The HTTP surface over p14-1's server/events/store.ts and p14-2's detection pipeline. A new
+  server/routes/events.ts, registered in server/index.ts alongside every other route file
+  (registerDocRoutes, registerProjectRoutes, registerProposalRoutes, etc.), following those files'
+  established shape: an Options interface (`{ db, repos }` — `repos` is needed because graduating
+  an event upserts a target items row the same way docs.ts's GET /api/docs/content route already
+  does, which needs `repos[repo]` to exist as a sanity check even though this route never reads the
+  file off disk itself), a `register*Routes(app, opts)` function, typed Fastify route generics for
+  Querystring/Params/Body.
+
+  Four routes:
+
+  ### GET /api/events
+
+  Query params `project`, `status`, `sort`, `order` — same convention as the existing `GET
+  /api/docs?project=` and this epic's own resolved "Sort / organize / order" scope addition.
+  Delegates directly to p14-1's `listEvents(db, { project, status, sort, order })` (archived
+  defaults to false/excluded, matching listEvents' own default). No new filtering logic here beyond
+  passing the querystring through — this route is a thin adapter, matching how `GET /api/docs`
+  is a thin adapter over `queryDocIndex`.
+
+  Validate `status` against the four allowed values and `sort`/`order` against their allow-lists
+  if present (reject with 400 rather than silently passing through an invalid value to
+  listEvents — listEvents itself already allow-lists sort/order per p14-1's design_decisions, but
+  the route should give a clear 400 rather than relying on the store layer's internal defaulting
+  behavior for a bad querystring value, matching how other routes in this codebase validate
+  querystring input, e.g. registerDecisionRoutes' `all` param).
+
+  ### GET /api/events/history
+
+  The archived-set view the operator's resolved retention decision calls for ("a distinct GET
+  /api/events/history (or ?archived=1) surfaces them"). This story implements it as **both**: `GET
+  /api/events/history` as its own route (clearer for the UI to call directly), which internally is
+  just `listEvents(db, { project, status, sort, order, archived: true })` — same query params as
+  `GET /api/events`, same validation, same response shape, only the `archived` flag differs. A
+  literal `?archived=1` variant on the base `GET /api/events` route is not required by this story
+  (the design doc phrases it as "or" — implementer's choice between the two forms) but the
+  dedicated `/history` path is the one this story's acceptance criteria are written against, since
+  it's the simpler, single form to specify and test.
+
+  ### PATCH /api/events/:id/status
+
+  Body `{ status: "new" | "in_progress" | "done" | "dismissed" }`. Validates the value is one of
+  the four (400 otherwise), calls p14-1's `updateEventStatus(db, id, status)`, returns 404 if it
+  returns null (no such event), else returns the updated row. No other field is ever writable
+  through this route.
+
+  ### POST /api/events/:id/propose
+
+  The "graduate an event into a real proposal" seam (design doc: "`proposal_id` is the deliberate
+  seam: an event can *optionally* graduate into a real `proposals` row... reusing `proposeChange()`
+  unchanged"). Body: `{ description: string, requestedBy: string }` (both required — `description`
+  is operator-supplied per the epic's task framing "the event's stored diff plus an
+  operator-supplied description"; `requestedBy` matches the existing `POST /api/proposals` body
+  shape's required field).
+
+  Steps, in order, inside the handler:
+  1. Look up the event via p14-1's `getEvent(db, id)`. 404 if not found.
+  2. If the event has no diff (only `doc_changed` events do — `decision_needed` events have
+     `diff: null` per p14-1's schema), 400 — nothing to propose, matching the same "can't propose
+     with no diff" shape as the existing `POST /api/proposals` route's required-field validation.
+  3. **Upsert a target tracking item for the event's source doc, the same way the existing docs
+     routes already upsert one for a doc being viewed** — this is `docItemIdFor(event.source_repo,
+     event.source_path)` (imported from server/routes/docs.ts, exported for reuse — see
+     files_to_modify) and the identical upsert statement `GET /api/docs/content` already runs:
+     ```ts
+     const itemId = docItemIdFor(event.source_repo, event.source_path);
+     const now = new Date().toISOString();
+     db.prepare(
+       `INSERT INTO items (id, type, title, status, source_repo, source_ref, created_at, updated_at)
+        VALUES (?, 'doc', ?, 'active', ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
+     ).run(itemId, event.source_path, event.source_repo, event.source_path, now, now);
+     ```
+     Reusing docItemIdFor (not p14-2's `decisionItemId` scheme) is deliberate even for a
+     `decision_needed` event: the proposal here targets the underlying *doc* (a diff/description
+     against its content), the same target every other doc-proposal in this codebase already uses
+     — not the decision-tracking item p14-2 upserts separately for the Decisions-tab surface. Both
+     items can coexist at their own distinct ids for the same repo+path (see p14-2's
+     design_decisions for why those ids are namespaced apart).
+  4. Call the existing, **unmodified** `proposeChange(db, transport, { itemId, targetType: 'doc',
+     diff: event.diff, description, requestedBy })` from server/proposals/store.ts.
+  5. Record the new proposal's id back onto the event row: `UPDATE events SET proposal_id = ?
+     WHERE id = ?` (direct SQL here, or a small addition to server/events/store.ts if the
+     implementer prefers a named function — either is acceptable; p14-1 didn't anticipate this
+     specific write, so this story may add a minimal `setEventProposalId(db, id, proposalId)` to
+     store.ts rather than reaching around it with ad hoc SQL in the route file, matching this
+     codebase's general preference for store-layer functions over inline SQL in route handlers —
+     see server/routes/docs.ts's one inline exception for the doc-item upsert, which this story is
+     already following the precedent of for step 3).
+  6. Return the updated event row (now carrying `proposal_id`) alongside the created proposal, e.g.
+     `{ event: <updated EventRow>, proposal: <ProposalRow> }`.
+
+  This route never sets an event's `status` itself — graduating to a proposal and moving an event
+  through its status lifecycle are separate, independently-triggered actions (per the design doc's
+  status lifecycle section: "All transitions are manual HTTP calls... never automatic"). If the
+  operator wants a proposed event marked `in_progress`, that's a separate `PATCH .../status` call
+  from the UI, not an implicit side effect of this route — explicitly not bundled here, since
+  bundling it would be scope this story's task list didn't ask for.
+
+acceptance_criteria:
+  - "Given events across two projects and three statuses, when GET /api/events is called with no query params, then it returns every non-archived event (archived_at IS NULL), matching listEvents' own default."
+  - "Given GET /api/events?project=foo&status=in_progress, then only foo-project, in_progress, non-archived events are returned."
+  - "Given GET /api/events?status=bogus (not one of the four allowed values), then the response is 400 with a clear error, not a 200 with an empty or unfiltered result."
+  - "Given GET /api/events?sort=detected_at&order=asc vs order=desc, then results are ordered accordingly; given an invalid sort or order value, the response is 400."
+  - "Given some events are archived (status done or dismissed) and some are not, when GET /api/events/history is called, then only the archived ones are returned, honoring the same project/status/sort/order params as GET /api/events."
+  - "Given an existing event, when PATCH /api/events/:id/status is called with { status: 'in_progress' }, then the response reflects the updated status and the event is subsequently absent from GET /api/events/history and present in GET /api/events."
+  - "Given PATCH /api/events/:id/status with an invalid status value, then the response is 400 and the event's status is unchanged."
+  - "Given PATCH /api/events/:id/status with a non-existent event id, then the response is 404."
+  - "Given a doc_changed event with a non-null diff, when POST /api/events/:id/propose is called with { description, requestedBy }, then: a new row appears in the proposals table with diff equal to the event's stored diff and description equal to the supplied description; an items row exists at docItemIdFor(event.source_repo, event.source_path); and the event's own row now has proposal_id set to that new proposal's id."
+  - "Given a decision_needed event (diff is null), when POST /api/events/:id/propose is called, then the response is 400 and no proposals row or items-upsert side effect occurs."
+  - "Given POST /api/events/:id/propose with a non-existent event id, then the response is 404."
+  - "Given POST /api/events/:id/propose succeeds, then calling it a second time on the same event does not error — it creates a second, independent proposals row (proposeChange's own behavior, unmodified) and updates proposal_id to the newest proposal's id, since this route places no restriction on re-proposing an event."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Add server/routes/events.test.ts, mirroring server/routes/proposals.test.ts and
+      server/routes/docs.test.ts's structure (in-memory better-sqlite3 db, runMigration, a
+      registerEventRoutes(app, { db, repos }) call, a fakeTransport helper copied from
+      proposals/store.test.ts's pattern for the propose route's transport dependency). Cover every
+      acceptance criterion above: GET /api/events' filters/validation, GET /api/events/history's
+      archived-only scoping, PATCH .../status's success/400/404 cases, and POST .../propose's full
+      success path (proposals row + items upsert + proposal_id backfill), no-diff 400, 404, and
+      repeat-propose behavior. Seed events directly via p14-1's createEvent, not through the
+      detection pipeline, so these tests exercise the route layer in isolation from p14-2.
+    agent: tester
+  - id: export-doc-item-id-for
+    description: >
+      Export docItemIdFor from server/routes/docs.ts if it isn't already exported (check the
+      current file — it's currently an exported function per this epic's context research, so this
+      step may be a no-op; if so, skip straight to the next step). This is the one shared piece
+      p14-3 needs from docs.ts.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: implement-events-routes
+    description: >
+      Create server/routes/events.ts with registerEventRoutes(app, { db, repos }): GET /api/events,
+      GET /api/events/history, PATCH /api/events/:id/status, POST /api/events/:id/propose exactly
+      as specified above, importing listEvents/updateEventStatus/getEvent from
+      server/events/store.ts, docItemIdFor from server/routes/docs.ts, and proposeChange from
+      server/proposals/store.ts. Add setEventProposalId(db, id, proposalId) to
+      server/events/store.ts for the propose route's final write, rather than inline SQL in the
+      route file. Register the new route file in server/index.ts (registerEventRoutes(app, { db,
+      repos, transport }) — the propose route needs the same HarnessTransport already passed to
+      registerProposalRoutes). Make the new events.test.ts specs pass.
+    agent: developer
+    depends_on: [export-doc-item-id-for]
+  - id: review
+    description: >
+      Review server/routes/events.ts specifically for: every querystring value used in a SQL
+      filter/sort going through p14-1's listEvents allow-list path rather than being interpolated
+      directly in this route file; the propose route's diff-required check happening before any
+      write (no partial state — items upsert or proposals row created — left behind when the diff
+      check fails); and that PATCH .../status never accepts or writes any field besides status
+      (no accidental mass-assignment from the request body).
+    agent: reviewer
+    depends_on: [implement-events-routes]
+  - id: integrate
+    description: Commit server/routes/events.ts, its test file, the server/index.ts registration, and the small store.ts addition together.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: server/events/store.ts
+      purpose: >
+        p14-1's store module this route layer is a thin adapter over. Exact signatures this story
+        depends on: `listEvents(db, { project?, status?, sort?, order?, archived? })`,
+        `updateEventStatus(db, id, status)` (returns updated EventRow or null), `getEvent(db, id)`
+        (returns EventRow or undefined). This story adds one function to this file:
+        `setEventProposalId(db, id, proposalId)`.
+    - path: server/events/store.ts#EventRow
+      purpose: >
+        The row shape this route returns as-is (JSON-serialized) from every handler: id, project,
+        trigger_kind, source_repo, source_path, content_hash, previous_hash, diff, item_id,
+        composed_prompt, status, detected_at, status_updated_at, archived_at, proposal_id.
+    - path: server/proposals/store.ts
+      purpose: >
+        proposeChange(db, transport, { itemId, targetType, diff, description, requestedBy }) —
+        called unmodified by the propose route. Returns `{ ok: true, proposalId } | { ok: false,
+        error }`; on ok:false (target item not found — shouldn't happen here since this route
+        upserts the item immediately before calling it, but the route must still handle the
+        `{ ok: false }` shape defensively rather than assuming success).
+    - path: server/routes/docs.ts
+      purpose: >
+        `docItemIdFor(repo, path) = \`doc:${repo}:${path}\`` and its exact upsert SQL (`INSERT INTO
+        items (...) ... ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`), both
+        reused verbatim by the propose route's step 3, rather than reimplementing an equivalent.
+        Already exported (`export function docItemIdFor`).
+    - path: server/routes/proposals.ts
+      purpose: >
+        registerProposalRoutes' existing `POST /api/proposals` handler is the closest structural
+        precedent for this story's propose route: required-field validation returning 400, calling
+        proposeChange, then re-reading and returning the row. This story's route composes the same
+        proposeChange call but with itemId/diff derived from the event rather than supplied
+        directly in the request body.
+    - path: server/routes/decisions.ts
+      purpose: >
+        `GET /api/decisions?all=1`'s query-param validation style (`all === '1' || all ===
+        'true'`) — the closest existing precedent in this codebase for validating an optional
+        querystring flag before using it, referenced for GET /api/events/history's own param
+        handling even though history is implemented as its own route rather than a flag on GET
+        /api/events.
+    - path: server/index.ts
+      purpose: "buildServer() — where every register*Routes call is wired together with its db/repos/transport options. This story adds registerEventRoutes(app, { db, repos, transport }) alongside the existing calls."
+
+files_to_modify:
+  - file: server/routes/events.ts
+    change: "New file: registerEventRoutes — GET /api/events, GET /api/events/history, PATCH /api/events/:id/status, POST /api/events/:id/propose."
+  - file: server/routes/events.test.ts
+    change: "New file: full route coverage per the acceptance criteria above."
+  - file: server/events/store.ts
+    change: "Add setEventProposalId(db, id, proposalId)."
+  - file: server/index.ts
+    change: "Import and call registerEventRoutes(app, { db, repos, transport })."
+
+design_decisions:
+  - decision: "GET /api/events/history is implemented as its own dedicated route, not a ?archived=1 flag on GET /api/events."
+    rationale: "The design doc explicitly offers both forms ('a distinct GET /api/events/history (or ?archived=1)') and defers the choice. A dedicated route keeps the two response shapes (active queue vs. archive) trivially cacheable/bookmarkable/linkable separately in the UI (p14-5 wires a distinct archived view) without a query-string toggle that could be forgotten and silently return the wrong set."
+  - decision: "POST /api/events/:id/propose targets the doc-tracking item (docItemIdFor), never p14-2's decision-tracking item (decisionItemId), even for a decision_needed event."
+    rationale: "A proposal is always 'a diff + description against a target' (server/proposals/store.ts's own framing: 'works identically for a decision, a diagram, or a doc'); this route's diff always comes from event.diff, which per p14-1's schema is doc_changed-only (null for decision_needed events) — decision_needed events are rejected by the diff-required check before the item-id question even matters in practice, so this decision is really about doc_changed events, where docItemIdFor is unambiguously the right target (it's a change to the doc's content, not a decision verdict)."
+  - decision: "Re-proposing an already-proposed event is allowed (no guard), creating a second proposals row and overwriting proposal_id with the newer one."
+    rationale: "Not addressed by the design doc or the task list; a judgment call to keep this route as thin and unopinionated as proposeChange itself (which has no built-in de-duplication either). Blocking re-proposal would require inventing a new rule ('once proposed, locked') the design doc never asked for; leaving it open matches the existing system's general posture of the operator being trusted to decide when to fire an action again."
+
+risks:
+  - severity: low
+    description: "proposal_id on the events row only ever reflects the most recent proposal if an event is proposed more than once — earlier proposals for the same event are still visible via GET /api/proposals?itemId=<docItemIdFor(...)> but not discoverable directly from the event row itself."
+    mitigation: "Consistent with proposal_id being documented as 'a future integration seam,' not a full audit trail — acceptable for this story's scope; a UI wanting full history can already query GET /api/proposals with the item id p14-3 makes deterministically derivable."
+  - severity: low
+    description: "The propose route depends on a HarnessTransport being passed to registerEventRoutes, coupling this route file to a dependency none of the other new p14 routes need."
+    mitigation: "Unavoidable — proposeChange itself requires a transport; this route calls it unmodified rather than reimplementing dispatch. Matches how registerProposalRoutes already takes the same dependency."

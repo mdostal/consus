@@ -42,6 +42,8 @@ build/
 !.pHive/epics/consus-phase12-sectional-diff-view/**
 !.pHive/epics/consus-phase13-multirepo-doc-resolution/
 !.pHive/epics/consus-phase13-multirepo-doc-resolution/**
+!.pHive/epics/consus-phase14-multirepo-event-pipeline/
+!.pHive/epics/consus-phase14-multirepo-event-pipeline/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/

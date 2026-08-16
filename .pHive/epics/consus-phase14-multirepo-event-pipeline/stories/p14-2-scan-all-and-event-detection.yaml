@@ -1,0 +1,354 @@
+id: p14-2-scan-all-and-event-detection
+epic: consus-phase14-multirepo-event-pipeline
+title: POST /api/projects/scan-all looping every configured project through scanRepo, plus doc_changed/decision_needed event-detection wired into both scan-all and the existing single-project ingest route
+status: pending
+complexity: large
+methodology: tdd
+depends_on: [p14-1-events-table-and-store]
+
+description: |
+  Builds the two things docs/design-discussion.md calls out as the meat of this epic: the
+  cross-project scan orchestration (section 1) and event-detection (section 3), wired at the one
+  moment "what changed since last scan" is knowable — immediately after each project's scanRepo
+  call. Depends on p14-1's `events` table and server/events/store.ts's createEvent.
+
+  ## 1. New route: POST /api/projects/scan-all
+
+  Added to server/routes/projects.ts (which already has `registerProjectRoutes`, `GET
+  /api/projects`, and `POST /api/projects/:project/ingest`). Loops `listProjects(repos)` and, per
+  project, runs scanRepo + the detection passes below inside a try/catch — one project's read
+  error (a bad path, a permissions error, a malformed file) must not abort the loop; catch it,
+  record that project's outcome as failed with the error message, and continue to the next
+  project. `scanRepo` itself is never modified — this story only adds an orchestration layer around
+  it, per the design doc's explicit "no change to scanRepo itself."
+
+  Response shape (one entry per configured project, success or failure):
+  ```json
+  {
+    "results": [
+      { "project": "consus", "ok": true, "docsScanned": 12, "eventsCreated": 2 },
+      { "project": "other-repo", "ok": false, "error": "ENOENT: no such file or directory" }
+    ]
+  }
+  ```
+
+  ## 2. Detection passes (the actual new logic)
+
+  A new module, server/events/detect.ts, exporting a single entry point run per project
+  immediately after that project's scanRepo call:
+
+  ```ts
+  export interface DetectEventsInput {
+    project: string;
+    repoName: string;
+    repoPath: string;
+  }
+
+  export function detectEvents(db: Database.Database, input: DetectEventsInput): number; // events created
+  ```
+
+  `detectEvents` internally runs two passes over that repo's current `doc_index` rows
+  (`queryDocIndex(db, repoName)` from server/adapters/doc-scanner/index.ts) and creates events via
+  p14-1's `createEvent`. Both passes need each doc's live content, read via the existing
+  `readDocContent(repoPath, relFilePath)` (also from doc-scanner/index.ts) — never re-implemented.
+
+  ### Pass A — doc_changed
+
+  This pass cannot live *inside* scanRepo (it's untouched) — it works by snapshotting doc_index
+  immediately before and after the scanRepo call, in the caller (the scan-all loop / the ingest
+  route), and handing both snapshots to detectEvents (or by detectEvents itself taking a
+  pre-computed `previousHashes: Map<string, string>` — implementer's choice of exact call shape,
+  but the sequencing is fixed):
+
+  1. Before calling scanRepo for a project, read `SELECT file_path, content_hash FROM doc_index
+     WHERE repo = ?` into a `Map<file_path, content_hash>` — this is "the prior hash before the
+     upsert runs" the design doc requires.
+  2. Call scanRepo(db, { repoName, repoPath }) (unchanged).
+  3. Re-query doc_index for that repo. For every row: if its file_path wasn't in the pre-scan map,
+     it's a brand-new file (`previous_hash: null`). If it was in the map and content_hash differs
+     from the pre-scan value, it's a changed file (`previous_hash:` the pre-scan value). If it was
+     in the map and content_hash is unchanged, skip — no event (mirrors scanRepo's own
+     no-op-on-unchanged-hash behavior; re-scanning an identical tree produces zero new events).
+  4. For each new/changed file, compute a diff and create a `doc_changed` event (diff + prompt
+     composition below).
+
+  ### Pass B — decision_needed
+
+  For every doc_index row current after the scan (new file or not — a decision-request block can
+  exist in an unchanged file too, e.g. one that was already flagged and is still open), read its
+  content and run `parseDecisionPayload(content)` (server/decision-contract/parser.ts). If it
+  returns non-null:
+
+  1. Compute `decisionItemId = \`decision:${repoName}:${filePath}\`` — a **new, distinct id
+     namespace** from docs.ts's existing `docItemIdFor` (`doc:${repo}:${path}`). Deliberately not
+     reusing docItemIdFor's id: a doc can independently need both a `type: 'doc'` tracking item
+     (created when the doc is opened via GET /api/docs/content) and a `type: 'decision'` tracking
+     item (created here) for the *same* repo+path, and docItemIdFor's upsert
+     (`ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`) never touches `type` or
+     `decision_payload` on conflict — reusing its id would silently leave a 'doc'-typed item
+     un-upgraded to carry decision fields, or vice versa clobber a doc item's identity. A separate
+     id namespace avoids that collision entirely.
+  2. Check for an "existing open tracking item": `SELECT id FROM items WHERE id = ? AND
+     decision_payload IS NOT NULL AND decided_at IS NULL` for that `decisionItemId`. If found,
+     this decision is already tracked and undecided (whether created by this pass on an earlier
+     scan, or by an operator/agent's direct POST /api/decisions using the same deterministic id
+     scheme — out of scope for this story to wire that up, just documenting why the check must be
+     id-based, not payload-based) — skip to the drift check below rather than treating "already
+     tracked" alone as disqualifying, since the operator's resolved staleness policy is
+     content-hash-driven, not existence-driven (see below).
+  3. Check for drift: `SELECT id FROM events WHERE source_repo = ? AND source_path = ? AND
+     trigger_kind = 'decision_needed' AND content_hash = ? AND status IN ('new','in_progress')`.
+     If a row already matches this exact content_hash, an open event already covers this exact
+     version — skip, no duplicate. This is what makes "no existing open tracking item" (design
+     doc's phrasing) operationally precise and matches the operator's resolved staleness policy
+     (Open questions #2): no silent mutation of an existing open event, but a *new* event when the
+     underlying content has drifted further, even if the old one is still open.
+  4. If it passes both checks (nothing already tracks this exact version as open), upsert the
+     items row: `INSERT INTO items (id, type, title, status, source_repo, source_ref,
+     decision_payload, created_at, updated_at) VALUES (@id, 'decision', @title, 'active', @repo,
+     @path, @decision_payload, @now, @now) ON CONFLICT(id) DO UPDATE SET decision_payload =
+     excluded.decision_payload, updated_at = excluded.updated_at` — deliberately does *not*
+     overwrite `decided_at` on conflict, so a previously-decided item id being reused by a redrafted
+     decision block doesn't get silently reopened; the *event* is the signal that content changed,
+     the item's decided_at stays whatever it already was until an operator acts through the normal
+     decision flow.
+  5. Create a `decision_needed` event with `item_id: decisionItemId`, `diff: null`,
+     `previous_hash: null` (design doc: `diff`/`previous_hash` are `doc_changed`-only fields).
+
+  ## 3. Diff computation (doc_changed only)
+
+  No server-side line-diff utility exists yet (only web/src/features/docs/textDiff.ts's
+  client-side `computeLineDiff`, used by DocRenderer's edit/fire flow — not importable from
+  server code). Port the identical LCS-over-lines algorithm server-side as
+  `server/events/diff.ts`, exporting `computeLineDiff(original: string, edited: string): string`
+  — same signature, same `"  "`/`"- "`/`"+ "` line-prefix output shape, same "diff is opaque text,
+  no format promises" framing as the client version's docstring. (Two copies, client and server,
+  are acceptable here — there's no shared package boundary between web/ and server/ in this repo
+  to place one copy for both; duplication is the pragmatic call over adding a shared package for
+  one ~40-line pure function.)
+
+  - **New file** (`previous_hash` is null): `diff = computeLineDiff("", newContent)` — with an
+    empty original, every line of the LCS diff is naturally emitted as an addition (`"+ "` prefix),
+    which is exactly "the full content presented as an addition" the design doc specifies, with no
+    special-casing needed beyond passing `""` as the original.
+  - **Changed file** (`previous_hash` present): the design doc's own template says "unified diff
+    between prior content (via readDocContent/readGitDoc against the last-known hash's git blob,
+    else 'no prior content on record')" — but doc_index only ever stores a *hash*, never content,
+    so there is no persisted history of a doc's prior text to diff against exactly. This story's
+    concrete, bounded resolution (a judgment call — see design_decisions below): attempt
+    `readGitDoc(repoPath, filePath, "HEAD")` (server/adapters/gitdocs/index.ts, already ref-aware,
+    already used by the docs routes). If it succeeds AND its content, hashed with the same sha256
+    function scanRepo uses, differs from the new content_hash (i.e. HEAD genuinely has something
+    different to compare against — if HEAD's hash already equals the new hash, the change predates
+    HEAD and diffing against it would show no difference at all), use
+    `computeLineDiff(headContent, newContent)`. Otherwise (readGitDoc throws — untracked file, no
+    git repo, bad ref — or HEAD's hash matches the new hash) fall back to
+    `computeLineDiff("", newContent)`, and the composed prompt's "what changed" section notes "no
+    prior content on record for comparison — showing current content" verbatim, matching the design
+    doc's fallback phrase.
+
+  ## 4. Prompt composition (composed_prompt, stored once, never rebuilt)
+
+  A new function in server/events/detect.ts (or a colocated server/events/prompt.ts — implementer's
+  choice), `composePrompt(input): string`, built at detection time per the design doc's template
+  (docs/design-discussion.md section 4) and stored verbatim on the event row:
+
+  ```
+  # Event: <trigger_kind> in <project> — <source_repo>/<source_path>
+
+  ## Project / area
+  project: <project>  repo: <source_repo>  path: <source_path>
+  epic/phase (if under .pHive/epics/**): <epic>, <phase>
+
+  ## What changed
+  <doc_changed: the computed diff (section 3 above), plus one line: "content_hash changed since
+  last scan" (or the "no prior content on record for comparison" note when the fallback fired)>
+  <decision_needed: the raw ```decision-request fenced block extracted from the doc (re-run the
+  same FENCED_DECISION_REQUEST_BLOCK-style extraction parseDecisionPayload uses internally, or
+  simply the doc's full content if no fenced block matched — the heuristic-tier case — since there
+  is no separately-extractable block text in that path) plus the parsed title/context/options/
+  recommended, plus: "unresolved decision-request block, no decided_at">
+
+  ## Surrounding doc content
+  <full current doc content when under ~4000 characters; otherwise the single section (heading-
+  delimited, h1-h3) containing the changed/flagged content>
+  ```
+
+  `epic`/`phase` come straight off the doc_index row (`queryDocIndex`'s `epic`/`phase` columns,
+  already populated by scanRepo's `deriveEpicAndPhase`) — omit that line entirely when both are
+  null (a `.pHive/planning/`-rooted doc has `phase: "planning"`, `epic: null`; keep the phase-only
+  form in that case, matching `deriveEpicAndPhase`'s actual return shapes).
+
+  For "surrounding doc content," port `splitIntoSections` (web/src/features/docs/sections.ts — a
+  pure, dependency-free `content.split(/(?=^#{1,3} )/m)` heading splitter, already documented as
+  the reference implementation in that file) into a server-side equivalent (or a shared location if
+  the story's implementer finds one cleanly — this repo currently has no web/server shared code
+  path, so a server-side port, same as the diff utility above, is the expected shape). When content
+  length is under ~4000 characters, use the full content. Otherwise, split into sections and pick
+  the first section whose text contains the diff's `"+ "`- or `"- "`-prefixed line content (for
+  doc_changed) or the fenced decision-request block (for decision_needed); if none match, fall back
+  to the first section.
+
+  ## 5. Wiring into the existing single-project ingest route
+
+  `POST /api/projects/:project/ingest` (server/routes/projects.ts, currently: `scanRepo(db, {
+  repoName: project, repoPath })` then a doc count) gets the identical before/after-hash-snapshot +
+  detectEvents call added around its existing scanRepo call — same detection logic, same
+  server/events/detect.ts entry point, not a second implementation. Per the operator's resolution
+  ("Scan trigger model — RESOLVED: all three granularities coexist"), every scan granularity
+  (scan-all, single-project ingest, and any future ad-hoc trigger) must produce events identically;
+  this is what makes that true rather than aspirational. The ingest route's response gains an
+  `eventsCreated` count alongside the existing `docsScanned`.
+
+acceptance_criteria:
+  - "Given three configured projects where the second one's repoPath is invalid (e.g. deleted after registry load), when POST /api/projects/scan-all runs, then the first and third projects are scanned successfully (their doc_index rows and any resulting events exist), the second project's result entry has ok: false and a non-empty error message, and the request itself returns 200 (a partial failure is not a request-level error)."
+  - "Given a project with no prior doc_index rows for a repo, when it's scanned (via scan-all or single-project ingest), then every scanned doc produces a doc_changed event with previous_hash: null and a diff that is the full content, entirely as added lines."
+  - "Given a project already scanned once, where one existing doc's content changes on disk and a second existing doc is untouched, when it's re-scanned, then exactly one new doc_changed event is created (for the changed doc, with previous_hash equal to its prior content_hash), and zero events reference the untouched doc."
+  - "Given a doc containing a fenced ```decision-request block with no decided_at anywhere tracking it, when its repo is scanned, then exactly one decision_needed event is created, its item_id resolves to a real items row with decision_payload matching the parsed payload and decided_at null, and re-scanning the same unchanged repo produces zero additional decision_needed events for that doc."
+  - "Given a decision_needed event already exists and is still open (status new or in_progress) for a doc, and that doc's decision-request content changes (different content_hash) on the next scan, when the repo is re-scanned, then a second, new decision_needed event is created (the first is left completely untouched — same status, same composed_prompt, same diff-equivalent fields) rather than the first being mutated in place."
+  - "Given a doc with a decision-request block whose tracking item already has decided_at set (a previously-decided, now-redrafted decision), when the repo is re-scanned with different content, then a new decision_needed event is created and the existing item's decided_at is not reset to null by this scan."
+  - "Given a doc that scans identically to its last scan (same content_hash) and carries no decision-request block, when it's re-scanned, then zero events are created for it, matching scanRepo's own no-op-on-unchanged-hash behavior."
+  - "Given a changed doc whose repo is a real git repository with the doc's prior content committed at HEAD, when it's re-scanned, then the created doc_changed event's diff reflects an actual line-level comparison between HEAD's content and the new content, not a from-scratch full-addition diff."
+  - "Given a changed doc whose repo is not a git repository (or the file is untracked, or HEAD's content already matches the new content), when it's re-scanned, then the created doc_changed event's diff is computeLineDiff(\"\", newContent) and its composed_prompt's 'What changed' section includes the 'no prior content on record for comparison' note."
+  - "Given any created event, its composed_prompt is stored at creation time and is never recomputed by a later read — asserted by confirming no code path outside detectEvents calls the prompt-composition function."
+  - "Given POST /api/projects/:project/ingest (single-project route) on a repo with a new doc and a doc with an open decision-request, when called, then it produces the same events (same trigger_kinds, same count) that scan-all would produce for that one project — both entry points share detectEvents, not two implementations."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Add server/events/diff.test.ts (port of the existing client-side textDiff tests' cases, if
+      any exist, otherwise new: identical-input no-op, pure-addition from empty original, pure
+      deletion, interleaved add/remove). Add server/events/detect.test.ts covering the full
+      detectEvents contract against a real temp-dir repo (mirroring server/routes/docs.test.ts's
+      mkdtempSync + .pHive/planning fixture pattern, and server/adapters/gitdocs/index.test.ts's
+      real-git-repo-in-tmpdir pattern for the HEAD-diff cases): new-file detection, changed-file
+      detection with and without a resolvable git HEAD, unchanged-file no-op, decision_needed
+      detection + its drift/no-duplicate behavior + its decided_at-preservation behavior. Extend
+      server/routes/projects.test.ts with scan-all's partial-failure behavior and per-project
+      eventsCreated counts, and extend it (or docs.test.ts's ingest coverage, wherever the existing
+      ingest route tests live) with the ingest route's now-identical event-detection behavior.
+    agent: tester
+  - id: implement-diff-util
+    description: >
+      Add server/events/diff.ts, computeLineDiff ported verbatim from
+      web/src/features/docs/textDiff.ts's algorithm (same LCS-over-lines DP, same line-prefix
+      output). Make the diff.test.ts specs pass.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: implement-detection
+    description: >
+      Add server/events/detect.ts: the before/after doc_index snapshot + doc_changed pass (using
+      queryDocIndex + readDocContent from doc-scanner/index.ts, computeLineDiff from the new
+      diff.ts, readGitDoc from gitdocs/index.ts for the HEAD-diff attempt), the decision_needed pass
+      (parseDecisionPayload from decision-contract/parser.ts, the decisionItemId scheme and its
+      items upsert exactly as specified above, the drift-check query against events), and
+      composePrompt (a ported heading-splitter for the surrounding-content section, per the
+      template above). detectEvents ties both passes together and calls p14-1's createEvent for
+      each new row. Make the detect.test.ts specs pass.
+    agent: developer
+    depends_on: [implement-diff-util]
+  - id: wire-scan-all-and-ingest
+    description: >
+      Add POST /api/projects/scan-all to server/routes/projects.ts: loop listProjects(repos),
+      snapshot doc_index per project, call scanRepo, call detectEvents, catch per-project failures
+      into the results array without aborting the loop, return { results }. Update the existing
+      POST /api/projects/:project/ingest handler to run the identical snapshot + scanRepo +
+      detectEvents sequence (not a duplicate implementation — both call the same detectEvents) and
+      add eventsCreated to its response. Make the new/extended projects.test.ts specs pass without
+      changing ingest's existing docsScanned response field.
+    agent: developer
+    depends_on: [implement-detection]
+  - id: review
+    description: >
+      Review server/routes/projects.ts's scan-all loop specifically for: no project's try/catch
+      swallowing an error silently without recording it in results, the before-scan doc_index
+      snapshot genuinely happening before scanRepo's upsert (not after, which would make every
+      changed file look unchanged), and that readGitDoc's HEAD attempt is itself wrapped so a
+      thrown git error (untracked file, no repo) falls through to the no-prior-content path rather
+      than aborting that doc's detection or the whole project's scan. Confirm decisionItemId's
+      namespace genuinely never collides with docItemIdFor's ('decision:' vs 'doc:' prefix).
+    agent: reviewer
+    depends_on: [wire-scan-all-and-ingest]
+  - id: integrate
+    description: Commit the diff util, detection module, and both route changes together with their tests.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: server/adapters/doc-scanner/index.ts
+      purpose: >
+        scanRepo(db, {repoName, repoPath}) — walks SCAN_ROOTS (.pHive/planning, .pHive/epics/**),
+        hashes each file with sha256, upserts doc_index via `ON CONFLICT(repo, file_path) DO UPDATE
+        ... WHERE doc_index.content_hash != excluded.content_hash` (a row only changes when content
+        changed — the no-op-on-unchanged-hash guarantee this story's doc_changed pass mirrors).
+        Never modified by this story. Also exports queryDocIndex(db, repoName) -> DocIndexRow[]
+        (id/repo/epic/phase/file_path/content_hash/last_scanned_at) and readDocContent(repoPath,
+        relFilePath) -> {content, format}, both reused as-is by the detection passes.
+    - path: server/config/project-registry.ts
+      purpose: "listProjects(registry) -> string[] — the loop driver for scan-all, already used by the existing GET /api/projects route."
+    - path: server/routes/projects.ts
+      purpose: "registerProjectRoutes — the file this story adds POST /api/projects/scan-all to and modifies the existing POST /api/projects/:project/ingest handler in. Currently: `scanRepo(db, { repoName: project, repoPath }); return { project, docsScanned }`."
+    - path: server/decision-contract/parser.ts
+      purpose: >
+        parseDecisionPayload(input: string): DecisionPayload | null — 3-tier (structured JSON /
+        fenced ```decision-request block / heuristic markdown extraction) parser, returns null
+        (never throws) when nothing matches. Reused unmodified by the decision_needed pass; its
+        internal FENCED_DECISION_REQUEST_BLOCK regex is not exported, so composePrompt re-runs an
+        equivalent extraction (or falls back to full content) rather than importing a private regex.
+    - path: server/adapters/gitdocs/index.ts
+      purpose: >
+        readGitDoc(repoPath, relPath, ref?) — `git show ref:relPath` via execFileSync (argument-
+        array form, no shell), falling back to readDocContent when ref is omitted. This story's
+        HEAD-diff attempt calls readGitDoc(repoPath, filePath, "HEAD") and must catch its throw
+        (invalid ref / untracked file / not a git repo) rather than let it propagate.
+    - path: web/src/features/docs/textDiff.ts
+      purpose: "computeLineDiff(original, edited) — the exact algorithm this story ports server-side into server/events/diff.ts (LCS-over-lines DP, '  '/'- '/'+ ' line prefixes, opaque-text framing documented in its module comment)."
+    - path: web/src/features/docs/sections.ts
+      purpose: "splitIntoSections(content) — the h1-h3 heading-boundary splitter (content.split(/(?=^#{1,3} )/m), falls back to [content] with no headings) this story ports server-side for the composed_prompt's 'surrounding doc content' section when a doc is large."
+    - path: server/routes/docs.ts
+      purpose: >
+        docItemIdFor(repo, path) = `doc:${repo}:${path}` and its upsert
+        (`INSERT INTO items (...) VALUES (...) ON CONFLICT(id) DO UPDATE SET updated_at =
+        excluded.updated_at`) — the precedent this story's decisionItemId scheme deliberately does
+        NOT reuse the id namespace of (see the decision_needed section above for why), while
+        matching its overall upsert-on-touch shape.
+    - path: server/events/store.ts
+      purpose: "p14-1's createEvent(db, input) — this story's only way to persist a detected event; never a raw INSERT against the events table from detect.ts."
+
+files_to_modify:
+  - file: server/events/diff.ts
+    change: "New file: computeLineDiff, ported from web/src/features/docs/textDiff.ts."
+  - file: server/events/diff.test.ts
+    change: "New file: diff algorithm coverage."
+  - file: server/events/detect.ts
+    change: "New file: detectEvents, the doc_changed and decision_needed passes, composePrompt, the ported section splitter."
+  - file: server/events/detect.test.ts
+    change: "New file: full detection-pass coverage against real temp-dir (and real git) fixtures."
+  - file: server/routes/projects.ts
+    change: "Add POST /api/projects/scan-all; extend POST /api/projects/:project/ingest to run the before/after snapshot + detectEvents and return eventsCreated."
+  - file: server/routes/projects.test.ts
+    change: "Add scan-all coverage (partial failure, eventsCreated) and extend ingest coverage for its now-identical event-detection behavior."
+
+design_decisions:
+  - decision: "detectEvents snapshots doc_index before and after scanRepo's call, in the caller, rather than modifying scanRepo to emit change notifications itself."
+    rationale: "The design doc is explicit: 'no change to scanRepo itself' — scanRepo stays the single, simple, already-tested upsert primitive. A before/after snapshot diff achieves the same detection outcome (which rows actually changed) without adding an event-aware code path inside a function whose whole value is being a small, generic, repo-agnostic scanner."
+  - decision: "decision_needed's tracking item uses a new decisionItemId = `decision:${repo}:${path}` namespace, distinct from docItemIdFor's `doc:${repo}:${path}`."
+    rationale: "Judgment call — the design doc mentions 'no existing open tracking item' but doesn't specify an id scheme. docItemIdFor's existing upsert only refreshes updated_at on conflict, never type or decision_payload, so reusing its id for a decision item would silently fail to carry decision fields whenever a doc-item row already existed at that id (or vice versa). A separate namespace sidesteps the collision entirely rather than teaching docItemIdFor's upsert new conflict-branching logic that every other caller of it (docs.ts's GET /api/docs/content) would need to keep working around."
+  - decision: "'No existing open tracking item' is resolved as a content-hash-scoped drift check against open events (same repo/path/trigger_kind/content_hash), not a bare existence check against the items table."
+    rationale: "A bare existence check ('does any tracking item exist yet, decided or not') would either never re-fire once an item exists (stale forever) or always re-fire on every scan of an untouched-but-still-undecided doc (event spam) — neither matches the operator's resolved staleness policy (Open questions #2: no silent mutation of an open event, but a new event when content drifts further). Scoping the check to content_hash directly encodes that policy instead of approximating it."
+  - decision: "The doc_changed diff's 'prior content' comes from a best-effort git HEAD lookup (readGitDoc(...,\"HEAD\")), not from any newly-added Consus-side content history."
+    rationale: "Judgment call, flagged in the top-level report — doc_index only ever stores a hash, never content, and this epic's search story (p14-4) explicitly avoids adding a new content-index table as a design principle ('no new content index table... consistent with reading content live off disk'). Reusing the existing, already-tested, ref-aware readGitDoc keeps this story from inventing a second, bespoke content-history mechanism just for diffing, at the acknowledged cost of the diff being best-effort (accurate when the prior version was committed and HEAD hasn't since caught up to the new content; a clearly-labeled full-content fallback otherwise) rather than a guaranteed-exact diff against whatever the previous scan actually saw."
+  - decision: "The section splitter for composed_prompt's 'surrounding doc content' is a server-side port of web/src/features/docs/sections.ts's splitIntoSections, not a shared import."
+    rationale: "This repo has no shared code path between web/ and server/ (confirmed by every other cross-boundary case in this codebase, e.g. textDiff.ts's algorithm being reimplemented rather than imported for p8-02's client-side flow) — duplicating one small, pure, already-tested function is the established pattern here, not a gap introduced by this story."
+
+risks:
+  - severity: medium
+    description: "The doc_changed diff-against-HEAD heuristic can be wrong in either direction: if a change was committed and HEAD already reflects it, the fallback (full-content diff) fires even though a real prior version does exist further back in git history; if the working tree has diverged from HEAD in a way unrelated to this specific doc's change, the HEAD comparison could show unrelated noise as part of the diff."
+    mitigation: "Explicitly scoped as best-effort in the design_decisions above and called out in the epic-level report as a judgment call, not a silent gap. The composed_prompt always states plainly which path was taken ('no prior content on record' vs. an actual HEAD-based diff), so a reviewer is never misled about what they're looking at, even when the diff itself is imperfect."
+  - severity: medium
+    description: "detectEvents runs a readDocContent + (for changed files) readGitDoc git-subprocess call per changed/new file, on top of scanRepo's own per-file hash read — for a repo with many changed files in one scan, this roughly doubles or triples the I/O of a plain scanRepo call."
+    mitigation: "Matches the design doc's own flagged risk ('Scan cost at scale... fine for a handful of projects, but dozens of large repos could eventually need a per-repo timeout/skip') — out of scope to solve here; not a regression this story introduces beyond what the design doc already anticipated."
+  - severity: low
+    description: "Two independent copies of the LCS line-diff algorithm (client and server) can drift apart over time if one is changed without the other."
+    mitigation: "Both are small (~40 lines), pure, and covered by their own tests; a drift would only change the cosmetic shape of diff output, never correctness of what triggers an event. Flagged in design_decisions as the deliberate, scoped-for tradeoff over introducing a shared package boundary for one function."
