@@ -44,6 +44,8 @@ build/
 !.pHive/epics/consus-phase13-multirepo-doc-resolution/**
 !.pHive/epics/consus-phase14-multirepo-event-pipeline/
 !.pHive/epics/consus-phase14-multirepo-event-pipeline/**
+!.pHive/epics/consus-phase15-wire-decision-classifier/
+!.pHive/epics/consus-phase15-wire-decision-classifier/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/

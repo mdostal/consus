@@ -1,0 +1,10 @@
+name: consus-phase15-wire-decision-classifier
+title: Wire the decision classifier into the decisions routes
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: tdd
+
+stories:
+  - id: s1-wire-classifier-into-decisions-route
+    title: Call classifyItem from the decisions and event-detection write paths so decision_type/triage_bucket are populated
+    complexity: low
+    depends_on: []
