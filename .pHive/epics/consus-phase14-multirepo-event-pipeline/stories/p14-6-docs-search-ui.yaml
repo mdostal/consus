@@ -1,0 +1,145 @@
+id: p14-6-docs-search-ui
+epic: consus-phase14-multirepo-event-pipeline
+title: A search box wired to GET /api/docs/search, results linking into the existing doc-viewing flow
+status: pending
+complexity: small
+methodology: bdd
+depends_on: [p14-4-docs-cross-repo-search]
+
+description: |
+  The small UI companion to p14-4's `GET /api/docs/search?q=&project=`. Adds a search box to the
+  existing Docs tab (`DocsSection` in web/src/App.tsx) whose results open through the exact same
+  doc-viewing path `DocsSection` already uses for its tree browser — no new doc-viewer, no new
+  content-fetch call.
+
+  ## Where it lives
+
+  `DocsSection` (web/src/App.tsx) already has: a `grouped` doc tree fetched from `GET /api/docs`,
+  an `open(repo, filePath)` function that fetches `GET /api/docs/content?repo=&path=` and sets
+  `openDoc` (which is what renders `DocRenderer`), and renders `DocBrowser` when no doc is open.
+  This story adds a search box above (or alongside) `DocBrowser` in that same not-open-doc render
+  branch. Typing a query and getting results does not require selecting a project first — search is
+  cross-repo by default (matching `GET /api/docs/search`'s own no-`project`-required default),
+  though `DocsSection` already renders the same "All docs" cross-repo view unscoped, so this is
+  consistent with what's already on screen.
+
+  ## New component: web/src/features/docs/DocSearch.tsx
+
+  A small presentational component: a text input, debounced (e.g. ~300ms — this codebase has no
+  existing debounce utility to reuse, so a small local `useEffect` + `setTimeout` debounce is
+  written inline, not a new shared utility for one call site) so the search endpoint isn't hit on
+  every keystroke (per p14-4's own documented risk: "a UI without debouncing... repeated
+  full-corpus disk reads"), and a results list. Props: `onSearch(query): void` (fires the debounced
+  fetch upward — `DocSearch` does not own the fetch itself, matching `DocBrowser`'s existing
+  fetch-stays-in-the-parent-Section convention) and `results: DocSearchResult[] | null` (null =
+  no search performed yet / query cleared; empty array = searched, no matches), plus
+  `onOpen(repo, filePath): void` — wired directly to `DocsSection`'s existing `open` function,
+  the same callback shape `DocBrowser`'s `onOpen` prop already uses, so a search result opens a
+  doc exactly the same way a tree-browser click does.
+
+  Each result row shows repo, file_path, and which dimension(s) matched (`matched: ["path"]` /
+  `["content"]` / `["path","content"]` from p14-4's response) — e.g. a small "path match" / "content
+  match" badge, no snippet/excerpt (p14-4 doesn't return one).
+
+  Clearing the search box (empty query) returns to the plain `DocBrowser` tree view — search is
+  additive to the existing browse flow, never a replacement mode the operator gets stuck in.
+
+acceptance_criteria:
+  - given: The Docs tab is open showing the existing doc tree, with no search performed yet.
+    when: The section renders.
+    then: A search box is visible above/alongside the existing DocBrowser tree, and the tree itself is unchanged from its current behavior.
+
+  - given: The operator types a query into the search box.
+    when: They stop typing (debounce elapses).
+    then: GET /api/docs/search?q=<query> fires exactly once for that pause in typing (not once per keystroke), and matching results render below the search box.
+
+  - given: Search results are showing.
+    when: The operator clicks a result row.
+    then: The same doc-open flow DocBrowser's tree already uses fires (GET /api/docs/content?repo=&path=), and DocRenderer opens showing that doc's content — identical to opening the same doc from the tree view.
+
+  - given: A search query with no matches.
+    when: The debounced fetch resolves.
+    then: An empty-results message is shown (not a blank silent area, and not an error) distinct from the "no docs indexed yet" empty state DocsSection already shows when doc_index itself is empty.
+
+  - given: The operator clears the search box back to empty.
+    when: The input becomes empty.
+    then: The results list disappears and the plain DocBrowser tree view is shown again, with no stale results left visible.
+
+  - given: A search request fails (network error or non-2xx response).
+    when: The failure occurs.
+    then: A visible error message is shown near the search box, and the existing DocBrowser tree remains usable underneath (a failed search never blocks browsing).
+
+  - given: A result whose matched array is ["content"] only (no path/repo match).
+    when: It renders.
+    then: It is visually indicated as a content-only match (not indistinguishable from a path match), so the operator understands why a seemingly-unrelated file path appeared in results.
+
+steps:
+  - id: step-1
+    description: >
+      Add web/src/features/docs/DocSearch.tsx: a controlled text input with an internal ~300ms
+      debounce (local useState for the raw input value, a useEffect with setTimeout/clearTimeout
+      keyed on that value calling the debounced onSearch(query) prop — clearing to empty calls
+      onSearch("") so the parent knows to drop back to the tree view), and a results list rendering
+      repo/file_path/matched-dimension badges with each row wired to the onOpen(repo, filePath)
+      prop.
+    agent: developer
+
+  - id: step-2
+    description: >
+      Wire DocSearch into DocsSection (web/src/App.tsx): local state for the current search query,
+      results (DocSearchResult[] | null), and error; onSearch triggers GET /api/docs/search?q=
+      (skipping the fetch entirely and clearing results back to null when query is empty, so an
+      empty query never hits the network); pass the existing `open` function through as onOpen
+      unchanged (no new doc-fetch code path). Render DocSearch above DocBrowser; when results is
+      non-null, show DocSearch's results list in place of (or alongside — implementer's choice,
+      acceptance criteria only require the tree remains reachable once the query is cleared) the
+      tree.
+    agent: developer
+
+  - id: step-3
+    description: >
+      Add web/src/features/docs/DocSearch.test.tsx (testing-library, mirroring
+      DocBrowser.test.tsx's style) covering: debounce behavior (fake timers — one onSearch call
+      per pause, not per keystroke), empty-query clearing results, a result row's onOpen firing
+      with the correct repo/file_path, and the content-only-match badge rendering distinctly from
+      a path-match badge. Extend DocsSection's existing test coverage (wherever DocsSection is
+      currently tested — check App.test.tsx or an equivalent) for the fetch-on-search, error, and
+      empty-results-message behavior, and for search results correctly falling back to DocBrowser
+      once the query is cleared.
+    agent: developer
+
+context:
+  key_files:
+    - path: web/src/App.tsx
+      purpose: >
+        DocsSection's existing shape (the `open(repo, filePath)` function, the `grouped`/`openDoc`
+        state, the DocBrowser render branch at the bottom when no doc is open) — this story adds
+        search state and a DocSearch render alongside that existing branch, reusing `open`
+        unchanged as the result-click handler.
+    - path: server/routes/docs.ts
+      purpose: >
+        p14-4's GET /api/docs/search contract this component's fetch must match: query params
+        q (required) and project (optional, not used by this story — DocsSection's Docs tab is
+        already the cross-repo view, so no project scoping UI is added here), response `{ query,
+        results: [{ repo, file_path, epic, phase, matched, content_hash, last_scanned_at }] }`.
+    - path: web/src/features/docs/DocBrowser.tsx
+      purpose: >
+        The existing onOpen(repo, filePath) callback contract this story's DocSearch results reuse
+        verbatim — search results and tree-browser clicks both end up calling the exact same
+        function in DocsSection, so there is only one doc-opening code path in the whole Docs tab.
+
+files_to_modify:
+  - web/src/App.tsx (DocsSection: search state, fetch, render DocSearch)
+  - web/src/features/docs/DocSearch.tsx (new)
+  - web/src/features/docs/DocSearch.test.tsx (new)
+
+design_decisions:
+  - decision: "DocSearch debounces internally with a local setTimeout-based effect rather than a new shared debounce utility."
+    rationale: "This codebase has no existing debounce helper and only one call site needs one; adding a shared utility for a single ~10-line inline effect would be speculative infrastructure the design doc's own scoping principle ('a heavier search infrastructure is a reasonable future upgrade, not a blocker here') argues against."
+  - decision: "Search results and the doc tree can coexist on screen (implementer's choice) rather than this story mandating one replaces the other, as long as clearing the query always returns to a state where the tree is reachable."
+    rationale: "The acceptance criteria are written to allow either layout since the design doc doesn't prescribe one, and prescribing one here would be inventing UI polish decisions beyond this story's real requirement: results must link into the existing view flow, and clearing search must never strand the operator in a dead-end search-only view."
+
+risks:
+  - severity: low
+    description: "No result ranking or snippet/excerpt exists (p14-4 doesn't return one), so a content-only match gives the operator no visual clue about *where* in the doc the match occurred beyond the matched-dimension badge."
+    mitigation: "Matches p14-4's explicitly scoped-out ranking/excerpting; opening the doc (one click away, same as any other result) is how the operator confirms the match today — acceptable for this story's scope, a reasonable follow-on if it proves insufficient in practice."

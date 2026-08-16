@@ -1,0 +1,173 @@
+id: p14-4-docs-cross-repo-search
+epic: consus-phase14-multirepo-event-pipeline
+title: "GET /api/docs/search — path/repo substring match against doc_index plus an on-demand live-content match, no new index table"
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: []
+
+description: |
+  Independent of the events work (p14-1..p14-3) — this story only touches the existing doc index
+  and the existing docs routes. Delivers the "Find/search across all docs" scope the operator added
+  (docs/design-discussion.md, "Additional scope added by the operator"): "A cross-repo text search
+  over doc_index (title/path today; content would need either storing doc content or re-reading
+  each file at search time — the latter is simpler and consistent with 'read live off disk'
+  elsewhere in Consus... Scope this epic's search to what doc_index already has indexed (path/repo/
+  phase) plus a live grep-on-demand for content matches, rather than building a new full-text index
+  table."
+
+  New route on the existing server/routes/docs.ts (registerDocRoutes, alongside `GET /api/docs`,
+  `GET /api/docs/content`, `GET /api/docs/resolve` — this is a fourth route in the same file, same
+  `DocRoutesOptions { db, repos }`, no new option needed):
+
+  `GET /api/docs/search?q=<text>&project=<optional>`
+
+  - `q` is required (400 if missing/empty — matching `GET /api/docs/resolve`'s implicit requirement
+    that `text` be meaningful, though that route doesn't currently 400 on empty; this route should,
+    since an empty query against every doc's content would be a wasteful, meaningless full scan).
+  - `project` is optional, narrows to one repo — same convention as `GET /api/docs?project=`.
+
+  Two independent match dimensions, over every `doc_index` row in scope (optionally narrowed by
+  `project`):
+
+  1. **Path/repo match** — case-insensitive substring match of `q` against the row's `repo` or
+     `file_path` (`LOWER(repo) LIKE '%' || LOWER(?) || '%' OR LOWER(file_path) LIKE '%' ||
+     LOWER(?) || '%'` — parameterized, `q` never concatenated into the SQL string itself). Pure SQL
+     against the existing index, no disk I/O.
+  2. **Live content match** — for every doc_index row currently in scope (all of them, not just the
+     ones that already matched by path — a doc can match on content with a completely unrelated
+     path/repo name), read its content live via the existing `readDocContent(repoPath, file_path)`
+     (server/adapters/doc-scanner/index.ts, already used by `GET /api/docs/content`) and check for
+     a case-insensitive substring match of `q`. No new content-index table, no persisted content —
+     read fresh on every search call, exactly matching the design doc's "read live off disk"
+     framing and how `GET /api/docs/content` already works.
+
+  A doc can match on path, content, both, or neither. Response shape — one entry per doc that
+  matched at least one dimension, deduplicated by (repo, file_path):
+
+  ```json
+  {
+    "query": "decision-request",
+    "results": [
+      {
+        "repo": "consus",
+        "file_path": ".pHive/planning/roadmap.md",
+        "epic": null,
+        "phase": "planning",
+        "matched": ["path"],
+        "content_hash": "...",
+        "last_scanned_at": "..."
+      },
+      {
+        "repo": "consus",
+        "file_path": ".pHive/epics/consus-phase10-.../docs/design-discussion.md",
+        "epic": "consus-phase10-decision-parser-tiers",
+        "phase": "docs",
+        "matched": ["content"],
+        "content_hash": "...",
+        "last_scanned_at": "..."
+      }
+    ]
+  }
+  ```
+
+  `matched` is an array containing `"path"` and/or `"content"` so the UI (p14-6) can show why a
+  result surfaced. Results are not ranked/scored beyond this — this story does not build relevance
+  ranking, snippet/excerpt extraction, or highlighting; a plain match/no-match per dimension, per
+  the design doc's explicit "a heavier search infrastructure is a reasonable future upgrade, not a
+  blocker here."
+
+  A repo missing from the `repos` map (shouldn't happen for a row already in doc_index, since
+  doc_index is only ever populated by scanRepo against a configured repo, but defensively) skips
+  the content-read dimension for that row rather than throwing — path/repo matching still applies
+  from the indexed row alone, content matching is simply unavailable for it.
+
+acceptance_criteria:
+  - "Given doc_index rows across two repos where one repo's name contains the query substring and the other's doesn't, when GET /api/docs/search?q=<substring> is called, then only rows from the matching repo appear via a path match (matched includes 'path'), assuming no unrelated content matches also fire."
+  - "Given a doc whose file_path contains the query substring case-insensitively (e.g. query 'ROADMAP' matching 'roadmap.md'), when searched, then it appears with matched including 'path'."
+  - "Given a doc whose file_path and repo do NOT contain the query substring, but whose live file content does, when searched, then it still appears in results with matched including 'content' (and not 'path')."
+  - "Given a doc that matches both dimensions, when searched, then it appears exactly once (not twice) with matched containing both 'path' and 'content'."
+  - "Given GET /api/docs/search?q=<substring>&project=<repo>, then only that repo's docs are considered for both dimensions, matching GET /api/docs?project= 's scoping convention."
+  - "Given GET /api/docs/search with q missing or an empty string, then the response is 400, not a 200 listing every indexed doc."
+  - "Given GET /api/docs/search?q=<text with no matches anywhere>, then the response is 200 with an empty results array, not a 404 or error."
+  - "Given a doc_index row whose underlying file has since been deleted from disk (readDocContent would throw ENOENT), when searched, then that row's content dimension is skipped without erroring the whole request — it can still appear via a path match, and the request as a whole still returns 200."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Extend server/routes/docs.test.ts (existing file, existing two-repo fixture pattern
+      already used by its other describe blocks) with a new describe block for GET
+      /api/docs/search covering every acceptance criterion above: path-only match, content-only
+      match, both-match dedup, project scoping, missing/empty q returning 400, no-match returning
+      an empty array, and a deleted-file-on-disk case (write a file, scan it so it lands in
+      doc_index, then rmSync it before the search call) not erroring the request.
+    agent: tester
+  - id: implement-search-route
+    description: >
+      Add GET /api/docs/search to server/routes/docs.ts: validate q (400 if missing/empty), query
+      doc_index for the path/repo match (parameterized LIKE, optionally scoped by project) as one
+      pass, then iterate every in-scope doc_index row for the content-match pass using
+      readDocContent(repos[row.repo], row.file_path) wrapped in a try/catch that skips (not
+      throws) on a read failure, merge the two match sets by (repo, file_path) into the response
+      shape above. Make the new docs.test.ts specs pass without modifying any existing route's
+      behavior in that file.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: review
+    description: >
+      Review the new route specifically for: the LIKE query using parameterized placeholders for
+      q (never string-concatenated, including the LOWER()-wrapped form), the content-read pass
+      being wrapped so a single unreadable file can't 500 the whole search, and that project
+      scoping is applied identically to both the path-match SQL and the content-match iteration
+      (not just one of the two, which would silently leak cross-project content matches when
+      project= is supplied).
+    agent: reviewer
+    depends_on: [implement-search-route]
+  - id: integrate
+    description: Commit the new route and its tests.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: server/routes/docs.ts
+      purpose: >
+        registerDocRoutes — the file this story adds GET /api/docs/search to, as a fourth route
+        alongside the existing GET /api/docs, GET /api/docs/content, GET /api/docs/resolve. Reuses
+        the same DocRoutesOptions { db, repos } already threaded through every route in this file;
+        `repos[repo]` is how a doc_index row's repo name resolves to an absolute path for the
+        content-read pass, exactly as GET /api/docs/content already does (`const repoPath =
+        repos[repo]`).
+    - path: server/adapters/doc-scanner/index.ts
+      purpose: >
+        queryDocIndex(db, repoName) and readDocContent(repoPath, relFilePath) — both reused
+        unmodified. doc_index's actual columns (repo, epic, phase, file_path, content_hash,
+        last_scanned_at) are exactly what this route's path-match SQL runs against and what each
+        result row echoes back.
+    - path: server/routes/docs.test.ts
+      purpose: >
+        Existing test file (mkdtempSync two-repo fixture: repoDir/otherRepoDir, each with a
+        .pHive/planning doc, scanRepo'd in beforeEach) this story's new describe block sits
+        alongside, reusing the same fixture rather than building a new one.
+
+files_to_modify:
+  - file: server/routes/docs.ts
+    change: "Add GET /api/docs/search?q=&project= — path/repo SQL match + live content-read match, merged and deduplicated by (repo, file_path)."
+  - file: server/routes/docs.test.ts
+    change: "Add a GET /api/docs/search describe block covering the acceptance criteria above."
+
+design_decisions:
+  - decision: "Content matching re-reads every in-scope doc's file live on every search call, with no caching layer and no new persisted index."
+    rationale: "Directly what the design doc specifies as the resolved scope ('the latter is simpler and consistent with read live off disk elsewhere in Consus... rather than building a new full-text index table'). Doc counts under this epic's scan roots (.pHive/planning, .pHive/epics/**) are small per-repo, so an O(indexed docs) read-and-scan per search is acceptable at the scale already assumed throughout this design doc; a real index is explicitly deferred as future work, not a gap in this story."
+  - decision: "No relevance ranking, snippet extraction, or highlighting — results are an unordered/insertion-order list with a matched: [\"path\"|\"content\"] tag per hit."
+    rationale: "The design doc's own scoping line ('a heavier search infrastructure is a reasonable future upgrade, not a blocker here') draws this exact line; building ranking or excerpting would be scope beyond what was asked for six-item split, and p14-6 (the UI story) doesn't require either to present usable results — a flat list linking into the existing doc-viewing flow is enough."
+  - decision: "A doc_index row whose file can't be read live (deleted, permissions) skips only the content dimension for that row rather than failing the whole search request."
+    rationale: "Consistent with p14-2's scan-all requirement that one bad repo/file never aborts the whole operation — the same 'isolate failures, keep going' posture applied at the per-file level here, since a stale doc_index row (file deleted after last scan, not yet re-scanned) is an expected, not exceptional, situation in a system with an explicitly operator-triggered (not continuous) scan model."
+
+risks:
+  - severity: medium
+    description: "Every search call does an O(total indexed docs across scope) live file read, which scales with total doc count regardless of how selective the query text is — a broad or accidentally-frequent search (e.g. a UI without debouncing) could mean repeated full-corpus disk reads."
+    mitigation: "Acceptable at this epic's stated scale (documented risk already accepted at the design-doc level for scan-all's larger cost; this is strictly smaller, read-only, no hashing). p14-6 (search UI) is expected to debounce input rather than searching on every keystroke, but that's that story's concern, not a blocker to this one shipping a correct backend."
+  - severity: low
+    description: "A query string that happens to be a SQL LIKE wildcard character (% or _) is not escaped, so a user searching for a literal '%' or '_' gets LIKE's wildcard semantics instead of a literal match."
+    mitigation: "Cosmetic-only edge case (broader matches than intended, never an error or security issue, since the value is still parameterized — never string-concatenated). Out of scope to add LIKE-escaping for this story; flagged here rather than silently ignored."

@@ -1,0 +1,238 @@
+id: p14-5-events-view-ui
+epic: consus-phase14-multirepo-event-pipeline
+title: New Events section in the web app — list, filters, sort, scan-all button, status controls, archived view, and a propose-a-change handoff per event
+status: pending
+complexity: large
+methodology: bdd
+depends_on: [p14-3-events-http-routes]
+
+description: |
+  The UI surface over p14-3's routes (GET /api/events, GET /api/events/history, PATCH
+  /api/events/:id/status, POST /api/events/:id/propose). A new top-level tab, matching the existing
+  `decisions | projects | kb | docs` pattern in web/src/App.tsx (`type Tab`, `TABS`, the
+  `tab === "..."` render switch at the bottom of `App()`).
+
+  ## New tab: "events"
+
+  `Tab` gains `"events"`; `TABS` gains `{ id: "events", label: "Events" }`; the render switch gains
+  `{tab === "events" ? <EventsSection /> : null}`. `EventsSection` is defined directly in App.tsx,
+  matching the existing convention (`DecisionsSection`, `ProjectsSection`, `KbSection`,
+  `DocsSection` are all plain functions inside App.tsx, each composing smaller presentational
+  components imported from web/src/features/<domain>/) — not extracted into its own file, keeping
+  the same shape as its three siblings.
+
+  `EventsSection` owns: the current `project`/`status`/`sort`/`order` filter state, whether the
+  archived view is showing, the fetched event list, the scan-all trigger + its in-flight/error
+  state, and which event (if any) has its propose-composer open.
+
+  ## New presentational components (web/src/features/events/)
+
+  - **EventsList.tsx** — renders the filtered/sorted event array as rows (project, trigger_kind,
+    source_repo/source_path, detected_at, current status), a per-row status control (the four
+    values `new | in_progress | done | dismissed`, e.g. a `<select>` — implementer's choice of
+    exact control, but it must expose all four values and call back with the new one), and a
+    per-row "Propose a change" button that's disabled/absent when the event's `diff` is null
+    (decision_needed events — matching p14-3's own 400-on-no-diff rule, the UI shouldn't offer an
+    action the backend will reject). Mirrors `DocBrowser.tsx`'s shape: a `grouped`/`events` data
+    prop in, callback props out (`onStatusChange`, `onPropose`), no internal data fetching.
+  - **EventProposeComposer.tsx** — the pre-filled propose form p14-5's task description calls for
+    ("opens the existing propose-a-change composer pre-filled with the event's stored diff"). This
+    is **not** a literal reuse of `DocRenderer.tsx`'s edit/fire form — that form computes a diff
+    from a user's in-place textarea edit against original section content (`computeLineDiff(section,
+    draft)`), which has no meaning here: an event's diff is already computed and stored server-side
+    by p14-2, and this composer never lets the operator edit doc content. Instead,
+    `EventProposeComposer` reuses the *same interaction shape* DocRenderer already established for
+    proposing a change — a read-only diff display, a required description `<input>`, a Cancel and a
+    "Propose" button, the Propose button disabled until description is non-empty (mirroring
+    DocRenderer's `disabled={!hasChanges || !state.description.trim()}` pattern, minus the
+    `hasChanges` check since the diff here is fixed, not user-edited) — and on submit calls the new
+    `POST /api/events/:id/propose` route (`{ description, requestedBy: "Mathew" }`, matching every
+    other propose-style call site's hardcoded `requestedBy` in this codebase, e.g.
+    `ProjectDiagram`'s and `DocsSection`'s existing `proposeChange` callbacks) instead of
+    `POST /api/proposals` directly. This is a documented judgment call — see design_decisions.
+
+  ## Filters + sort
+
+  Controls for `project` (a dropdown sourced from the existing `GET /api/projects` list, plus an
+  "All projects" option — matching `ProjectsSection`'s existing all/one-project nav pattern),
+  `status` (the four values plus "All statuses"), and sort (`detected_at | status | project`) +
+  order (`asc | desc`) — every change re-fetches `GET /api/events` with the corresponding query
+  params, matching how `KbSection`'s `load(query, collection)` already rebuilds a `URLSearchParams`
+  per filter change.
+
+  ## Scan-all button
+
+  A button (e.g. "Scan all projects") that calls `POST /api/projects/scan-all`, shows an
+  in-flight/disabled state while running, surfaces any error, and on success re-fetches the current
+  event list (and, since scan-all also touches doc_index, the same "just ran a scan" refresh
+  pattern `ProjectsSection`'s `ingestRepo` already uses via its `refreshToken` state). This sits
+  **alongside**, not replacing, `ProjectsSection`'s existing per-project "Ingest repo" button — both
+  remain independently clickable, per the operator's resolved "all three granularities coexist"
+  decision. Placing the scan-all button inside `EventsSection` (not `ProjectsSection`) is this
+  story's call, reasoned in design_decisions below.
+
+  ## Archived view
+
+  A toggle/tab-within-the-tab (e.g. "Active" / "Archived" sub-nav, matching `ProjectsSection`'s
+  "All projects" / per-project button-row nav visual pattern) that switches the list's data source
+  between `GET /api/events` and `GET /api/events/history`, using the same filter/sort state for
+  both (only the archived flag differs, matching p14-3's route design). The per-row status control
+  and propose action remain available in the archived view too (an operator can move a dismissed
+  event back to new/in_progress directly from the archive, which p14-3's PATCH route already
+  supports and p14-1's archived_at-clearing rule already handles).
+
+acceptance_criteria:
+  - given: The Events tab is opened for the first time with no filters applied and events exist across two projects.
+    when: The section loads.
+    then: GET /api/events is called with no query params, and every non-archived event across both projects renders as a row (project, trigger_kind, source path, detected_at, status all visible).
+
+  - given: The Events tab is open with events present.
+    when: The operator selects a specific project in the project filter.
+    then: GET /api/events?project=<that project> is re-fetched and only that project's events render; selecting "All projects" again re-fetches with no project param.
+
+  - given: The Events tab is open.
+    when: The operator changes the status filter to "in_progress" and/or changes sort to "status" with order "asc".
+    then: GET /api/events is re-fetched with the corresponding status/sort/order query params, and the rendered list reflects the new filter/order.
+
+  - given: The Events tab is open showing the active (non-archived) list.
+    when: The operator clicks "Scan all projects".
+    then: POST /api/projects/scan-all fires, the button shows an in-flight state until it resolves, and on success the event list re-fetches (any newly-detected events appear without a manual page reload); a per-project failure reported in the response's results array is surfaced as a visible (non-blocking) warning rather than silently swallowed.
+
+  - given: An event row with status "new".
+    when: The operator changes its status control to "in_progress".
+    then: "PATCH /api/events/:id/status fires with body { status: \"in_progress\" }, the row updates to reflect the new status without a full list re-fetch being required for that row's own state, and the row remains visible in the active list (not archived)."
+
+  - given: An event row with status "new" or "in_progress".
+    when: The operator changes its status control to "done" or "dismissed".
+    then: PATCH /api/events/:id/status fires, and the row disappears from the active list view (it is now archived) — reflected either by an optimistic removal or by a re-fetch of the active-list query, either implementation acceptable as long as the operator doesn't have to manually refresh to see it leave the active queue.
+
+  - given: The operator switches to the Archived view.
+    when: The view loads.
+    then: GET /api/events/history is called (with whatever project/status/sort/order filters are currently selected) and only archived (done/dismissed) events render.
+
+  - given: The Archived view is showing an event with status "dismissed".
+    when: The operator changes its status control back to "new" or "in_progress".
+    then: PATCH /api/events/:id/status fires, and the row disappears from the archived view (it is no longer archived).
+
+  - given: An event row for a doc_changed event (non-null diff).
+    when: The operator clicks its "Propose a change" action.
+    then: EventProposeComposer opens pre-filled with that event's stored diff shown read-only and an empty, required description field; the Propose button is disabled until a description is entered.
+
+  - given: The EventProposeComposer is open for an event, with a description entered.
+    when: The operator clicks "Propose".
+    then: POST /api/events/:id/propose fires with { description, requestedBy }, and on success the composer closes and the event row reflects that it now has an associated proposal (e.g. a visible indicator/pill), without requiring navigation to the Docs tab or DiagramView.
+
+  - given: An event row for a decision_needed event (null diff).
+    when: The row renders.
+    then: No "Propose a change" action is offered for that row (or it is present but disabled) — the UI never lets the operator trigger a request p14-3's backend would reject with 400.
+
+  - given: POST /api/projects/scan-all or POST /api/events/:id/propose fails (network error or non-2xx response).
+    when: The failure occurs.
+    then: A visible error message is shown near the action that failed, and no part of the UI is left in a silently-stuck loading state.
+
+steps:
+  - id: step-1
+    description: >
+      Add web/src/features/events/EventsList.tsx: a presentational component taking an events
+      array, the current view mode (active/archived, purely for empty-state copy — filtering
+      itself already happened server-side), and onStatusChange(id, status)/onPropose(event)
+      callbacks; renders one row per event with a status <select> (all four values) and a
+      conditionally-rendered "Propose a change" button (present only when event.diff is not null).
+    agent: developer
+
+  - id: step-2
+    description: >
+      Add web/src/features/events/EventProposeComposer.tsx: takes the target event (diff,
+      composed_prompt optionally shown for extra context, source_repo/source_path for a header),
+      onCancel, and onSubmit(description) callbacks; renders the diff read-only (e.g. a <pre>,
+      matching how diffs are already opaque text everywhere else in this codebase — no diff-syntax
+      highlighting required), a required description input, and Cancel/Propose buttons with
+      Propose disabled until description is non-empty.
+    agent: developer
+
+  - id: step-3
+    description: >
+      Add EventsSection to web/src/App.tsx: fetch state for events (keyed by current filters +
+      active/archived mode), the project list (reuse the existing GET /api/projects fetch pattern
+      already in ProjectsSection — a second independent fetch is fine, matching how DocsSection and
+      ProjectsSection each already fetch overlapping data independently rather than sharing a
+      cache), filter/sort controls wired to re-fetch on change, the scan-all button and its
+      in-flight/error state, the active/archived sub-nav, and wiring EventsList's callbacks to
+      PATCH /api/events/:id/status and to opening EventProposeComposer (tracked as
+      `proposingEvent: EventRow | null` local state) which itself calls POST
+      /api/events/:id/propose on submit and closes + refetches on success.
+    agent: developer
+
+  - id: step-4
+    description: >
+      Wire the new tab into web/src/App.tsx's shell: add "events" to the Tab union, add its entry
+      to the TABS array, add the `{tab === "events" ? <EventsSection /> : null}` render branch,
+      matching the existing three siblings exactly in structure.
+    agent: developer
+
+  - id: step-5
+    description: >
+      Add web/src/features/events/EventsList.test.tsx and EventProposeComposer.test.tsx (component-
+      level, mirroring DocBrowser.test.tsx/DocRenderer.test.tsx's existing testing-library style)
+      plus new App.test.tsx coverage (or a dedicated EventsSection describe block, matching however
+      App.tsx's existing sections are currently tested — check the existing test file first) for
+      every acceptance criterion above: filter/sort re-fetch params, scan-all in-flight/success/
+      partial-failure states, status-change causing a row to leave the active list and appear in
+      the archived list (and back), the diff-null row hiding the propose action, and the composer's
+      full submit flow including its disabled-until-description-entered gate.
+    agent: developer
+
+context:
+  key_files:
+    - path: web/src/App.tsx
+      purpose: >
+        The Tab union, TABS array, and tab-switch render block this story extends (see lines
+        ~763-770 and ~861-864 for the exact current shape). ProjectsSection (project-scoped nav +
+        "Ingest repo" button + refreshToken pattern for re-fetching after a scan) and DocsSection
+        (fetch + open-a-doc + proposeChange-via-POST-/api/proposals pattern) are this story's two
+        closest structural precedents — EventsSection is built the same way: local fetch state, a
+        useCallback load function, filter-driven re-fetch via useEffect dependencies.
+    - path: web/src/features/docs/DocRenderer.tsx
+      purpose: >
+        The existing propose-a-change interaction shape (description input, disabled-until-valid
+        submit button, Cancel) this story's EventProposeComposer mirrors in spirit but does not
+        literally reuse — DocRenderer's diff is computed client-side from an edited textarea
+        against original section text (`computeLineDiff(section, state.draft)`), which has no
+        equivalent here since an event's diff is already fixed, server-composed data (p14-2). Do
+        not attempt to route event-proposing through DocRenderer's existing onProposeChange prop —
+        it expects to be given a doc's content to render/edit, not a pre-computed diff.
+    - path: server/routes/events.ts
+      purpose: >
+        p14-3's route contracts this story's fetches must match exactly: GET /api/events?project=&
+        status=&sort=&order= (200, array-shaped under a `results`-or-bare-array key — confirm the
+        exact response envelope p14-3 shipped with before wiring fetch calls), GET
+        /api/events/history with the same params, PATCH /api/events/:id/status with body {status},
+        POST /api/events/:id/propose with body {description, requestedBy} returning {event,
+        proposal}.
+    - path: server/routes/projects.ts
+      purpose: "p14-2's POST /api/projects/scan-all — response shape { results: [{ project, ok, docsScanned?, eventsCreated?, error? }] } this story's scan-all button must handle, including surfacing a per-project ok:false entry as a visible (non-fatal) warning."
+    - path: web/src/features/docs/DocBrowser.tsx
+      purpose: "The closest existing precedent for EventsList's shape: a pure presentational component taking a data prop and callback props, no internal fetching — this story's EventsList follows the same division of responsibility (EventsSection fetches, EventsList renders)."
+
+files_to_modify:
+  - web/src/App.tsx (Tab union, TABS, EventsSection, render branch)
+  - web/src/features/events/EventsList.tsx (new)
+  - web/src/features/events/EventsList.test.tsx (new)
+  - web/src/features/events/EventProposeComposer.tsx (new)
+  - web/src/features/events/EventProposeComposer.test.tsx (new)
+
+design_decisions:
+  - decision: "EventProposeComposer is a new, purpose-built component — not a reuse of DocRenderer's edit/fire form — sharing only the interaction pattern (read-only diff + required description + disabled-until-valid submit)."
+    rationale: "Judgment call, flagged in the epic-level report. The task description says 'opens the existing propose-a-change composer pre-filled with the event's stored diff,' but the only existing composer (DocRenderer's per-section edit form) is built around computing a diff from a live textarea edit against original content — there is no original content or edit surface for an already-detected, already-diffed event to plug into. Building a new, smaller component that mirrors the same visual/interaction contract (and calls the analogous new backend route) delivers the same operator experience ('a familiar propose flow, pre-filled, one click from the event') without forcing an awkward reuse of a component whose core mechanic (diff-from-edit) doesn't apply here."
+  - decision: "The scan-all button lives in EventsSection, not ProjectsSection (where the existing per-project 'Ingest repo' button already lives)."
+    rationale: "Judgment call. The task description says scan-all is 'kept alongside, not replacing, the existing single-project ingest button' but doesn't specify which section hosts it. Placing it in EventsSection puts the action next to its most direct consequence (new events appearing) and keeps ProjectsSection's existing per-project-scoped UI model (pick a project, act on it) undisturbed by a cross-project action that doesn't fit that model. ProjectsSection's per-project ingest button is unmodified by this story."
+  - decision: "The active/archived toggle re-fetches from two different endpoints (GET /api/events vs GET /api/events/history) using shared filter state, rather than fetching everything once and filtering client-side."
+    rationale: "Matches p14-3's own routing decision (two distinct routes, not a single route with a client-filterable archived flag) and keeps the UI from ever holding a full history of every archived event in memory just to filter it away — for a table explicitly expected to grow without bound (design doc's risk: 'nothing deletes/expires events automatically... likely at higher volume than proposals'), fetching only the currently-relevant slice is the safer default."
+
+risks:
+  - severity: medium
+    description: "This is real new UI surface (filters, sort, two views, a scan-all action, a second composer component) — the acceptance criteria above describe behavior thoroughly but leave several concrete widget choices (select vs. button-group for status, exact placement of the archived toggle) to the implementer, which could produce a visually rougher first pass than the rest of the app's existing polish."
+    mitigation: "Matches the design doc's own flagged risk ('UI complexity... the piece most likely to expand once built') — explicitly acceptable for this story to ship a functionally-complete but visually plain first pass; a follow-on polish pass is reasonable, not a blocker to this story's acceptance criteria, none of which mandate specific visual treatment."
+  - severity: low
+    description: "EventsSection fetches the project list independently of ProjectsSection's own GET /api/projects fetch — no shared cache, so both sections re-fetch the same data when both have been visited in a session."
+    mitigation: "Matches this codebase's existing pattern exactly (DocsSection and ProjectsSection already both independently fetch overlapping data with no shared cache) — not a new inefficiency introduced by this story, and out of scope to add cross-section state sharing here."

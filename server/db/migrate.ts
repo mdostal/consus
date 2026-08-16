@@ -121,6 +121,34 @@ export function runMigration(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_proposals_item_id ON proposals(item_id);
+
+    -- p14-1: a pre-decision review-queue item, deliberately separate from
+    -- proposals — an event may never become a proposal at all. Detected by
+    -- the (not-yet-built) multi-repo scan/detection step and surfaced to an
+    -- operator for triage; updateEventStatus (server/events/store.ts) is
+    -- what drives archived_at as status moves in/out of the terminal
+    -- done/dismissed states.
+    CREATE TABLE IF NOT EXISTS events (
+      id TEXT PRIMARY KEY,
+      project TEXT NOT NULL,
+      trigger_kind TEXT NOT NULL CHECK(trigger_kind IN ('doc_changed', 'decision_needed')),
+      source_repo TEXT NOT NULL,
+      source_path TEXT NOT NULL,
+      content_hash TEXT NOT NULL,
+      previous_hash TEXT,
+      diff TEXT,
+      item_id TEXT REFERENCES items(id),
+      composed_prompt TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new','in_progress','done','dismissed')),
+      detected_at TEXT NOT NULL,
+      status_updated_at TEXT NOT NULL,
+      archived_at TEXT,
+      proposal_id TEXT REFERENCES proposals(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_events_project ON events(project);
+    CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
+    CREATE INDEX IF NOT EXISTS idx_events_archived_at ON events(archived_at);
   `);
 
   // Guarded ALTER TABLE for columns added after a table already existed on
