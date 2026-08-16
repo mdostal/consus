@@ -151,3 +151,18 @@ export function updateEventStatus(
 export function getEvent(db: Database.Database, id: string): EventRow | undefined {
   return db.prepare("SELECT * FROM events WHERE id = ?").get(id) as EventRow | undefined;
 }
+
+/** p14-3's final write in the "graduate an event into a proposal" flow —
+ *  records the newly created proposal's id back onto the event row. Direct,
+ *  single-purpose write; no other field changes (status transitions are a
+ *  separate, independently-triggered call — see updateEventStatus). */
+export function setEventProposalId(db: Database.Database, id: string, proposalId: string): EventRow | null {
+  const existing = getEvent(db, id);
+  if (!existing) {
+    return null;
+  }
+
+  db.prepare("UPDATE events SET proposal_id = ? WHERE id = ?").run(proposalId, id);
+
+  return getEvent(db, id) as EventRow;
+}

@@ -10,6 +10,7 @@ import { registerInteractionRoutes } from "./routes/interactions.js";
 import { registerProposalRoutes } from "./routes/proposals.js";
 import { registerDiagramRoutes } from "./routes/diagrams.js";
 import { registerAuditTrailRoutes } from "./routes/audit-trail.js";
+import { registerEventRoutes } from "./routes/events.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
 import { StdioHarnessTransport, NOOP_HARNESS_TRANSPORT, type HarnessTransport } from "./harness/transport.js";
 
@@ -40,6 +41,7 @@ export function buildServer({
   registerProposalRoutes(app, { db, transport });
   registerDiagramRoutes(app, { db, repos });
   registerAuditTrailRoutes(app, { db });
+  registerEventRoutes(app, { db, repos, transport });
 
   app.get("/health", async () => {
     const row = db.prepare("SELECT 1 AS ok").get() as { ok: number } | undefined;
