@@ -1,0 +1,89 @@
+id: s4-command-palette-and-shortcuts
+epic: consus-phase18-diagram-editor-and-skin-system
+title: Universal ⌘K command palette + keyboard shortcut floor
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: [s3-collapsible-mermaid-source-panel]
+
+description: |
+  A command palette (⌘K) with real keyboard shortcuts, universal across all three skins — explicitly
+  not decoration exclusive to the Harness/terminal direction. Called out by the operator by name as
+  a developer-productivity requirement ("100% ... we'll need quick keys"), not an aesthetic choice
+  tied to one visual direction.
+
+  Minimum shortcut floor (more may be added during implementation, this is the floor not the
+  ceiling): open the palette (⌘K / Ctrl+K), switch diagram tab (number keys, matching the precedent
+  from the Harness mockup's own file-tab switching), toggle the s3 source panel, fire to harness
+  (when there's a real pending change to fire). The palette itself is a searchable list of available
+  actions, not just a bare shortcut-key reference — actions are also invocable by clicking through
+  the palette, not solely via memorized keys, so it works for an operator who hasn't learned the
+  shortcuts yet.
+
+acceptance_criteria:
+  - "Given any skin is active, when the operator presses ⌘K (or Ctrl+K on non-Mac), then the command palette opens, listing real, currently-available actions — not a placeholder/static list."
+  - "Given the palette is open, when the operator types to filter, then the list narrows to matching actions, and selecting one (via keyboard or click) executes it and closes the palette."
+  - "Given a diagram with 2+ tabs open (epic cascade + architecture), when the operator presses a number key matching a tab (matching the Harness mockup's own precedent), then that tab becomes active — both via the palette and as a direct global shortcut, not palette-only."
+  - "Given the s3 source panel, when the operator invokes its toggle shortcut, then it opens/closes exactly as if the on-screen toggle control were clicked."
+  - "Given there is at least one pending diagram change (from s2), when the operator invokes the fire shortcut, then it behaves identically to clicking 'Fire to harness' directly; given there are zero pending changes, then the shortcut/palette entry is disabled or absent, matching the on-screen button's disabled state — never a silent no-op that looks like it did something."
+  - "Given a text input is focused (e.g. editing a node label, editing a doc section), when the operator types a character that would otherwise be a shortcut, then it types normally into the input rather than triggering a global shortcut — shortcuts must not hijack normal typing."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Add vitest + RTL specs covering: ⌘K/Ctrl+K opens the palette; typing filters the action list;
+      selecting an action (keyboard Enter or click) executes it and closes the palette; number-key
+      tab switching works as a direct shortcut outside the palette too; the source-panel toggle
+      shortcut and fire shortcut both work and respect the same enabled/disabled state as their
+      on-screen controls; shortcuts do not fire while a text input has focus (a real focus-state test,
+      not just documented behavior).
+    agent: tester
+  - id: implement-command-palette
+    description: >
+      Add the palette component (search/filter list of available actions) and a global keyboard
+      listener respecting input-focus state, wired to real handlers for: open palette, switch tab
+      (number keys), toggle source panel (from s3), fire to harness (from s2, respecting its
+      disabled-when-no-changes state). Present and functionally identical across all 3 skins —
+      visual styling may differ per skin, the action set and behavior do not.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: make-tests-pass
+    description: >
+      Run the full suite and fix as needed until every new test passes and the full existing suite
+      (s1, s2, s3) still passes unmodified.
+    agent: developer
+    depends_on: [implement-command-palette]
+  - id: review
+    description: >
+      Review for: shortcuts genuinely don't hijack normal typing in any focused text input across the
+      app (not just the diagram editor's own inputs); fire-shortcut respects the real pending-changes
+      state rather than always being enabled; palette action list reflects genuinely available
+      actions rather than a static hardcoded list that could drift from reality.
+    agent: reviewer
+    depends_on: [make-tests-pass]
+  - id: integrate
+    description: Commit the command palette and keyboard shortcuts.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: .pHive/epics/consus-phase18-diagram-editor-and-skin-system/docs/design-discussion.md
+      purpose: "Resolved design decision #7 — command palette is universal across skins and an explicit operator requirement, with the stated shortcut floor this story implements."
+
+files_to_modify:
+  - file: web/src/features/command-palette/CommandPalette.tsx
+    change: "New: searchable action list + global keyboard listener with input-focus guarding."
+  - file: web/src/features/command-palette/useGlobalShortcuts.ts
+    change: "New: hook wiring the shortcut floor (open palette, tab switch, toggle source panel, fire) to real app state/handlers."
+
+design_decisions:
+  - decision: "The command palette is universal across all 3 skins, not exclusive to the Harness/terminal direction it originated from."
+    rationale: "Explicit operator call — this is a developer-productivity feature, not visual decoration tied to one aesthetic."
+  - decision: "Every shortcut also has a clickable palette entry — nothing is keyboard-only."
+    rationale: "So the palette works for an operator who hasn't learned the shortcuts yet, not just power users who already have."
+
+risks:
+  - severity: medium
+    description: "Global keyboard shortcuts are a common source of a real, easy-to-miss bug class: hijacking normal typing when a text input has focus (e.g. a single-letter shortcut firing while the operator is typing a node label containing that letter)."
+    mitigation: "Acceptance criteria and the write-failing-tests step both explicitly require a focus-state test, not just documented intent to guard against it."

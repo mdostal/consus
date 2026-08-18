@@ -1,30 +1,231 @@
-/* Theme-aware tokens (REQ-15) — light/dark via prefers-color-scheme, no
-   hardcoded light-only or dark-only styling anywhere downstream. */
+/* Theme-aware design tokens (REQ-15, extended by consus-phase18/s1).
+ *
+ * Two independent, orthogonal state axes live here:
+ *
+ *  - [data-theme]: light / dark / system (absence of the attribute = system,
+ *    i.e. today's prefers-color-scheme-only behavior, unchanged). The
+ *    standard three-state pattern: a bare `:root` carries the light
+ *    palette, `@media (prefers-color-scheme: dark)` supplies the OS-driven
+ *    dark override guarded by `:not([data-theme="light"])` (so an explicit
+ *    light choice still wins under a dark OS), and an unguarded
+ *    `:root[data-theme="dark"]` rule supplies the explicit-choice dark
+ *    override that wins regardless of OS setting.
+ *
+ *  - [data-skin]: "drafting" (default) | "case-board" | "harness" — a
+ *    purely decorative identity (color palette + type stack), applied via
+ *    useSkinPreference. Every skin repeats the same three-state pattern
+ *    above so it stays correct across BOTH themes: six real
+ *    skin x theme combinations, not one.
+ *
+ * No hardcoded light-only or dark-only styling anywhere downstream — every
+ * component only ever reads a --consus-* custom property.
+ */
+
+/* ================================================================ */
+/* Default skin: Drafting Table — architectural blueprint feel       */
+/* (cool blueprint blues/greys, precise/sharp edges, monospace-       */
+/* forward chrome). This IS the un-skinned :root fallback, since       */
+/* "drafting" is the app's default skin.                              */
+/* ================================================================ */
 
 :root {
-  --consus-bg: #f5f0e8;
-  --consus-bg-subtle: #efe8dc;
-  --consus-ink: #241d14;
-  --consus-ink-muted: #5a4f40;
-  --consus-accent: #b96e3a;
-  --consus-good: #3f7a3a;
-  --consus-warn: #9c7420;
-  --consus-bad: #a5433b;
-  --consus-line: #e3d8c6;
+  --consus-bg: #eef2f6;
+  --consus-bg-subtle: #e4eaf1;
+  --consus-ink: #172333;
+  --consus-ink-muted: #4d6178;
+  --consus-accent: #1f56c9;
+  --consus-good: #1f7a43;
+  --consus-warn: #8f5f00;
+  --consus-bad: #c23b2e;
+  --consus-line: #c3d1e0;
+
+  --consus-font-body: "Iowan Old Style", "Palatino Linotype", Palatino, "Georgia", ui-serif, serif;
+  --consus-font-ui: ui-monospace, "SFMono-Regular", "IBM Plex Mono", Menlo, Consolas, monospace;
+  --consus-font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  /* Sharp, precise linework — near-square corners everywhere. */
+  --consus-radius-scale: 0.2;
+  /* Consumed by the diagram editor (s2+): straight/orthogonal edges. */
+  --consus-edge-style: straight;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --consus-bg: #14110e;
-    --consus-bg-subtle: #1b1713;
-    --consus-ink: #f3ece2;
-    --consus-ink-muted: #c7bbaa;
-    --consus-accent: #d68a55;
+  :root:not([data-theme="light"]) {
+    --consus-bg: #0f1720;
+    --consus-bg-subtle: #16212c;
+    --consus-ink: #e7edf5;
+    --consus-ink-muted: #a9bacf;
+    --consus-accent: #6fa4ff;
+    --consus-good: #4fbf7a;
+    --consus-warn: #e0a83f;
+    --consus-bad: #e2685c;
+    --consus-line: #263346;
+  }
+}
+
+:root[data-theme="dark"] {
+  --consus-bg: #0f1720;
+  --consus-bg-subtle: #16212c;
+  --consus-ink: #e7edf5;
+  --consus-ink-muted: #a9bacf;
+  --consus-accent: #6fa4ff;
+  --consus-good: #4fbf7a;
+  --consus-warn: #e0a83f;
+  --consus-bad: #e2685c;
+  --consus-line: #263346;
+}
+
+/* Explicit [data-skin="drafting"] mirrors the bare-:root defaults above
+ * (same three-state shape) so the skin axis is self-contained and doesn't
+ * rely on the absence of a [data-skin] attribute to look right — the
+ * useSkinPreference hook always applies an explicit data-skin, including
+ * the default. */
+[data-skin="drafting"] {
+  --consus-bg: #eef2f6;
+  --consus-bg-subtle: #e4eaf1;
+  --consus-ink: #172333;
+  --consus-ink-muted: #4d6178;
+  --consus-accent: #1f56c9;
+  --consus-good: #1f7a43;
+  --consus-warn: #8f5f00;
+  --consus-bad: #c23b2e;
+  --consus-line: #c3d1e0;
+
+  --consus-font-body: "Iowan Old Style", "Palatino Linotype", Palatino, "Georgia", ui-serif, serif;
+  --consus-font-ui: ui-monospace, "SFMono-Regular", "IBM Plex Mono", Menlo, Consolas, monospace;
+  --consus-font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --consus-radius-scale: 0.2;
+  --consus-edge-style: straight;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-skin="drafting"]:not([data-theme="light"]) {
+    --consus-bg: #0f1720;
+    --consus-bg-subtle: #16212c;
+    --consus-ink: #e7edf5;
+    --consus-ink-muted: #a9bacf;
+    --consus-accent: #6fa4ff;
+    --consus-good: #4fbf7a;
+    --consus-warn: #e0a83f;
+    --consus-bad: #e2685c;
+    --consus-line: #263346;
+  }
+}
+
+[data-skin="drafting"][data-theme="dark"] {
+  --consus-bg: #0f1720;
+  --consus-bg-subtle: #16212c;
+  --consus-ink: #e7edf5;
+  --consus-ink-muted: #a9bacf;
+  --consus-accent: #6fa4ff;
+  --consus-good: #4fbf7a;
+  --consus-warn: #e0a83f;
+  --consus-bad: #e2685c;
+  --consus-line: #263346;
+}
+
+/* ================================================================ */
+/* Case Board — corkboard/case-file feel (warm paper tones, a         */
+/* canvas-drawn cork-grain texture rendered by                        */
+/* theme/skins/CaseBoardCorkTexture.tsx, humanist/system sans chrome).*/
+/* ================================================================ */
+
+[data-skin="case-board"] {
+  --consus-bg: #f3ead8;
+  --consus-bg-subtle: #ece0c8;
+  --consus-ink: #2b2013;
+  --consus-ink-muted: #6b5a3e;
+  --consus-accent: #b23b2e;
+  --consus-good: #2f6b2a;
+  --consus-warn: #7c5b0a;
+  --consus-bad: #a5433b;
+  --consus-line: #d9c7a1;
+
+  --consus-font-body: "Iowan Old Style", "Palatino Linotype", Palatino, "Georgia", ui-serif, serif;
+  --consus-font-ui: ui-sans-serif, system-ui, sans-serif;
+  --consus-font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  /* A little organic give at the corners — pinned index-card feel. */
+  --consus-radius-scale: 1.3;
+  --consus-edge-style: organic;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-skin="case-board"]:not([data-theme="light"]) {
+    --consus-bg: #1c150d;
+    --consus-bg-subtle: #241b10;
+    --consus-ink: #f1e6d2;
+    --consus-ink-muted: #cdb996;
+    --consus-accent: #e0725a;
     --consus-good: #79b072;
     --consus-warn: #d8a24a;
-    --consus-bad: #c97b74;
-    --consus-line: #332a20;
+    --consus-bad: #e2897d;
+    --consus-line: #3a2d1c;
   }
+}
+
+[data-skin="case-board"][data-theme="dark"] {
+  --consus-bg: #1c150d;
+  --consus-bg-subtle: #241b10;
+  --consus-ink: #f1e6d2;
+  --consus-ink-muted: #cdb996;
+  --consus-accent: #e0725a;
+  --consus-good: #79b072;
+  --consus-warn: #d8a24a;
+  --consus-bad: #e2897d;
+  --consus-line: #3a2d1c;
+}
+
+/* ================================================================ */
+/* Harness — terminal/IDE feel (monospace-forward, dark-leaning even */
+/* in its "light" palette, command-prompt-style header chrome from    */
+/* theme/skins/HarnessWindowDots.tsx).                                */
+/* ================================================================ */
+
+[data-skin="harness"] {
+  --consus-bg: #f4f6f5;
+  --consus-bg-subtle: #e7ebe9;
+  --consus-ink: #12201b;
+  --consus-ink-muted: #46564f;
+  --consus-accent: #0a6b48;
+  --consus-good: #146b30;
+  --consus-warn: #7c5f00;
+  --consus-bad: #b23b2e;
+  --consus-line: #cdd6d2;
+
+  --consus-font-body: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --consus-font-ui: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --consus-font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --consus-radius-scale: 0.5;
+  --consus-edge-style: straight;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-skin="harness"]:not([data-theme="light"]) {
+    --consus-bg: #0a0f0c;
+    --consus-bg-subtle: #121a15;
+    --consus-ink: #d7ffe8;
+    --consus-ink-muted: #8fb39f;
+    --consus-accent: #35d488;
+    --consus-good: #35d488;
+    --consus-warn: #e0c341;
+    --consus-bad: #ff6b5e;
+    --consus-line: #1f2b23;
+  }
+}
+
+[data-skin="harness"][data-theme="dark"] {
+  --consus-bg: #0a0f0c;
+  --consus-bg-subtle: #121a15;
+  --consus-ink: #d7ffe8;
+  --consus-ink-muted: #8fb39f;
+  --consus-accent: #35d488;
+  --consus-good: #35d488;
+  --consus-warn: #e0c341;
+  --consus-bad: #ff6b5e;
+  --consus-line: #1f2b23;
 }
 
 body {

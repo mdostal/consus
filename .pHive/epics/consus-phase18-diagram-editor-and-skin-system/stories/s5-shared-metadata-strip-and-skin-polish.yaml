@@ -1,0 +1,87 @@
+id: s5-shared-metadata-strip-and-skin-polish
+epic: consus-phase18-diagram-editor-and-skin-system
+title: Shared diagram-metadata strip component + remaining per-skin decorative reconciliation
+status: pending
+complexity: low
+methodology: tdd
+depends_on: [s4-command-palette-and-shortcuts]
+
+description: |
+  Closes out the epic with the one remaining shared-but-not-yet-unified piece: Drafting Table's title
+  block (SHEET/PROJECT/SCALE/REV/DRAWN/DATE, with REV incrementing on every successful "Fire to
+  harness" — a genuinely nice per-skin touch worth keeping), Case Board's "CASE NO." stamp, and
+  Harness's footer status line are three different-looking skins of the same underlying data
+  (a revision/fire count, the operator, the date, the repo). This story builds that as one real,
+  shared component — reskinned per direction, not three independently-maintained pieces of chrome —
+  and does a final reconciliation pass for any other small per-skin decorative details that didn't
+  already land naturally as part of s1's token/decoration work (e.g. empty-state copy flavor per
+  skin, changeset-log verb vocabulary per skin — both explicitly allowed to vary by skin per the
+  design discussion, as long as the underlying event types and the "Fire to harness" action label
+  itself stay constant).
+
+acceptance_criteria:
+  - "Given any skin, when a diagram fires a real change via 'Fire to harness' (from s2), then the shared metadata strip's revision/fire count visibly increments — same underlying counter, three different renderings (title-block REV / case-no. stamp / footer status line) depending on active skin."
+  - "Given the shared metadata strip component, when inspected, then all 3 skins render it from the same single component/data source — not three separate, independently-maintained implementations that happen to show similar data."
+  - "Given the changeset log from s2, when rendered under each skin, then the row verb vocabulary may differ per skin (e.g. 'Pinned' vs. a plain 'Added') but the underlying event type and the 'Fire to harness' action label are identical across all 3 skins — a source-level check that the action button's text does not vary by skin."
+  - "Given the full epic (s1-s5) is complete, when every skin is checked under both themes one final time, then no skin×theme combination has a broken/missing metadata strip or an unstyled fallback — the same 6-combination bar from s1, now re-verified end to end."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Add vitest + RTL specs covering: the shared metadata strip renders from one component across
+      all 3 skins with skin-appropriate presentation; the revision/fire counter increments on a real
+      fire event and that increment is reflected identically regardless of active skin; the
+      "Fire to harness" action label is asserted identical (source-level string check) across all 3
+      skins' rendered output, even as other changeset-log copy is allowed to vary.
+    agent: tester
+  - id: implement-metadata-strip
+    description: >
+      Add the shared metadata strip component (revision/fire count, operator, date, repo) with
+      per-skin presentation resolved the same way s1's other per-skin decoration is resolved (not a
+      new, parallel mechanism). Wire the revision counter to real fire events from s2. Do a final
+      pass reconciling any remaining small per-skin decorative gaps noticed during s1-s4 review that
+      didn't already land — e.g. empty-state copy, changeset verb vocabulary — while confirming the
+      constant elements (action labels, underlying event types) genuinely stay constant.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: make-tests-pass
+    description: >
+      Run the full suite and fix as needed until every new test passes and the full existing suite
+      (s1-s4) still passes unmodified.
+    agent: developer
+    depends_on: [implement-metadata-strip]
+  - id: review
+    description: >
+      Review for: the metadata strip is genuinely one shared component (read the diff, don't just
+      trust visual similarity); the revision counter is a real, correctly-wired count tied to actual
+      fire events, not a decorative static number; action labels are verified constant across skins
+      at the source level; final full 6-combination skin×theme check performed as the epic's closing
+      verification, not skipped as "already checked in s1."
+    agent: reviewer
+    depends_on: [make-tests-pass]
+  - id: integrate
+    description: Commit the shared metadata strip and final skin polish, closing out the epic.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: .pHive/epics/consus-phase18-diagram-editor-and-skin-system/docs/design-discussion.md
+      purpose: "Resolved design decision #9 — the shared metadata strip and the skin-vocabulary-may-vary-but-action-labels-don't rule this story implements and verifies."
+    - path: web/src/theme/skins/
+      purpose: "The per-skin decoration modules from s1 — this story's metadata strip and any final polish should resolve presentation the same way, not introduce a second, parallel per-skin mechanism."
+
+files_to_modify:
+  - file: web/src/features/projects/DiagramMetadataStrip.tsx
+    change: "New: one shared component rendering revision/fire count + operator + date + repo, presented per active skin."
+  - file: web/src/features/projects/DiagramChangeset.tsx
+    change: "Wire the fire-event counter into the new shared metadata strip; confirm action label constancy across skins."
+
+design_decisions:
+  - decision: "One shared metadata-strip component, not three independently-built pieces of skin-specific chrome."
+    rationale: "Drafting Table's title block, Case Board's case-no. stamp, and Harness's footer status line are the same underlying data (revision count, operator, date, repo) — building them as one component with per-skin presentation avoids three places to keep in sync as the underlying data model evolves."
+
+risks:
+  - severity: low
+    description: "As the epic's closing story, it's easy to under-scope the final 'reconcile remaining skin gaps' work if s1-s4 already covered most of it well — or conversely to scope-creep into unrelated polish."
+    mitigation: "Acceptance criteria and review step tie the reconciliation work specifically to gaps 'noticed during s1-s4 review that didn't already land' — bounded by what was actually found, not an open-ended polish pass."

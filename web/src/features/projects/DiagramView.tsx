@@ -1,5 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuditPanel, type AuditTrailEntry } from "../audit/AuditPanel";
+import { DiagramCanvas, type DiagramCanvasEdgeInput, type DiagramCanvasNodeInput } from "./DiagramCanvas";
+import { DiagramChangeset, DiagramDirtyDot } from "./DiagramChangeset";
+import { DiagramMetadataStrip } from "./DiagramMetadataStrip";
+import { DiagramSourcePanel } from "./DiagramSourcePanel";
+import { formatDiagramDiff, type DiagramChange } from "./diagramDiff";
+import { incrementDiagramRevision } from "./diagramRevisionCounter";
+import { useRegisterDiagramActions } from "../command-palette/diagramActionRegistry";
 
 export interface DiagramStory {
   id: string;
@@ -28,12 +35,12 @@ export interface DiagramViewProps {
   /** s5: history for this diagram's item (audit_log + proposals), via the
    *  shared AuditPanel. Omit to keep the panel hidden. */
   auditEntries?: AuditTrailEntry[];
+  /** s2 (consus-phase18): notified with this diagram's own pending-change
+   *  count whenever it changes, so a parent hosting more than one diagram
+   *  (this cascade + ArchitectureDiagramView) can show a per-tab dirty dot
+   *  and an accurate global "N pending changes" total. */
+  onPendingChangesChange?: (count: number) => void;
 }
-
-/** Renders every id/label unique to a single mermaid.render() call, so re-renders never collide with a stale one still finishing. */
-let renderIdCounter = 0;
-
-const RENDER_TIMEOUT_MS = 5000;
 
 function sanitizeMermaidId(id: string): string {
   return `n_${id.replace(/[^a-zA-Z0-9_]/g, "_")}`;
@@ -47,10 +54,12 @@ function escapeMermaidLabel(label: string): string {
  * Pure: turns the epics/stories/dependsOn tree into Mermaid `graph LR`
  * source text — one subgraph per epic, one node per story, one edge per
  * dependsOn relationship (dependency -> dependent, matching the direction
- * the old "depends on" list text read in). Re-derived fresh against this
- * component's own DiagramEpic/DiagramStory types (p9-01) rather than reusing
- * the archived cascade-tree-builder.ts, which mixed in Multica-specific
- * issue classification that has no equivalent here.
+ * the old "depends on" list text read in). Kept as-is from before s2 (not
+ * wired into this component's own render path any more — see
+ * buildCascadeGraph below for the live React Flow graph this component
+ * actually edits — but preserved for s3's collapsible Mermaid source
+ * panel, which regenerates this same shape live from the graph's current
+ * state rather than from the original epics prop).
  */
 export function buildMermaidSource(epics: DiagramEpic[]): string {
   const lines = ["graph LR"];
@@ -75,15 +84,15 @@ export function buildMermaidSource(epics: DiagramEpic[]): string {
   return lines.join("\n");
 }
 
-/** What a rendered node's sanitized id resolves back to (p9-02). */
+/** What a rendered node's sanitized id resolves back to. Still used to
+ *  round-trip DiagramCanvas's own node ids (see buildCascadeGraph) back to
+ *  a story/epic when needed. */
 export type DiagramNodeEntry = { kind: "story"; story: DiagramStory } | { kind: "epic"; epic: DiagramEpic };
 
 /**
  * Pure: reverse-lookup from a sanitized node id (as produced by
  * sanitizeMermaidId, same ids buildMermaidSource embeds in the graph source)
- * back to the originating story or epic. Built alongside the graph source
- * so a click on a rendered node can be mapped to real data without parsing
- * label text (p9-02).
+ * back to the originating story or epic.
  */
 export function buildNodeLookup(epics: DiagramEpic[]): Map<string, DiagramNodeEntry> {
   const lookup = new Map<string, DiagramNodeEntry>();
@@ -98,193 +107,172 @@ export function buildNodeLookup(epics: DiagramEpic[]): Map<string, DiagramNodeEn
   return lookup;
 }
 
-/**
- * Mermaid's rendered node ids contain the sanitized id passed into render()
- * rather than equal it exactly (e.g. wrapped as `flowchart-n_story_s1-0`),
- * so this looks for a lookup key present in elementId at a token boundary —
- * guards against a false match like `n_story_s1` inside `n_story_s10`.
- */
-function findNodeKey(elementId: string, keys: Iterable<string>): string | null {
-  for (const key of keys) {
-    const boundary = new RegExp(`(?:^|[^a-zA-Z0-9_])${key}(?:$|[^a-zA-Z0-9_])`);
-    if (boundary.test(elementId)) return key;
-  }
-  return null;
+/** DiagramCanvas node ids for this diagram — namespaced separately from
+ *  sanitizeMermaidId's ids above (kept independent on purpose: this id
+ *  scheme only ever has to satisfy DiagramCanvas/React Flow, which has no
+ *  restrictions the Mermaid-safe ids above exist to satisfy). */
+function epicNodeId(epicId: string): string {
+  return `epic:${epicId}`;
+}
+function storyNodeId(storyId: string): string {
+  return `story:${storyId}`;
 }
 
 /**
- * Read-only cascade tree (epic -> stories -> dependency edges) rendered as a
- * real Mermaid graph, plus a propose-a-change action that fires through
- * s3's dispatch mechanism — Consus never edits the diagram data directly.
- * mermaid is imported dynamically (only diagram views pay for it) and the
- * graph source is built client-side from the `epics` prop; see
- * buildMermaidSource above (p9-01 — this replaces the nested-<ul> rendering
- * that architecture.md's decision #3 had deferred).
+ * Pure: builds the editable React Flow graph (s2, consus-phase18) from the
+ * epics/stories/dependsOn tree — one node per epic (level 0), one node per
+ * story (level 1, grouped under its epic via groupOrder), one containment
+ * edge per epic->story pair, and one dependency edge per dependsOn
+ * relationship (dependency -> dependent, same direction buildMermaidSource
+ * always used). A tree is a graph, per the epic's own library CBA — no
+ * contortion needed to fit DiagramCanvas's {nodes, edges} shape.
  */
-export function DiagramView({ repo, epics, pendingProposal, onProposeChange, auditEntries }: DiagramViewProps) {
-  const [composing, setComposing] = useState(false);
-  const [diff, setDiff] = useState("");
-  const [description, setDescription] = useState("");
-  const graphRef = useRef<HTMLDivElement | null>(null);
-  const [rendering, setRendering] = useState(false);
-  const [renderError, setRenderError] = useState<string | null>(null);
-  const [selectedNodeKey, setSelectedNodeKey] = useState<string | null>(null);
+export function buildCascadeGraph(epics: DiagramEpic[]): {
+  nodes: DiagramCanvasNodeInput[];
+  edges: DiagramCanvasEdgeInput[];
+} {
+  const nodes: DiagramCanvasNodeInput[] = [];
+  const edges: DiagramCanvasEdgeInput[] = [];
 
-  const nodeLookup = useMemo(() => buildNodeLookup(epics), [epics]);
-  const storyTitleById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const epic of epics) {
-      for (const story of epic.stories) {
-        map.set(story.id, story.title);
+  epics.forEach((epic, epicIndex) => {
+    nodes.push({ id: epicNodeId(epic.id), label: epic.title, level: 0, groupOrder: epicIndex });
+    for (const story of epic.stories) {
+      const label = story.complexity ? `${story.title} (${story.complexity})` : story.title;
+      nodes.push({ id: storyNodeId(story.id), label, level: 1, groupOrder: epicIndex });
+      edges.push({ id: `contains:${epic.id}:${story.id}`, source: epicNodeId(epic.id), target: storyNodeId(story.id) });
+    }
+  });
+
+  for (const epic of epics) {
+    for (const story of epic.stories) {
+      for (const dependsOnId of story.dependsOn) {
+        edges.push({
+          id: `depends:${dependsOnId}:${story.id}`,
+          source: storyNodeId(dependsOnId),
+          target: storyNodeId(story.id),
+        });
       }
     }
-    return map;
-  }, [epics]);
+  }
 
-  const selectedEntry = selectedNodeKey ? (nodeLookup.get(selectedNodeKey) ?? null) : null;
-  const selectedStory = selectedEntry?.kind === "story" ? selectedEntry.story : null;
+  return { nodes, edges };
+}
+
+/** Builds a legible, always-non-empty description for the auto-fired
+ *  proposal from the accumulated change kinds — server/routes/proposals.ts
+ *  requires a real description string, and there's no free-text input for
+ *  the operator to type one any more now that Fire to harness fires
+ *  directly from the structured changeset (s2) rather than a manual
+ *  diff/description compose form. */
+function summarizeChanges(changes: DiagramChange[]): string {
+  const counts = new Map<string, number>();
+  for (const c of changes) counts.set(c.kind, (counts.get(c.kind) ?? 0) + 1);
+  const parts = Array.from(counts.entries()).map(([kind, n]) => `${n} ${kind}`);
+  return `${changes.length} change${changes.length === 1 ? "" : "s"} (${parts.join(", ")})`;
+}
+
+/**
+ * Editable epic/story cascade (s2, consus-phase18) — an editable React Flow
+ * canvas (DiagramCanvas) built from the epics/stories/dependsOn tree, a
+ * structured typed changeset panel, and a Fire-to-harness action that
+ * serializes the accumulated change state into a diff for the existing
+ * generic POST /api/proposals flow. Replaces the previous read-only Mermaid
+ * render + manual diff/description compose form.
+ */
+export function DiagramView({ repo, epics, pendingProposal, onProposeChange, auditEntries, onPendingChangesChange }: DiagramViewProps) {
+  const [changes, setChanges] = useState<DiagramChange[]>([]);
+  const graph = useMemo(() => buildCascadeGraph(epics), [epics]);
+
+  // s3 (consus-phase18): the canvas's own current node/edge state, read out
+  // via DiagramCanvas's onLiveStateChange — used only to regenerate the
+  // collapsible Mermaid source panel's preview text. Seeded with `graph` so
+  // there's never a flash of an empty preview before DiagramCanvas's first
+  // mount effect fires.
+  const [liveGraph, setLiveGraph] = useState<{ nodes: DiagramCanvasNodeInput[]; edges: DiagramCanvasEdgeInput[] }>(graph);
+  const [sourceOpen, setSourceOpen] = useState(false);
+
+  // A freshly-loaded repo (or a repo switch) starts clean — no carried-over
+  // edits from a previous diagram's session.
+  useEffect(() => {
+    setChanges([]);
+  }, [repo]);
 
   useEffect(() => {
-    setSelectedNodeKey(null);
-    if (epics.length === 0) return;
+    onPendingChangesChange?.(changes.length);
+  }, [changes.length, onPendingChangesChange]);
 
-    let cancelled = false;
-    setRendering(true);
-    setRenderError(null);
+  const handleCanvasChange = useCallback((change: DiagramChange) => {
+    setChanges((prev) => [...prev, change]);
+  }, []);
 
-    const renderDiagram = async () => {
-      let timeoutId: ReturnType<typeof setTimeout> | undefined;
-      try {
-        const { default: mermaid } = await import("mermaid");
-        mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
+  const handleLiveStateChange = useCallback((nodes: DiagramCanvasNodeInput[], edges: DiagramCanvasEdgeInput[]) => {
+    setLiveGraph({ nodes, edges });
+  }, []);
 
-        const source = buildMermaidSource(epics);
-        const timeout = new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error("Diagram rendering timed out")), RENDER_TIMEOUT_MS);
-        });
+  const toggleSourcePanel = useCallback(() => setSourceOpen((v) => !v), []);
 
-        const { svg, bindFunctions } = await Promise.race([
-          mermaid.render(`diagram-view-${renderIdCounter++}`, source),
-          timeout,
-        ]);
+  const fire = useCallback(() => {
+    if (changes.length === 0) return;
+    onProposeChange({ diff: formatDiagramDiff(changes), description: summarizeChanges(changes) });
+    // s5 (consus-phase18): only a real fire — one that actually had pending
+    // changes and actually called onProposeChange, both already guarded
+    // above — increments the shared metadata strip's revision count.
+    incrementDiagramRevision();
+    setChanges([]);
+  }, [changes, onProposeChange]);
 
-        if (cancelled) return;
-        const container = graphRef.current;
-        if (container) {
-          container.innerHTML = svg;
-          bindFunctions?.(container);
+  // s4 (consus-phase18): scrolls this diagram's own section into view and
+  // moves real DOM focus onto it — the adapted "switch diagram tab" ->
+  // "focus diagram section" shortcut for the real stacked (not tabbed)
+  // layout (see App.tsx's ProjectsSection).
+  const rootRef = useRef<HTMLDivElement>(null);
+  const focusDiagram = useCallback(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    el.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    el.focus();
+  }, []);
 
-          // p9-02: wire clicks on the rendered node elements directly (no Mermaid
-          // `click` directive/global callback — see buildNodeLookup/findNodeKey above).
-          const nodeEls = container.querySelectorAll<SVGElement>(".node");
-          nodeEls.forEach((nodeEl) => {
-            const key = findNodeKey(nodeEl.id, nodeLookup.keys());
-            const entry = key ? nodeLookup.get(key) : undefined;
-            if (!key || !entry || entry.kind !== "story") return;
-
-            nodeEl.style.cursor = "pointer";
-            nodeEl.addEventListener("click", () => {
-              setSelectedNodeKey((prev) => (prev === key ? null : key));
-            });
-          });
-        }
-      } catch (error) {
-        if (cancelled) return;
-        const message = error instanceof Error ? error.message : String(error);
-        setRenderError(
-          /timed out/i.test(message)
-            ? "This diagram is too complex to render quickly."
-            : "We couldn't render this diagram. Please try again.",
-        );
-      } finally {
-        if (timeoutId) clearTimeout(timeoutId);
-        if (!cancelled) setRendering(false);
-      }
-    };
-
-    renderDiagram();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [epics]);
-
-  const submit = () => {
-    if (!diff.trim() || !description.trim()) return;
-    onProposeChange({ diff: diff.trim(), description: description.trim() });
-    setDiff("");
-    setDescription("");
-    setComposing(false);
-  };
+  useRegisterDiagramActions({
+    kind: "cascade",
+    label: `${repo} epic/story diagram`,
+    focus: focusDiagram,
+    toggleSourcePanel,
+    sourcePanelOpen: sourceOpen,
+    fire,
+    fireEnabled: changes.length > 0,
+  });
 
   return (
-    <div className="diagram-view">
+    <div className="diagram-view" ref={rootRef} tabIndex={-1} data-testid="diagram-view-root">
       <div className="diagram-view__header">
-        <h3>{repo} — epic/story diagram</h3>
+        <h3>
+          {repo} — epic/story diagram <DiagramDirtyDot dirty={changes.length > 0} label={`${repo} epic/story diagram`} />
+        </h3>
         {pendingProposal ? <span className="pill pill--pending">change proposed…</span> : null}
-        <button type="button" onClick={() => setComposing((c) => !c)}>
-          {composing ? "Cancel" : "Propose a change"}
+        <button type="button" onClick={fire} disabled={changes.length === 0}>
+          Fire to harness
         </button>
+        <DiagramMetadataStrip repo={repo} />
       </div>
-
-      {composing ? (
-        <div className="diagram-view__propose-form">
-          <label>
-            Description
-            <input
-              type="text"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="e.g. removed load balancers for direct traffic through..."
-            />
-          </label>
-          <label>
-            Diff
-            <textarea value={diff} onChange={(e) => setDiff(e.target.value)} placeholder="+ added X&#10;- removed Y" />
-          </label>
-          <button type="button" onClick={submit} disabled={!diff.trim() || !description.trim()}>
-            Fire to harness
-          </button>
-        </div>
-      ) : null}
 
       {epics.length === 0 ? (
         <p className="state">No epics yet for {repo}.</p>
-      ) : renderError ? (
-        <p className="state state--err">{renderError}</p>
       ) : (
         <div className="diagram-view__body">
-          <div
-            ref={graphRef}
-            className="diagram-view__graph"
-            role="img"
-            aria-busy={rendering}
-            aria-label={`${repo} epic/story diagram`}
-            data-testid="diagram-view-graph"
-          />
-
-          {selectedStory ? (
-            <div className="diagram-view__detail" data-testid="diagram-view-detail">
-              <div className="diagram-view__detail-header">
-                <h4>{selectedStory.title}</h4>
-                <button type="button" onClick={() => setSelectedNodeKey(null)} aria-label="Close detail panel">
-                  ×
-                </button>
-              </div>
-              <dl>
-                <dt>ID</dt>
-                <dd>{selectedStory.id}</dd>
-                <dt>Complexity</dt>
-                <dd>{selectedStory.complexity ?? "—"}</dd>
-                <dt>Depends on</dt>
-                <dd>
-                  {selectedStory.dependsOn.length === 0
-                    ? "—"
-                    : selectedStory.dependsOn.map((depId) => storyTitleById.get(depId) ?? depId).join(", ")}
-                </dd>
-              </dl>
+          <div className="diagram-view__graph-area" data-testid="diagram-view-graph-area">
+            <div className="diagram-view__graph" data-testid="diagram-view-graph">
+              <DiagramCanvas
+                key={repo}
+                nodes={graph.nodes}
+                edges={graph.edges}
+                onChange={handleCanvasChange}
+                onLiveStateChange={handleLiveStateChange}
+              />
             </div>
-          ) : null}
+            <DiagramSourcePanel nodes={liveGraph.nodes} edges={liveGraph.edges} open={sourceOpen} onToggle={toggleSourcePanel} />
+          </div>
+          <DiagramChangeset changes={changes} />
         </div>
       )}
 

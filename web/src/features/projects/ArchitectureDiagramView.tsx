@@ -1,119 +1,205 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DiagramCanvas, type DiagramCanvasEdgeInput, type DiagramCanvasNodeInput } from "./DiagramCanvas";
+import { DiagramChangeset, DiagramDirtyDot } from "./DiagramChangeset";
+import { DiagramMetadataStrip } from "./DiagramMetadataStrip";
+import { DiagramSourcePanel } from "./DiagramSourcePanel";
+import { computeLevelsFromEdges } from "./diagramLayout";
+import { formatDiagramDiff, type DiagramChange } from "./diagramDiff";
+import { incrementDiagramRevision } from "./diagramRevisionCounter";
+import { parseMermaidGraph } from "./mermaidGraphParse";
+import { useRegisterDiagramActions } from "../command-palette/diagramActionRegistry";
+
+export interface ProposeChangeInput {
+  diff: string;
+  description: string;
+}
 
 export interface ArchitectureDiagramViewProps {
   repo: string;
   topLevel: string;
   fullComponent: string;
+  /** s2 (consus-phase18): this diagram kind previously had no propose-a-
+   *  change wiring at all (no item id existed for it). Optional so callers
+   *  that genuinely have nothing to fire to (e.g. an older/lighter host)
+   *  can still render a read-view without it. */
+  onProposeChange?: (input: ProposeChangeInput) => void;
+  pendingProposal?: boolean;
+  /** Notified with this diagram's own pending-change count (summed across
+   *  both the Top level and Full component sub-views) whenever it changes —
+   *  same per-tab dirty-dot / global-count contract as DiagramView.tsx. */
+  onPendingChangesChange?: (count: number) => void;
 }
 
 type Tab = "topLevel" | "fullComponent";
 
-/** Renders every id/label unique to a single mermaid.render() call, so re-renders never collide with a stale one still finishing. */
-let renderIdCounter = 0;
-
-const RENDER_TIMEOUT_MS = 5000;
-
 /**
- * Renders one of { topLevel, fullComponent }'s Mermaid `graph TD` source
- * strings into the given container, racing mermaid.render() against a
- * timeout — mirrors the render-with-timeout pattern DiagramView.tsx already
- * uses for the cascade, deliberately duplicated (not shared/imported) per
- * this story's design decision, since DiagramView.tsx and its test file are
- * not touched by this story.
+ * Pure: turns one of { topLevel, fullComponent }'s parsed Mermaid graphs
+ * into DiagramCanvas's {nodes, edges} shape — levels are derived
+ * structurally (computeLevelsFromEdges) since a directory graph has no
+ * separate "epic vs story" concept the way the cascade does; it's just a
+ * root and however many levels of containment/reference edges
+ * diagram-generator.ts produced.
  */
-async function renderMermaid(
-  source: string,
-  container: HTMLDivElement,
-  onError: (message: string) => void,
-): Promise<void> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  try {
-    const { default: mermaid } = await import("mermaid");
-    mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
+export function buildArchitectureGraph(source: string): { nodes: DiagramCanvasNodeInput[]; edges: DiagramCanvasEdgeInput[] } {
+  const parsed = parseMermaidGraph(source);
+  const nodeIds = parsed.nodes.map((n) => n.id);
+  const levels = computeLevelsFromEdges(nodeIds, parsed.edges);
 
-    const timeout = new Promise<never>((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error("Diagram rendering timed out")), RENDER_TIMEOUT_MS);
-    });
+  const nodes: DiagramCanvasNodeInput[] = parsed.nodes.map((n) => ({
+    id: n.id,
+    label: n.label,
+    level: levels.get(n.id) ?? 0,
+  }));
+  const edges: DiagramCanvasEdgeInput[] = parsed.edges.map((e) => ({ id: e.id, source: e.source, target: e.target }));
 
-    const { svg, bindFunctions } = await Promise.race([
-      mermaid.render(`architecture-diagram-view-${renderIdCounter++}`, source),
-      timeout,
-    ]);
+  return { nodes, edges };
+}
 
-    container.innerHTML = svg;
-    bindFunctions?.(container);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    onError(
-      /timed out/i.test(message)
-        ? "This diagram is too complex to render quickly."
-        : "We couldn't render this diagram. Please try again.",
-    );
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-  }
+function summarizeChanges(changes: DiagramChange[]): string {
+  const counts = new Map<string, number>();
+  for (const c of changes) counts.set(c.kind, (counts.get(c.kind) ?? 0) + 1);
+  const parts = Array.from(counts.entries()).map(([kind, n]) => `${n} ${kind}`);
+  return `${changes.length} change${changes.length === 1 ? "" : "s"} (${parts.join(", ")})`;
 }
 
 /**
- * A small, standalone Mermaid renderer for a single named graph — used
- * twice below, once per tab, so each pane owns its own render/error/loading
- * lifecycle independently of the other.
+ * A small, standalone editable pane for a single named graph — used twice
+ * below, once per tab, so each pane owns its own DiagramCanvas + changeset
+ * independently, contributing into the shared change list the parent keeps
+ * (both sub-views count toward one "architecture" diagram's dirty state,
+ * not two — see design-discussion.md decision #3, which draws the
+ * dirty-tab line at cascade-vs-architecture, not at this internal Top
+ * level/Full component split).
  */
-function MermaidGraph({ source, label, testId }: { source: string; label: string; testId: string }) {
-  const graphRef = useRef<HTMLDivElement | null>(null);
-  const [rendering, setRendering] = useState(true);
-  const [renderError, setRenderError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setRendering(true);
-    setRenderError(null);
-
-    const container = graphRef.current;
-    if (!container) return;
-
-    renderMermaid(source, container, (message) => {
-      if (!cancelled) setRenderError(message);
-    }).finally(() => {
-      if (!cancelled) setRendering(false);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [source]);
-
-  if (renderError) {
-    return <p className="state state--err">{renderError}</p>;
-  }
-
+function ArchitectureGraphPane({
+  source,
+  label,
+  testId,
+  onChange,
+  onLiveStateChange,
+}: {
+  source: string;
+  label: string;
+  testId: string;
+  onChange: (change: DiagramChange) => void;
+  onLiveStateChange: (nodes: DiagramCanvasNodeInput[], edges: DiagramCanvasEdgeInput[]) => void;
+}) {
+  // Memoized on `source` (not recomputed fresh every render): DiagramCanvas
+  // reads identity-stability from its own `nodes`/`edges` props (its
+  // originalLevelById lookup, s3, is keyed on them) to know whether to
+  // re-broadcast its live state upward. Without this memo, every
+  // onLiveStateChange call triggers a re-render here, which would recompute
+  // a brand-new `graph` object, which DiagramCanvas would see as "props
+  // changed," causing it to re-broadcast again — an infinite loop.
+  const graph = useMemo(() => buildArchitectureGraph(source), [source]);
   return (
-    <div
-      ref={graphRef}
-      className="architecture-diagram-view__graph"
-      role="img"
-      aria-busy={rendering}
-      aria-label={label}
-      data-testid={testId}
-    />
+    <div className="architecture-diagram-view__graph" role="img" aria-label={label} data-testid={testId}>
+      <DiagramCanvas nodes={graph.nodes} edges={graph.edges} onChange={onChange} onLiveStateChange={onLiveStateChange} />
+    </div>
   );
 }
 
 /**
  * Renders a repo's real directory-structure diagram — both the shallow
- * `topLevel` view and the richer `fullComponent` view (which also folds in
- * design-discussion.md file-path mentions) — as tabbed Mermaid graphs.
- * Standalone from DiagramView.tsx: this response has no story/epic
- * identities to look up, click-to-detail, or propose changes against, so
- * this component owns only "render a graph TD string."
+ * `topLevel` view and the richer `fullComponent` view — as tabbed, editable
+ * React Flow canvases (s2, consus-phase18). Replaces the previous read-only
+ * Mermaid render; the two tabs share one changeset/dirty-state/Fire-to-
+ * harness surface for the diagram as a whole. Standalone from
+ * DiagramView.tsx by design (see this file's own test asserting it doesn't
+ * import from there): this response has no story/epic identities, and its
+ * graph comes from parsing Mermaid text (mermaidGraphParse.ts) rather than
+ * building directly from structured API data.
  */
-export function ArchitectureDiagramView({ repo, topLevel, fullComponent }: ArchitectureDiagramViewProps) {
+export function ArchitectureDiagramView({
+  repo,
+  topLevel,
+  fullComponent,
+  onProposeChange,
+  pendingProposal,
+  onPendingChangesChange,
+}: ArchitectureDiagramViewProps) {
   const [tab, setTab] = useState<Tab>("topLevel");
+  const [changes, setChanges] = useState<DiagramChange[]>([]);
+
+  // s3 (consus-phase18): the active tab's own current node/edge state, read
+  // out via DiagramCanvas's onLiveStateChange, feeding the collapsible
+  // Mermaid source panel — same mechanism as DiagramView.tsx. Switching
+  // tabs remounts a fresh DiagramCanvas (see the `key` props below), which
+  // immediately re-fires this with that tab's own graph, so this never
+  // mixes state across tabs.
+  const [liveGraph, setLiveGraph] = useState<{ nodes: DiagramCanvasNodeInput[]; edges: DiagramCanvasEdgeInput[] }>({
+    nodes: [],
+    edges: [],
+  });
+  const [sourceOpen, setSourceOpen] = useState(false);
+
+  useEffect(() => {
+    setChanges([]);
+  }, [repo]);
+
+  useEffect(() => {
+    onPendingChangesChange?.(changes.length);
+  }, [changes.length, onPendingChangesChange]);
+
+  const handleCanvasChange = useCallback((change: DiagramChange) => {
+    setChanges((prev) => [...prev, change]);
+  }, []);
+
+  const handleLiveStateChange = useCallback((nodes: DiagramCanvasNodeInput[], edges: DiagramCanvasEdgeInput[]) => {
+    setLiveGraph({ nodes, edges });
+  }, []);
+
+  const toggleSourcePanel = useCallback(() => setSourceOpen((v) => !v), []);
+
+  const fire = useCallback(() => {
+    if (changes.length === 0 || !onProposeChange) return;
+    onProposeChange({ diff: formatDiagramDiff(changes), description: summarizeChanges(changes) });
+    // s5 (consus-phase18): same shared counter DiagramView.tsx increments —
+    // only a real fire (pending changes + onProposeChange actually called,
+    // both already guarded above) counts.
+    incrementDiagramRevision();
+    setChanges([]);
+  }, [changes, onProposeChange]);
+
+  // s4 (consus-phase18): scrolls this diagram's own section into view and
+  // moves real DOM focus onto it — the adapted "switch diagram tab" ->
+  // "focus diagram section" shortcut for the real stacked (not tabbed)
+  // layout (see App.tsx's ProjectsSection).
+  const rootRef = useRef<HTMLDivElement>(null);
+  const focusDiagram = useCallback(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    el.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    el.focus();
+  }, []);
+
+  useRegisterDiagramActions({
+    kind: "architecture",
+    label: `${repo} architecture diagram`,
+    focus: focusDiagram,
+    toggleSourcePanel,
+    sourcePanelOpen: sourceOpen,
+    // Absent entirely (not just disabled) when there's no propose-a-change
+    // wiring at all — mirrors the real on-screen "Fire to harness" button
+    // just below, which likewise doesn't render without onProposeChange.
+    fire: onProposeChange ? fire : undefined,
+    fireEnabled: onProposeChange ? changes.length > 0 : undefined,
+  });
 
   return (
-    <div className="architecture-diagram-view">
+    <div className="architecture-diagram-view" ref={rootRef} tabIndex={-1} data-testid="architecture-diagram-view-root">
       <div className="architecture-diagram-view__header">
-        <h3>{repo} — architecture diagram</h3>
+        <h3>
+          {repo} — architecture diagram{" "}
+          <DiagramDirtyDot dirty={changes.length > 0} label={`${repo} architecture diagram`} />
+        </h3>
+        {pendingProposal ? <span className="pill pill--pending">change proposed…</span> : null}
+        {onProposeChange ? (
+          <button type="button" onClick={fire} disabled={changes.length === 0}>
+            Fire to harness
+          </button>
+        ) : null}
+        <DiagramMetadataStrip repo={repo} />
       </div>
 
       <div className="architecture-diagram-view__tabs" role="tablist">
@@ -137,21 +223,31 @@ export function ArchitectureDiagramView({ repo, topLevel, fullComponent }: Archi
         </button>
       </div>
 
-      {tab === "topLevel" ? (
-        <MermaidGraph
-          key="topLevel"
-          source={topLevel}
-          label={`${repo} top-level architecture diagram`}
-          testId="architecture-diagram-view-graph-top-level"
-        />
-      ) : (
-        <MermaidGraph
-          key="fullComponent"
-          source={fullComponent}
-          label={`${repo} full-component architecture diagram`}
-          testId="architecture-diagram-view-graph-full-component"
-        />
-      )}
+      <div className="architecture-diagram-view__body">
+        <div className="architecture-diagram-view__graph-area" data-testid="architecture-diagram-view-graph-area">
+          {tab === "topLevel" ? (
+            <ArchitectureGraphPane
+              key="topLevel"
+              source={topLevel}
+              label={`${repo} top-level architecture diagram`}
+              testId="architecture-diagram-view-graph-top-level"
+              onChange={handleCanvasChange}
+              onLiveStateChange={handleLiveStateChange}
+            />
+          ) : (
+            <ArchitectureGraphPane
+              key="fullComponent"
+              source={fullComponent}
+              label={`${repo} full-component architecture diagram`}
+              testId="architecture-diagram-view-graph-full-component"
+              onChange={handleCanvasChange}
+              onLiveStateChange={handleLiveStateChange}
+            />
+          )}
+          <DiagramSourcePanel nodes={liveGraph.nodes} edges={liveGraph.edges} open={sourceOpen} onToggle={toggleSourcePanel} />
+        </div>
+        <DiagramChangeset changes={changes} />
+      </div>
     </div>
   );
 }

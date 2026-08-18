@@ -1,0 +1,26 @@
+name: consus-phase18-diagram-editor-and-skin-system
+title: Editable diagrams (React Flow) + a three-skin, two-theme visual system
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: tdd
+
+stories:
+  - id: s1-theme-and-skin-token-system
+    title: Manual light/dark/system theme control + a new orthogonal skin axis (Drafting Table / Case Board / Harness)
+    complexity: high
+    depends_on: []
+  - id: s2-react-flow-diagram-editor-core
+    title: Replace read-only Mermaid diagram views with an editable React Flow canvas + structured right-rail changeset + Fire to harness
+    complexity: high
+    depends_on: [s1-theme-and-skin-token-system]
+  - id: s3-collapsible-mermaid-source-panel
+    title: Toggleable, derived read-only Mermaid source preview available in every skin
+    complexity: medium
+    depends_on: [s2-react-flow-diagram-editor-core]
+  - id: s4-command-palette-and-shortcuts
+    title: Universal ⌘K command palette + keyboard shortcut floor
+    complexity: medium
+    depends_on: [s3-collapsible-mermaid-source-panel]
+  - id: s5-shared-metadata-strip-and-skin-polish
+    title: Shared diagram-metadata strip component + remaining per-skin decorative reconciliation
+    complexity: low
+    depends_on: [s4-command-palette-and-shortcuts]
