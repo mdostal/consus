@@ -1,0 +1,144 @@
+id: s2-react-flow-diagram-editor-core
+epic: consus-phase18-diagram-editor-and-skin-system
+title: Replace read-only Mermaid diagram views with an editable React Flow canvas + structured right-rail changeset + Fire to harness
+status: pending
+complexity: high
+methodology: tdd
+depends_on: [s1-theme-and-skin-token-system]
+
+description: |
+  The epic's core slice. Today web/src/features/projects/DiagramView.tsx (the epic/story cascade,
+  built from GET /api/diagrams' { epics: [{id, title, stories: [{id, title, complexity,
+  dependsOn}]}] } response via buildMermaidSource/buildNodeLookup) and ArchitectureDiagramView.tsx
+  (the directory-structure diagram, from GET /api/diagrams/:repo/architecture's { topLevel,
+  fullComponent } Mermaid strings) are both read-only Mermaid renders. This story replaces the
+  editing-relevant rendering path in both with an editable React Flow (@xyflow/react) canvas, per
+  the epic's library CBA (published alongside the design exploration): React Flow's native
+  {nodes, edges} state maps directly onto both diagram shapes without contorting either.
+
+  Real interactions: click a node's dedicated drag handle (not the whole node body) to move it;
+  click the node body/label to edit it in place; an explicit "add node" action; edge connect (draw a
+  new connection between two nodes); TWO edge-deletion paths — click a connector directly to snip it,
+  and multi-select + a "Delete selected" action for bulk cleanup (both, not either/or — an operator
+  decision). Edge rendering style (straight/orthogonal vs. an organic curved "string" look) is
+  resolved from the active skin (s1) via React Flow's custom edge-type support — not hardcoded.
+
+  Every edit populates a structured, TYPED right-rail changeset panel — rows are added / removed /
+  changed / moved (moved gets its own distinct visual treatment, since a text-based diagram format
+  has no node-position concept and a pure move is a materially different kind of change from a
+  structural edit) — plus a per-diagram-tab dirty-state dot alongside the existing global "N pending
+  changes" count. "Fire to harness" (constant label across skins, per the design discussion) is
+  disabled until there's a real change, and on click serializes the structured change state into the
+  diff string POST /api/proposals already expects (server/routes/proposals.ts requires only
+  {itemId, targetType, diff, description, requestedBy} — no diagram-specific server changes needed
+  or wanted in this story).
+
+  The mockup exploration's own real bug (node label overlap/truncation once a diagram has 6+ sibling
+  nodes) must not carry into this build — React Flow's layout is not automatically immune to this
+  just because it's a different library, so it needs an explicit regression check, not an assumption.
+
+acceptance_criteria:
+  - "Given the epic/story cascade diagram (multiple epics, each with multiple stories) with 6+ sibling nodes at one level, when it renders, then no node's label is truncated mid-string by an overlapping neighbor — the exact bug found in the mockup exploration must not reproduce here."
+  - "Given the architecture diagram (directory structure) or the epic/story cascade, when the operator drags a node's handle, then the node visibly moves and a 'moved' row (visually distinct from add/remove/change rows) appears in the right-rail changeset."
+  - "Given a node, when the operator clicks its label/body (not the drag handle), then it becomes editable in place, and committing an edit adds a 'changed' row to the changeset — dragging and label-editing are never ambiguous for the same click."
+  - "Given two nodes with no existing connection, when the operator uses the connect action to draw an edge between them, then a real edge renders and an 'added' row appears in the changeset; given an existing edge, when the operator clicks the connector directly, then it is removed and a 'removed' row appears — both this direct-click path and a multi-select-then-delete path must independently work for edge removal."
+  - "Given the active skin is Case Board, when edges render, then they use a distinct organic/curved rendering; given the active skin is Drafting Table or Harness, when edges render, then they use precise straight/orthogonal lines — resolved from the skin state added in s1, not hardcoded per diagram type."
+  - "Given zero pending changes, when the diagram renders, then 'Fire to harness' is disabled; given at least one pending change, when the operator clicks it, then a real diff is computed from the structured change state and POST /api/proposals is called with {itemId, targetType, diff, description, requestedBy}, matching the existing generic contract with no diagram-specific server changes."
+  - "Given changes exist on one diagram tab (e.g. architecture) but not the other (e.g. epic cascade), when both tabs are visible, then only the dirty tab shows its per-tab indicator, while the global pending-changes count reflects the true total across both."
+  - "Given the existing GET /api/diagrams and GET /api/diagrams/:repo/architecture endpoints and their existing server-side tests, when this story's changes land, then neither endpoint nor its tests are modified — this story is a frontend-only rendering/editing change consuming the existing read APIs, with proposal-firing going through the existing generic POST /api/proposals unchanged."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Add vitest + React Testing Library specs covering: node drag-by-handle moves a node and logs a
+      moved row; label click-to-edit commits a changed row; add-node and the connect-two-nodes flow
+      log added rows; both edge-removal paths (direct click and multi-select+delete) log removed rows
+      and actually remove the edge; Fire to harness is disabled with zero changes and calls
+      POST /api/proposals with the correct body shape once changes exist; per-tab dirty dot plus
+      global count both reflect reality across two diagram tabs; a diagram with 6+ sibling nodes
+      renders with no overlapping/truncated labels (a real regression-guard test, not just eyeballed);
+      skin-resolved edge rendering differs between Case Board and the other two skins. Follow this
+      repo's existing fetch-mock and component-test conventions (see App.test.tsx's decisions/events
+      specs for the house style).
+    agent: tester
+  - id: implement-react-flow-canvas
+    description: >
+      Add @xyflow/react as a dependency. Build the node/edge state model and the bidirectional
+      mapping to/from the existing DiagramEpic[]/{topLevel, fullComponent} API response shapes.
+      Replace the editing-relevant render path in DiagramView.tsx and ArchitectureDiagramView.tsx
+      (or a shared new component both compose, implementer's call on the exact split) with the React
+      Flow canvas: drag-handle-only node movement, click-to-edit label, add-node action, connect-edge
+      flow, both edge-deletion paths, skin-resolved custom edge type for curve style.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: implement-changeset-and-fire
+    description: >
+      Add the structured, typed right-rail changeset panel (added/removed/changed/moved rows, moved
+      visually distinct) fed by the React Flow canvas's edit events, plus per-diagram-tab dirty dots
+      and the global pending count. Add the diff-formatter that turns the accumulated structured
+      change state into the diff: string field, and wire "Fire to harness" to the existing
+      POST /api/proposals, disabled until there's a real pending change.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: make-tests-pass
+    description: >
+      Run the full suite and fix as needed until every new test passes and the full existing suite —
+      including GET /api/diagrams and GET /api/diagrams/:repo/architecture's own server-side tests —
+      still passes unmodified.
+    agent: developer
+    depends_on: [implement-react-flow-canvas, implement-changeset-and-fire]
+  - id: review
+    description: >
+      Review for: the 6+-sibling-node overlap regression genuinely does not reproduce (not just
+      "looks fine in the one example tried"); drag-vs-click-to-edit is never ambiguous in real
+      interaction, not just in the automated test; both edge-deletion paths are real and independent;
+      the diff sent to POST /api/proposals is a faithful, reviewable representation of the actual
+      change (an operator or harness reading it should be able to tell what changed); no existing
+      diagram-route or route-test file was touched.
+    agent: reviewer
+    depends_on: [make-tests-pass]
+  - id: integrate
+    description: Commit the React Flow diagram editor core.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: web/src/features/projects/DiagramView.tsx
+      purpose: "Current read-only cascade renderer (buildMermaidSource, buildNodeLookup, DiagramEpic/DiagramStory types) — this story's primary edit target for the epic/story cascade diagram."
+    - path: web/src/features/projects/ArchitectureDiagramView.tsx
+      purpose: "Current read-only architecture-diagram renderer ({ topLevel, fullComponent } Mermaid strings) — this story's primary edit target for the directory-structure diagram."
+    - path: server/routes/proposals.ts
+      purpose: "The existing, generic POST /api/proposals contract this story's Fire-to-harness action must reuse unchanged — {itemId, targetType, diff, description, requestedBy}, zero diagram-specific server knowledge."
+    - path: server/routes/diagrams.ts
+      purpose: "The two existing read-only GET endpoints this story consumes — not modified by this story."
+    - path: .pHive/epics/consus-phase18-diagram-editor-and-skin-system/docs/diagram-library-cba.md
+      purpose: "The published CBA justifying React Flow — read for the full reasoning, including its own honest counter-argument (real integration cost), which this story is the direct implementation of."
+
+files_to_modify:
+  - file: package.json
+    change: "Add @xyflow/react dependency."
+  - file: web/src/features/projects/DiagramView.tsx
+    change: "Replace read-only Mermaid render with the editable React Flow canvas for the epic/story cascade."
+  - file: web/src/features/projects/ArchitectureDiagramView.tsx
+    change: "Replace read-only Mermaid render with the editable React Flow canvas for the architecture diagram."
+  - file: web/src/features/projects/DiagramChangeset.tsx
+    change: "New: structured, typed right-rail changeset panel + per-tab dirty dot + global count."
+  - file: web/src/features/projects/diagramDiff.ts
+    change: "New: formats accumulated structured change state into the diff: string field for POST /api/proposals."
+
+design_decisions:
+  - decision: "Node dragging is handle-only, not whole-node-body dragging."
+    rationale: "So click-to-edit-label and drag-to-move can never be ambiguous for the same click target. Operator's own framing: exact hit-target tuning is a 'focused point' left to implementation, not pre-specified pixel geometry."
+  - decision: "Both edge-deletion interaction paths ship (click-to-snip and multi-select+delete), not one chosen over the other."
+    rationale: "Each came from a different mockup direction and neither supersedes the other — click-to-snip is more discoverable for a single edge, multi-select is better for bulk cleanup. Explicit operator call, not an either/or design simplification."
+  - decision: "Edge curve style (straight vs. organic/string) is resolved from the s1 skin state via a custom React Flow edge type, not duplicated per diagram type or hardcoded."
+    rationale: "Keeps the skin system (s1) as the single source of truth for per-skin visual differences, consistent with how color tokens already work."
+
+risks:
+  - severity: high
+    description: "This is real, non-trivial new integration surface — a second diagram-state representation to keep in sync with the existing API shapes, plus a diff formatter that has to stay legible to whatever's on the other end of HarnessTransport. Underestimating this is the CBA's own flagged risk."
+    mitigation: "Scoped as its own full story (not folded into s1 or s3), with explicit extra review weight called out in the epic's design-discussion.md risks section."
+  - severity: medium
+    description: "The exploratory mockup's real overlap/truncation bug at 6+ sibling nodes could resurface under React Flow's own default layout/sizing behavior if not explicitly guarded against."
+    mitigation: "Acceptance criteria and the write-failing-tests step both require a dedicated 6+-sibling-node test, not an assumption that a different library is automatically immune."

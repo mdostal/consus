@@ -1,0 +1,95 @@
+id: s3-collapsible-mermaid-source-panel
+epic: consus-phase18-diagram-editor-and-skin-system
+title: Toggleable, derived read-only Mermaid source preview available in every skin
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: [s2-react-flow-diagram-editor-core]
+
+description: |
+  A collapsible raw Mermaid source panel, available in every skin (not exclusive to Harness) — this
+  was called out explicitly as a must-have for developer users during the UI/UX exploration.
+  Resolved in design-discussion.md as a DERIVED, read-only-by-default preview of the live React Flow
+  node/edge state from s2 — regenerated on every change — not a second, independently-editable text
+  surface. A hand-editable source box that could diverge from the visual graph would reintroduce
+  exactly the "two diagram engines to keep in sync" risk the library CBA flagged; this story
+  deliberately keeps one source of truth (the node/edge state) with the source panel as a live
+  projection of it, not a parallel input.
+
+  Toggle affordance: a real show/hide control present in every skin (styling per-skin, mechanism
+  identical), collapsing the canvas into a split source+visual layout when open (borrowing the
+  layout shape from the Harness mockup, but as a universal capability, not terminal-exclusive) and
+  returning to full-canvas when closed. State does not need to persist across reloads unless trivial
+  to add — this story's bar is a real, working toggle, not a persisted-preference system (that
+  pattern already exists from s1's theme/skin persistence if it turns out easy to reuse).
+
+acceptance_criteria:
+  - "Given the diagram editor from s2 with the source panel closed, when the operator toggles it open, then a Mermaid-shaped graph TD/LR source string appears, and the panel's presence and toggle control render identically in structure across all 3 skins (styling may differ, the mechanism does not)."
+  - "Given the source panel is open, when the operator edits a node (drag, relabel, add/remove, connect/disconnect) via the s2 canvas, then the displayed source text updates to reflect the new state without requiring the panel to be closed and reopened."
+  - "Given the source panel, when inspected, then it is genuinely read-only — there is no code path by which typing into it mutates the underlying node/edge state; the only way to change the diagram remains the s2 canvas interactions."
+  - "Given the source panel is toggled closed, when the canvas re-renders, then it returns to the full-width layout from s2, with no leftover empty space or layout shift bug from the panel having been open."
+  - "Given the existing s1/s2 test suites, when this story's changes land, then they all pass unmodified — this story adds a new, additive panel and does not change s2's editing behavior."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Add vitest + RTL specs covering: the toggle control shows/hides the source panel; the panel's
+      displayed text is genuinely regenerated from current node/edge state after an edit (not stale);
+      the panel has no editable input wired to any state-mutating handler (a real assertion that
+      typing into it, if attempted, does nothing to the underlying diagram — not just that no UI
+      affordance for it exists); the toggle and panel structure render across all 3 skins.
+    agent: tester
+  - id: implement-source-panel
+    description: >
+      Add a pure function that regenerates a Mermaid graph TD/LR string from the current React Flow
+      node/edge state (reusing/adapting the existing buildMermaidSource-style logic from
+      DiagramView.tsx where it fits, rather than duplicating graph-source-building logic from
+      scratch). Add the toggle control and the split source+visual layout, present in every skin.
+      The source panel component takes the current state as read-only input — it must not accept an
+      onChange or any mutation callback, so there is no code path for it to become a second editable
+      surface later by accident.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: make-tests-pass
+    description: >
+      Run the full suite and fix as needed until every new test passes and the full existing suite
+      (including all of s1's and s2's tests) still passes unmodified.
+    agent: developer
+    depends_on: [implement-source-panel]
+  - id: review
+    description: >
+      Review for: the source panel component genuinely has no mutation path (read this literally in
+      the diff, don't just trust the tests); the regenerated source is accurate after each real edit
+      type from s2 (move, relabel, add, remove, connect, disconnect); toggle mechanism is identical
+      in structure across skins even where visual chrome differs; no layout shift/leftover space bug
+      when closing.
+    agent: reviewer
+    depends_on: [make-tests-pass]
+  - id: integrate
+    description: Commit the collapsible Mermaid source panel.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: web/src/features/projects/DiagramView.tsx
+      purpose: "buildMermaidSource is the existing precedent for turning epic/story data into Mermaid graph text — this story adapts that pattern to generate from React Flow node/edge state instead, rather than inventing a different serialization approach."
+    - path: .pHive/epics/consus-phase18-diagram-editor-and-skin-system/docs/design-discussion.md
+      purpose: "Resolved design decision #4 — the source panel is a derived, read-only preview, explicitly not a second editable surface. This story implements exactly that resolution."
+
+files_to_modify:
+  - file: web/src/features/projects/DiagramSourcePanel.tsx
+    change: "New: read-only Mermaid source preview, regenerated from live node/edge state, with the toggle control."
+  - file: web/src/features/projects/DiagramView.tsx
+    change: "Wire in the toggle and split-layout container from s2's canvas."
+  - file: web/src/features/projects/ArchitectureDiagramView.tsx
+    change: "Same wiring as DiagramView.tsx for the architecture diagram."
+
+design_decisions:
+  - decision: "The source panel is read-only and derived, never an independently-editable second surface."
+    rationale: "Resolved explicitly in the epic's design-discussion.md to avoid reintroducing the CBA's flagged 'two diagram engines to keep in sync' risk. If text-editing the source directly is wanted later, that requires its own new decision about reconciling a hand-edited text change back into node/edge state — not assumed or silently added here."
+
+risks:
+  - severity: low
+    description: "A regenerate-on-every-edit approach could become a perf concern on very large diagrams if the serialization function is naively O(n) per keystroke-level edit rather than per committed change."
+    mitigation: "Diagrams in this app are capped (the architecture generator's own MAX_COMPONENTS = 50) and edits are discrete user actions (drag-end, label-commit), not per-keystroke — expected to be a non-issue at this repo's real scale, noted rather than pre-optimized away."

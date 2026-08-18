@@ -1,0 +1,142 @@
+id: s1-theme-and-skin-token-system
+epic: consus-phase18-diagram-editor-and-skin-system
+title: Manual light/dark/system theme control + a new orthogonal skin axis (Drafting Table / Case Board / Harness)
+status: pending
+complexity: high
+methodology: tdd
+depends_on: []
+
+description: |
+  Two real gaps close together in this story. First: Consus has no manual theme control today —
+  web/src/theme/tokens.css is a bare :root (light) plus an unconditional
+  @media (prefers-color-scheme: dark) override, no [data-theme] attribute, no toggle UI, no
+  persistence anywhere in web/src (confirmed: zero localStorage usage in the tree). Second: this
+  epic's whole premise is that all three UI/UX directions explored (Drafting Table, Case Board,
+  Harness) ship as real, switchable skins rather than one picked winner — a second, orthogonal axis
+  alongside theme.
+
+  This story adds both controls together (building a skin picker with nothing for it to sit next to
+  would be a half-finished UI moment) and re-skins the CURRENT app — the existing read-only diagram
+  views, the doc editor, the two-pane Decisions layout, KB, Projects, Events — across all three skins
+  and both themes, before any diagram-editing capability is added in later stories. This sequencing
+  is deliberate: six real skin×theme combinations is the highest-leverage regression risk in the
+  whole epic, and it is far cheaper to get right now than after an editor is built on top of it.
+
+  Mechanism: extend the existing `[data-theme]`-free token pattern to a real
+  `:root` / `@media (prefers-color-scheme: dark)` / `:root[data-theme="dark"]` /
+  `:root[data-theme="light"]` structure (the standard three-state pattern — explicit user choice
+  beats OS default in both directions), PLUS a new, independent `[data-skin="drafting" | "case-board"
+  | "harness"]` attribute carrying each skin's own token overrides (colors, type stack, edge-render
+  hint for later stories) and, where a skin needs real decorative rendering beyond CSS tokens (Case
+  Board's cork-texture canvas draw, Drafting Table's grid-paper/registration-ticks, Harness's
+  terminal chrome), a small per-skin decoration module — not literal-pasted mockup code, since the
+  mockups were static HTML demos, not production React components.
+
+  Persist both choices (theme, skin) to localStorage, applied on load before first paint (avoid a
+  flash of the wrong skin/theme). Default skin: Drafting Table. Default theme: system
+  (prefers-color-scheme, matching today's behavior for anyone who never touches the new control).
+
+acceptance_criteria:
+  - "Given a fresh page load with no stored preference, when the app renders, then it uses the system color-scheme (today's behavior, unchanged) and the Drafting Table skin."
+  - "Given the operator picks Dark explicitly via the new theme control, when the OS is set to light, then the app renders dark (explicit choice beats OS default) and persists that choice across a reload."
+  - "Given the operator picks Light explicitly, when the OS is set to dark, then the app renders light and persists across a reload — the two explicit-override directions both work, not just one."
+  - "Given the operator picks a skin (Case Board or Harness), when the app renders, then every current view (Diagrams tab's existing read-only cascade/architecture views, Docs tab, Decisions tab's two-pane layout, KB, Projects, Events) visibly re-skins — real color tokens and, where applicable, real decorative rendering (e.g. Case Board's cork texture), not just an unchanged app with a label."
+  - "Given each of the 3 skins, when rendered under each of the 2 themes (6 total combinations), then no combination has unreadable text (contrast failure) or a broken/undefined token — this must be checked for all 6, not assumed from a subset."
+  - "Given theme/skin preference was previously stored, when the page is reloaded, then there is no visible flash of the wrong skin/theme before the stored preference applies."
+  - "Given the existing DecisionCard.test.tsx, DiagramView.test.tsx, and other current component tests, when this story's changes land, then they all pass unmodified — this story does not change any component's logic, only the token/decoration layer it renders against."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Add vitest specs covering: the new theme/skin state hook(s) read/write localStorage correctly
+      and resolve the right effective value (explicit override vs. system default) per the three-state
+      pattern; the picker UI components render all theme/skin options and call the right setter on
+      selection; a source-level test confirming tokens.css contains the required selector structure
+      for both axes (:root, prefers-color-scheme guarded by :not([data-theme="light"]), and
+      [data-theme="dark"] override — matching the standard pattern). Follow this repo's existing
+      source-level CSS test convention (see decisions-two-pane.css.test.ts from consus-phase16) for
+      the tokens.css structural assertions.
+    agent: tester
+  - id: implement-token-and-skin-system
+    description: >
+      Extend web/src/theme/tokens.css with the full three-state theme pattern plus a new, independent
+      [data-skin] axis with three token sets. Add a small hook (e.g. useThemePreference /
+      useSkinPreference) that resolves and persists both to localStorage and applies them as
+      attributes on the document root before first paint (to avoid a flash — an inline script or an
+      early-effect approach, whichever fits this app's existing bootstrap in web/src/main.tsx/index
+      entry point without introducing a build-step dependency). Add picker UI (a small control,
+      not required to be visually elaborate in this story) wired to the hooks. Add the per-skin
+      decoration modules only where CSS tokens alone can't express the look (Case Board's cork
+      texture, Drafting Table's grid/registration-ticks, Harness's terminal chrome) — real,
+      dependency-free rendering (canvas draw or CSS, not literal copy-pasted mockup HTML/JS).
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: reskin-existing-views
+    description: >
+      Apply the new tokens across every current view so the acceptance criteria's "6 real
+      combinations" bar is actually met — this is a real visual pass over DiagramView.tsx,
+      ArchitectureDiagramView.tsx, the doc editor, DecisionListPane.tsx/DecisionView, KB, Projects,
+      and Events views, not a token-file change alone. No component's logic changes — this is styling
+      only, confirmed by existing component tests passing unmodified.
+    agent: developer
+    depends_on: [implement-token-and-skin-system]
+  - id: make-tests-pass
+    description: >
+      Run the full suite (server + web) and fix as needed until every new test passes and the full
+      existing suite — every currently-passing test in the repo — still passes unchanged.
+    agent: developer
+    depends_on: [reskin-existing-views]
+  - id: review
+    description: >
+      Review for: all 6 skin×theme combinations actually checked (not assumed from 1-2), no
+      component logic changed (styling-only diff outside the new hook/token/decoration files), no
+      flash-of-wrong-theme on load, localStorage keys namespaced clearly (won't collide with anything
+      else), and explicit-choice-beats-OS-default verified in both directions (light override under
+      dark OS, and dark override under light OS).
+    agent: reviewer
+    depends_on: [make-tests-pass]
+  - id: integrate
+    description: Commit the theme/skin token system and re-skinned views.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: web/src/theme/tokens.css
+      purpose: "Current light/dark tokens (bare :root + unconditional @media dark override, no [data-theme]) — this story's primary edit target, extended to the full three-state pattern plus a new [data-skin] axis."
+    - path: web/src/App.tsx
+      purpose: "Owns top-level app structure; the new theme/skin pickers need a real place to live in the shell, and every view this story re-skins (ProjectsSection/ProjectDiagram/ProjectArchitectureDiagram, DecisionsSection, doc views) is defined or composed here."
+    - path: web/src/features/projects/DiagramView.tsx
+      purpose: "Current read-only cascade renderer — re-skinned in this story, not functionally changed (editing capability is s2's scope)."
+    - path: web/src/features/projects/ArchitectureDiagramView.tsx
+      purpose: "Current read-only architecture-diagram renderer — same treatment as DiagramView.tsx."
+    - path: web/src/features/decisions/decisions-two-pane.css.test.ts
+      purpose: "consus-phase16's precedent for a source-level CSS structural test — follow this convention for the new tokens.css assertions rather than inventing a different test shape."
+
+files_to_modify:
+  - file: web/src/theme/tokens.css
+    change: "Extend to the full :root / prefers-color-scheme / [data-theme=\"dark\"] / [data-theme=\"light\"] three-state pattern, plus a new [data-skin] axis with 3 token sets."
+  - file: web/src/theme/useThemePreference.ts
+    change: "New hook: resolves/persists theme choice (light/dark/system) to localStorage, applies [data-theme] to the document root."
+  - file: web/src/theme/useSkinPreference.ts
+    change: "New hook: resolves/persists skin choice to localStorage, applies [data-skin] to the document root."
+  - file: web/src/theme/skins/
+    change: "New directory: per-skin decoration modules for whatever CSS tokens alone can't express (cork texture, grid/ticks, terminal chrome)."
+  - file: web/src/App.tsx
+    change: "Wire in the new theme/skin picker controls; no logic changes to existing view components beyond styling classes/attributes needed for the re-skin."
+
+design_decisions:
+  - decision: "Theme and skin are two independent, orthogonal state axes ([data-theme] and [data-skin]), not one combined enum."
+    rationale: "Every skin must work in both themes — coupling them into one combined state would make that combinatorial requirement easy to silently violate (e.g. shipping a skin that only really works in dark mode). See design-discussion.md."
+  - decision: "This story re-skins the app's CURRENT (read-only) views before any editing capability exists."
+    rationale: "Front-loads the highest-leverage regression risk (6 real combinations across the whole app) before the React Flow editor (s2) is built on top of it — cheaper to catch token/contrast problems now than after the editor exists."
+  - decision: "Per-skin decorative rendering (cork texture, grid/ticks, terminal chrome) is real, dependency-free, purpose-built code, not ported from the exploratory HTML mockups."
+    rationale: "The mockups were static, self-contained HTML/JS demos built for one-shot visual review, not production-shaped React code — porting them verbatim would import throwaway demo patterns into the real app."
+
+risks:
+  - severity: medium
+    description: "6 real skin×theme combinations is easy to under-test — a reviewer or implementer could check 1-2 and assume the rest are fine by symmetry, missing a real contrast/readability failure in an unchecked combination."
+    mitigation: "Acceptance criteria explicitly require checking all 6, not a subset; review step calls this out by name."
+  - severity: low
+    description: "A flash-of-wrong-theme/skin on load is a common bug class with this kind of persisted-preference-applied-after-first-paint pattern."
+    mitigation: "Acceptance criteria explicitly test for it; apply the stored preference as early as possible in the app's bootstrap, before the first meaningful paint."
