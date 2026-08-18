@@ -1217,59 +1217,10 @@ body {
 .architecture-diagram-view__graph {
   flex: 1;
   min-width: 0;
-  overflow: auto;
   border: 1px solid var(--consus-line);
   border-radius: calc(12px * var(--consus-radius-scale, 1));
   background: var(--consus-bg);
-  padding: 16px;
-}
-.diagram-view__graph svg,
-.architecture-diagram-view__graph svg {
-  max-width: 100%;
-  height: auto;
-}
-.diagram-view__detail {
-  width: 260px;
-  flex: none;
-  border: 1px solid var(--consus-line);
-  border-radius: calc(12px * var(--consus-radius-scale, 1));
-  background: var(--consus-bg);
-  padding: 14px 16px;
-}
-.diagram-view__detail-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-.diagram-view__detail-header h4 {
-  margin: 0;
-  font-size: 14px;
-  color: var(--consus-ink);
-}
-.diagram-view__detail-header button {
-  background: transparent;
-  border: 0;
-  color: var(--consus-ink-muted);
-  font-size: 16px;
-  cursor: pointer;
-  line-height: 1;
-}
-.diagram-view__detail dl {
-  margin: 0;
-  font-size: 12.5px;
-  color: var(--consus-ink-muted);
-}
-.diagram-view__detail dt {
-  font-weight: 600;
-  color: var(--consus-ink);
-  margin-top: 8px;
-}
-.diagram-view__detail dt:first-child {
-  margin-top: 0;
-}
-.diagram-view__detail dd {
-  margin: 2px 0 0;
+  overflow: hidden;
 }
 .diagram-view__history {
   margin-top: 18px;
@@ -1288,13 +1239,276 @@ body {
   gap: 4px;
   margin-bottom: 14px;
 }
+.architecture-diagram-view__body {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
 @media (max-width: 720px) {
-  .diagram-view__body {
+  .diagram-view__body,
+  .architecture-diagram-view__body {
     flex-direction: column;
   }
-  .diagram-view__detail {
-    width: auto;
-  }
+}
+
+/* ============================================================= */
+/* The editable React Flow canvas (s2, consus-phase18) — shared by */
+/* DiagramView (cascade) and ArchitectureDiagramView (directory     */
+/* graph) via DiagramCanvas.tsx. React Flow needs a real, bounded    */
+/* height on its container or it collapses to nothing, hence the    */
+/* fixed height here (not just min-height) on the pane that hosts    */
+/* it. */
+/* ============================================================= */
+.diagram-canvas {
+  display: flex;
+  flex-direction: column;
+  height: 520px;
+}
+.diagram-canvas__toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--consus-line);
+  background: var(--consus-bg-subtle);
+}
+.diagram-canvas__toolbar button {
+  font-family: var(--consus-font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--consus-ink);
+  background: var(--consus-bg);
+  border: 1px solid var(--consus-line);
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.diagram-canvas__toolbar button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.diagram-canvas__toolbar-btn--active {
+  background: var(--consus-accent) !important;
+  color: var(--consus-bg) !important;
+  border-color: var(--consus-accent) !important;
+}
+.diagram-canvas__flow {
+  flex: 1;
+  min-height: 0;
+}
+.diagram-canvas .react-flow__attribution {
+  display: none;
+}
+
+/* One node: a small drag-handle chip (the *only* draggable hit target —
+ * decision #6, so it and the label's click-to-edit gesture never collide
+ * on the same click), a click-to-edit label, and a small remove control. */
+.diagram-canvas__node {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg-subtle);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  font-family: var(--consus-font-ui);
+  font-size: 12.5px;
+  color: var(--consus-ink);
+}
+.diagram-canvas__node--connect-source {
+  outline: 2px solid var(--consus-accent);
+  outline-offset: 1px;
+}
+.diagram-canvas__node-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  padding: 2px;
+}
+.diagram-canvas__drag-handle {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 100%;
+  min-height: 28px;
+  color: var(--consus-ink-muted);
+  cursor: grab;
+  border-radius: calc(4px * var(--consus-radius-scale, 1));
+}
+.diagram-canvas__drag-handle:active {
+  cursor: grabbing;
+}
+.diagram-canvas__node-label,
+.diagram-canvas__node-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  padding: 4px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+.diagram-canvas__node-input {
+  background: var(--consus-bg);
+  border: 1px solid var(--consus-accent);
+  border-radius: calc(4px * var(--consus-radius-scale, 1));
+  white-space: normal;
+}
+.diagram-canvas__node-remove {
+  flex: none;
+  width: 18px;
+  color: var(--consus-ink-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+.diagram-canvas__node-remove:hover {
+  color: var(--consus-bad);
+}
+.diagram-canvas__port {
+  width: 6px;
+  height: 6px;
+  background: var(--consus-ink-muted);
+  border: 1px solid var(--consus-bg);
+}
+
+/* Edges — curve style itself (straight/orthogonal vs. organic) comes from
+ * diagramEdgeStyle.ts's buildEdgePath, resolved from the skin; this is
+ * only stroke color/weight, which stays a shared, skin-token-driven look
+ * across all three skins (decision #8 is about curve shape specifically,
+ * not color). */
+.diagram-canvas__edge {
+  stroke: var(--consus-ink-muted);
+  stroke-width: 1.5;
+  cursor: pointer;
+}
+.diagram-canvas__edge:hover {
+  stroke: var(--consus-accent);
+}
+.diagram-canvas__edge--selected {
+  stroke: var(--consus-accent);
+  stroke-width: 2.5;
+}
+
+/* ============================================================= */
+/* The right-rail changeset panel (s2, consus-phase18) — typed rows, */
+/* "moved" visually distinct from added/removed/changed per design-  */
+/* discussion.md decision #3. */
+/* ============================================================= */
+.diagram-changeset {
+  width: 260px;
+  flex: none;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(12px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg);
+  padding: 14px 16px;
+  max-height: 520px;
+  overflow-y: auto;
+}
+.diagram-changeset__title {
+  margin: 0 0 10px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--consus-ink-muted);
+}
+.diagram-changeset__count {
+  margin-left: 6px;
+  color: var(--consus-ink);
+}
+.diagram-changeset__empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--consus-ink-muted);
+}
+.diagram-changeset__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.diagram-changeset__row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: calc(6px * var(--consus-radius-scale, 1));
+  border-left: 3px solid var(--consus-line);
+  font-size: 12px;
+}
+.diagram-changeset__kind {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+.diagram-changeset__subject {
+  color: var(--consus-ink);
+}
+.diagram-changeset__detail {
+  color: var(--consus-ink-muted);
+  font-size: 11.5px;
+}
+.diagram-changeset__row--added {
+  border-left-color: var(--consus-good);
+  background: color-mix(in srgb, var(--consus-good) 10%, transparent);
+}
+.diagram-changeset__row--added .diagram-changeset__kind {
+  color: var(--consus-good);
+}
+.diagram-changeset__row--removed {
+  border-left-color: var(--consus-bad);
+  background: color-mix(in srgb, var(--consus-bad) 10%, transparent);
+}
+.diagram-changeset__row--removed .diagram-changeset__kind {
+  color: var(--consus-bad);
+}
+.diagram-changeset__row--changed {
+  border-left-color: var(--consus-warn);
+  background: color-mix(in srgb, var(--consus-warn) 10%, transparent);
+}
+.diagram-changeset__row--changed .diagram-changeset__kind {
+  color: var(--consus-warn);
+}
+/* "moved" is deliberately its own visual family (accent, not
+ * good/bad/warn) — a text-based diagram format has no notion of node
+ * position, so a pure move is a materially different kind of change from
+ * a structural add/remove/relabel edit (design-discussion.md decision #3). */
+.diagram-changeset__row--moved {
+  border-left-color: var(--consus-accent);
+  background: color-mix(in srgb, var(--consus-accent) 10%, transparent);
+}
+.diagram-changeset__row--moved .diagram-changeset__kind {
+  color: var(--consus-accent);
+}
+
+/* Per-tab dirty dot + global pending count (s2, consus-phase18). */
+.diagram-dirty-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--consus-warn);
+  vertical-align: middle;
+}
+.diagram-pending-count {
+  display: inline-block;
+  margin: 0 0 14px;
+  font-family: var(--consus-font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--consus-ink-muted);
 }
 
 /* ============================================================= */
