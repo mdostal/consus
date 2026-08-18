@@ -21,6 +21,7 @@ import { useSkinPreference } from "./theme/useSkinPreference";
 import { ThemeSkinPicker } from "./theme/ThemeSkinPicker";
 import { SkinBackdrop } from "./theme/skins/SkinBackdrop";
 import { HarnessWindowDots } from "./theme/skins/HarnessWindowDots";
+import { CommandPalette } from "./features/command-palette/CommandPalette";
 import "./theme/tokens.css";
 import "./app.css";
 import "./features/decisions/decisions-two-pane.css";
@@ -1287,6 +1288,10 @@ export function App() {
           ))}
         </nav>
         <ThemeSkinPicker />
+        {/* s4 (consus-phase18): universal across all 3 skins, not decoration
+            exclusive to Harness — mounted once, here, so ⌘K/Ctrl+K works
+            regardless of which tab or skin is active. */}
+        <CommandPalette />
       </header>
 
       <main className="consus__main">

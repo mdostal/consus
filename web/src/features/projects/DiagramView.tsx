@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuditPanel, type AuditTrailEntry } from "../audit/AuditPanel";
 import { DiagramCanvas, type DiagramCanvasEdgeInput, type DiagramCanvasNodeInput } from "./DiagramCanvas";
 import { DiagramChangeset, DiagramDirtyDot } from "./DiagramChangeset";
 import { DiagramSourcePanel } from "./DiagramSourcePanel";
 import { formatDiagramDiff, type DiagramChange } from "./diagramDiff";
+import { useRegisterDiagramActions } from "../command-palette/diagramActionRegistry";
 
 export interface DiagramStory {
   id: string;
@@ -208,14 +209,36 @@ export function DiagramView({ repo, epics, pendingProposal, onProposeChange, aud
 
   const toggleSourcePanel = useCallback(() => setSourceOpen((v) => !v), []);
 
-  const fire = () => {
+  const fire = useCallback(() => {
     if (changes.length === 0) return;
     onProposeChange({ diff: formatDiagramDiff(changes), description: summarizeChanges(changes) });
     setChanges([]);
-  };
+  }, [changes, onProposeChange]);
+
+  // s4 (consus-phase18): scrolls this diagram's own section into view and
+  // moves real DOM focus onto it — the adapted "switch diagram tab" ->
+  // "focus diagram section" shortcut for the real stacked (not tabbed)
+  // layout (see App.tsx's ProjectsSection).
+  const rootRef = useRef<HTMLDivElement>(null);
+  const focusDiagram = useCallback(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    el.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    el.focus();
+  }, []);
+
+  useRegisterDiagramActions({
+    kind: "cascade",
+    label: `${repo} epic/story diagram`,
+    focus: focusDiagram,
+    toggleSourcePanel,
+    sourcePanelOpen: sourceOpen,
+    fire,
+    fireEnabled: changes.length > 0,
+  });
 
   return (
-    <div className="diagram-view">
+    <div className="diagram-view" ref={rootRef} tabIndex={-1} data-testid="diagram-view-root">
       <div className="diagram-view__header">
         <h3>
           {repo} — epic/story diagram <DiagramDirtyDot dirty={changes.length > 0} label={`${repo} epic/story diagram`} />

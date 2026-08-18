@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DiagramCanvas, type DiagramCanvasEdgeInput, type DiagramCanvasNodeInput } from "./DiagramCanvas";
 import { DiagramChangeset, DiagramDirtyDot } from "./DiagramChangeset";
 import { DiagramSourcePanel } from "./DiagramSourcePanel";
 import { computeLevelsFromEdges } from "./diagramLayout";
 import { formatDiagramDiff, type DiagramChange } from "./diagramDiff";
 import { parseMermaidGraph } from "./mermaidGraphParse";
+import { useRegisterDiagramActions } from "../command-palette/diagramActionRegistry";
 
 export interface ProposeChangeInput {
   diff: string;
@@ -148,14 +149,39 @@ export function ArchitectureDiagramView({
 
   const toggleSourcePanel = useCallback(() => setSourceOpen((v) => !v), []);
 
-  const fire = () => {
+  const fire = useCallback(() => {
     if (changes.length === 0 || !onProposeChange) return;
     onProposeChange({ diff: formatDiagramDiff(changes), description: summarizeChanges(changes) });
     setChanges([]);
-  };
+  }, [changes, onProposeChange]);
+
+  // s4 (consus-phase18): scrolls this diagram's own section into view and
+  // moves real DOM focus onto it — the adapted "switch diagram tab" ->
+  // "focus diagram section" shortcut for the real stacked (not tabbed)
+  // layout (see App.tsx's ProjectsSection).
+  const rootRef = useRef<HTMLDivElement>(null);
+  const focusDiagram = useCallback(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    el.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    el.focus();
+  }, []);
+
+  useRegisterDiagramActions({
+    kind: "architecture",
+    label: `${repo} architecture diagram`,
+    focus: focusDiagram,
+    toggleSourcePanel,
+    sourcePanelOpen: sourceOpen,
+    // Absent entirely (not just disabled) when there's no propose-a-change
+    // wiring at all — mirrors the real on-screen "Fire to harness" button
+    // just below, which likewise doesn't render without onProposeChange.
+    fire: onProposeChange ? fire : undefined,
+    fireEnabled: onProposeChange ? changes.length > 0 : undefined,
+  });
 
   return (
-    <div className="architecture-diagram-view">
+    <div className="architecture-diagram-view" ref={rootRef} tabIndex={-1} data-testid="architecture-diagram-view-root">
       <div className="architecture-diagram-view__header">
         <h3>
           {repo} — architecture diagram{" "}

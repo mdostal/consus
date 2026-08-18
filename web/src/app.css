@@ -1681,3 +1681,122 @@ body {
 [data-skin="harness"] .consus__masthead {
   border-bottom-style: dashed;
 }
+
+/* ================================================================ */
+/* s4 (consus-phase18): universal ⌘K command palette + shortcuts.    */
+/* Present and functionally identical in every skin — only its own   */
+/* chrome differs, via the same --consus-* tokens every other        */
+/* surface already uses (design-discussion.md resolved decision #7). */
+/* ================================================================ */
+.command-palette-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--consus-font-ui);
+  background: var(--consus-bg-subtle);
+  color: var(--consus-ink);
+  border: 1px solid var(--consus-line);
+  padding: 7px 12px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.command-palette-trigger__key {
+  font-family: var(--consus-font-mono);
+  color: var(--consus-accent);
+}
+.command-palette {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+}
+.command-palette__backdrop {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--consus-ink) 45%, transparent);
+}
+.command-palette__panel {
+  position: relative;
+  z-index: 1;
+  width: min(560px, 92vw);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--consus-bg);
+  border: 1px solid var(--consus-line);
+  border-radius: calc(14px * var(--consus-radius-scale, 1));
+  box-shadow: 0 20px 60px color-mix(in srgb, var(--consus-ink) 35%, transparent);
+  overflow: hidden;
+}
+.command-palette__input {
+  font: inherit;
+  font-family: var(--consus-font-ui);
+  font-size: 15px;
+  padding: 14px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--consus-line);
+  background: var(--consus-bg);
+  color: var(--consus-ink);
+}
+.command-palette__input:focus {
+  outline: none;
+}
+.command-palette__list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+}
+.command-palette__empty {
+  padding: 14px 12px;
+  color: var(--consus-ink-muted);
+  font-size: 13px;
+}
+.command-palette__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font: inherit;
+  font-family: var(--consus-font-ui);
+  font-size: 13.5px;
+  text-align: left;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  background: transparent;
+  color: var(--consus-ink);
+  cursor: pointer;
+}
+.command-palette__item--highlighted {
+  background: color-mix(in srgb, var(--consus-accent) 14%, transparent);
+}
+.command-palette__item:disabled {
+  color: var(--consus-ink-muted);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.command-palette__hint {
+  font-family: var(--consus-font-mono);
+  font-size: 11px;
+  color: var(--consus-ink-muted);
+  border: 1px solid var(--consus-line);
+  border-radius: calc(5px * var(--consus-radius-scale, 1));
+  padding: 1px 6px;
+  flex: 0 0 auto;
+}
+
+/* Diagram section roots (s4): focusable via the "1"/"2" shortcuts, so a
+   visible focus ring is worth keeping rather than suppressing outline. */
+.diagram-view:focus-visible,
+.architecture-diagram-view:focus-visible {
+  outline: 2px solid var(--consus-accent);
+  outline-offset: 2px;
+}
