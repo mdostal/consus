@@ -1,0 +1,10 @@
+name: consus-phase17-architecture-diagram-endpoint
+title: Per-repo architecture diagram endpoint (directory-structure Mermaid graphs)
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: tdd
+
+stories:
+  - id: s1-architecture-diagram-endpoint
+    title: Add GET /api/diagrams/:repo/architecture with a directory-scanning Mermaid generator and a small frontend view
+    complexity: medium
+    depends_on: []

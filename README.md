@@ -14,7 +14,7 @@ The core loop: **index → open → interact → propose a change → shared-tru
 4. **Propose a change** — `POST /api/proposals` fires a `{diff, description}` at whatever local harness is configured (`HarnessTransport`); the harness applies it and reports back.
 5. **Shared-truth KB** — an approved decision or doc becomes a durable, versioned `kb_entries` row, grouped by collection (`marketing` / `boundary-decisions` / `plans` / `artifacts` / `general`).
 
-Consus is fully standalone: **zero live coupling to any other system.** It reads and writes only local SQLite and the local filesystem. It binds to `127.0.0.1` only — no network exposure.
+Consus is fully standalone: **zero live coupling to any other system.** It reads and writes only local SQLite and the local filesystem. It binds to `127.0.0.1` by default — no network exposure unless you explicitly opt in via `HOST` (e.g. for a containerized deploy).
 
 ## Architecture
 
@@ -23,7 +23,7 @@ flowchart TB
   subgraph Consus["Consus (this repo)"]
     direction TB
     Web["Web SPA — Vite + React<br/>Decisions · DocRenderer · Diagrams (Mermaid)<br/>KB Browser · ProjectView (theme-aware)"]
-    API["Fastify server :8722<br/>(127.0.0.1 only)"]
+    API["Fastify server :8722<br/>(127.0.0.1 by default, HOST-configurable)"]
     DB[("SQLite<br/>better-sqlite3<br/>items · audit_log · doc_index · kb_entries · proposals")]
     Scanner["Doc Scanner<br/>(server/adapters/doc-scanner)"]
     Harness["HarnessTransport<br/>generic invoke(method, params)<br/>no-op unless a local command is configured"]
@@ -40,7 +40,7 @@ flowchart TB
   Human -->|GET/POST| API
 ```
 
-Internally: a **Fastify** HTTP server (`server/index.ts`) bound to `127.0.0.1:8722`, an idempotent **SQLite** schema (`server/db/migrate.ts`), a **doc scanner** (`server/adapters/doc-scanner` — the only adapter in the codebase) that indexes a repo's own generated docs, a `dostal:decision-request/v1` contract parser, a **KB store** with append-only audit log, draft/publish separation, and versioning, and the generic **`HarnessTransport`** seam (`server/harness/transport.ts`) for the propose-a-change mechanism — it defaults to a no-op and has no knowledge of what, if anything, is configured on the other end. The web layer is a Vite + React SPA (`web/src/App.tsx`) whose feature components render docs via `marked`, diagrams via Mermaid, and present theme-aware decision cards.
+Internally: a **Fastify** HTTP server (`server/index.ts`) bound to `127.0.0.1:8722` by default, an idempotent **SQLite** schema (`server/db/migrate.ts`), a **doc scanner** (`server/adapters/doc-scanner` — the only adapter in the codebase) that indexes a repo's own generated docs, a `dostal:decision-request/v1` contract parser, a **KB store** with append-only audit log, draft/publish separation, and versioning, and the generic **`HarnessTransport`** seam (`server/harness/transport.ts`) for the propose-a-change mechanism — it defaults to a no-op and has no knowledge of what, if anything, is configured on the other end. The web layer is a Vite + React SPA (`web/src/App.tsx`) whose feature components render docs via `marked`, diagrams via Mermaid, and present theme-aware decision cards.
 
 ## How it fits
 
@@ -66,7 +66,7 @@ npm run build        # → dist-web/ + dist-server/
 npm start            # node dist-server/index.js on :8722  (or scripts/start.sh)
 ```
 
-Config via env: `PORT` (default `8722`), `CONSUS_DB_PATH` (default `.pHive/consus.sqlite`), `CONSUS_PROJECTS_CONFIG` (repos to scan for docs, default `.pHive/consus-projects.json`).
+Config via env: `PORT` (default `8722`), `HOST` (default `127.0.0.1` — set `0.0.0.0` for a containerized deploy, since `127.0.0.1` inside a container is unreachable from outside it), `CONSUS_DB_PATH` (default `.pHive/consus.sqlite`), `CONSUS_PROJECTS_CONFIG` (repos to scan for docs, default `.pHive/consus-projects.json`).
 
 Verify it's up:
 

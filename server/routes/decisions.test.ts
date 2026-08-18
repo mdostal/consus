@@ -178,4 +178,76 @@ describe("POST /api/decisions", () => {
       decision_payload: VALID_PAYLOAD,
     });
   });
+
+  it("classifies the new item so decision_type/triage_bucket come back populated, not null", async () => {
+    const res = await post({ id: "classify-1", title: "Should we do X?", decision_payload: VALID_PAYLOAD });
+    const body = res.json();
+
+    // VALID_PAYLOAD has no `diagram` flag -> classifyItem's decisionType is
+    // "choose", and a non-default decisionType with no extractionTier ->
+    // triageBucket "open_question". Matches classifier.test.ts's own
+    // "classifies any other valid decision_payload as 'choose'" case.
+    expect(body.decision_type).toBe("choose");
+    expect(body.triage_bucket).toBe("open_question");
+  });
+
+  it("classifies a diagram:true payload as decision-type 'cba', matching classifyItem", async () => {
+    const res = await post({
+      id: "classify-cba",
+      title: "Approve the architecture?",
+      decision_payload: { ...VALID_PAYLOAD, diagram: true },
+    });
+    const body = res.json();
+
+    expect(body.decision_type).toBe("cba");
+    expect(body.triage_bucket).toBe("open_question");
+  });
+});
+
+describe("GET /api/decisions classification backfill", () => {
+  let db: Database.Database;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    runMigration(db);
+    app = Fastify();
+    registerDecisionRoutes(app, { db });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+  });
+
+  it("backfills decision_type/triage_bucket for a pre-existing row with decision_type left null, and persists the write so it isn't reclassified on a later GET", async () => {
+    insertItem(db, "legacy-1", PAYLOAD); // decision_type/triage_bucket are null by default
+
+    const first = await app.inject({ method: "GET", url: "/api/decisions" });
+    const firstBody = first.json();
+    expect(firstBody[0].decision_type).toBe("choose");
+    expect(firstBody[0].triage_bucket).toBe("open_question");
+
+    // Confirm the backfill actually persisted to the items row (not just
+    // computed in-memory for this one response).
+    const stored = db.prepare("SELECT decision_type, triage_bucket FROM items WHERE id = ?").get("legacy-1") as {
+      decision_type: string | null;
+      triage_bucket: string | null;
+    };
+    expect(stored.decision_type).toBe("choose");
+    expect(stored.triage_bucket).toBe("open_question");
+
+    // Now mutate the stored values to sentinels that classifyItem would
+    // never produce for this payload. If a second GET re-invoked
+    // classifyItem for this row (already non-null decision_type), it would
+    // overwrite these sentinels back to "choose"/"open_question". It must
+    // not.
+    db.prepare("UPDATE items SET decision_type = 'edit', triage_bucket = 'noise' WHERE id = ?").run("legacy-1");
+
+    const second = await app.inject({ method: "GET", url: "/api/decisions" });
+    const secondBody = second.json();
+    expect(secondBody[0].decision_type).toBe("edit");
+    expect(secondBody[0].triage_bucket).toBe("noise");
+  });
 });

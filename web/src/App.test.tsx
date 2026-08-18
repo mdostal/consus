@@ -857,3 +857,193 @@ describe("App — Docs tab search (p14-6)", () => {
     expect(await screen.findByText("architecture.md")).toBeInTheDocument();
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* App — Decisions tab two-pane layout (phase16 s1)                   */
+/* ------------------------------------------------------------------ */
+
+interface DecisionItemLike {
+  id: string;
+  type: string;
+  title: string;
+  status: string;
+  source_repo: string | null;
+  decided_at: string | null;
+  decision_payload: null;
+}
+
+const DECISION_ONE: DecisionItemLike = {
+  id: "item-1",
+  type: "doc_ref",
+  title: "Decision One",
+  status: "open",
+  source_repo: null,
+  decided_at: null,
+  decision_payload: null,
+};
+
+const DECISION_TWO: DecisionItemLike = {
+  id: "item-2",
+  type: "doc_ref",
+  title: "Decision Two",
+  status: "open",
+  source_repo: null,
+  decided_at: null,
+  decision_payload: null,
+};
+
+const DECIDED_DECISION: DecisionItemLike = {
+  id: "item-3",
+  type: "doc_ref",
+  title: "Decided Already",
+  status: "closed",
+  source_repo: null,
+  decided_at: "2026-08-01T00:00:00Z",
+  decision_payload: null,
+};
+
+/** A stateful fetch mock for the Decisions tab — GET /api/decisions?all=1
+ *  serves the current in-memory array, and POST .../verdict mutates it
+ *  (sets decided_at) so a subsequent reload() reflects the change, the
+ *  same stateful-mock shape as buildEventsFetchMock above. */
+function buildDecisionsFetchMock(initialDecisions: DecisionItemLike[]) {
+  let decisions = initialDecisions.map((d) => ({ ...d }));
+  const calls: { method: string; url: string }[] = [];
+
+  const fn = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.toString();
+    const method = init?.method ?? "GET";
+    calls.push({ method, url });
+
+    if (method === "GET" && url.startsWith("/api/decisions")) return jsonOk(decisions);
+
+    const verdictMatch = /^\/api\/decisions\/([^/]+)\/verdict$/.exec(url);
+    if (method === "POST" && verdictMatch) {
+      const id = verdictMatch[1];
+      decisions = decisions.map((d) => (d.id === id ? { ...d, decided_at: "2026-08-12T00:00:00Z" } : d));
+      return jsonOk({ ok: true });
+    }
+
+    if (method === "GET" && url.startsWith("/api/kb-entries")) return jsonOk([KB_ENTRY]);
+    if (method === "GET" && url.startsWith("/api/docs")) return jsonOk(DOCS_WITH_ENTRY);
+    if (method === "GET" && url.startsWith("/api/projects")) return jsonOk({ projects: ["consus"] });
+    if (method === "GET" && url.startsWith("/api/diagrams")) return jsonOk(DIAGRAM_RESPONSE);
+    if (method === "GET" && url.startsWith("/api/items/")) return jsonOk([]);
+    return jsonOk([]);
+  });
+
+  return { fn, calls };
+}
+
+function resetLocation() {
+  window.history.pushState({}, "", "/");
+}
+
+describe("App — Decisions tab two-pane layout (phase16 s1)", () => {
+  beforeEach(() => {
+    resetLocation();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetLocation();
+  });
+
+  it("renders a left list pane and a right detail pane as two distinct containers", async () => {
+    const { fn } = buildDecisionsFetchMock([DECISION_ONE, DECISION_TWO]);
+    vi.stubGlobal("fetch", fn);
+
+    const { container } = render(<App />);
+    await screen.findByRole("heading", { name: "Decision One" });
+
+    const listPane = container.querySelector(".decisions-two-pane__list");
+    const detailPane = container.querySelector(".decisions-two-pane__detail");
+    expect(listPane).toBeInTheDocument();
+    expect(detailPane).toBeInTheDocument();
+    expect(listPane).not.toBe(detailPane);
+    expect(within(listPane as HTMLElement).getByText("Decision Two")).toBeInTheDocument();
+    expect(within(detailPane as HTMLElement).getByRole("heading", { name: "Decision One" })).toBeInTheDocument();
+  });
+
+  it("pre-selects the decision named by ?selected= on mount, without requiring a click", async () => {
+    window.history.pushState({}, "", "/?selected=item-2");
+    const { fn } = buildDecisionsFetchMock([DECISION_ONE, DECISION_TWO]);
+    vi.stubGlobal("fetch", fn);
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Decision Two" })).toBeInTheDocument();
+  });
+
+  it("clicking a list row updates ?selected= and shows that decision's detail, without a page reload", async () => {
+    const { fn } = buildDecisionsFetchMock([DECISION_ONE, DECISION_TWO]);
+    vi.stubGlobal("fetch", fn);
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Decision One" });
+
+    fireEvent.click(screen.getByRole("option", { name: /Decision Two/ }));
+
+    expect(await screen.findByRole("heading", { name: "Decision Two" })).toBeInTheDocument();
+    expect(window.location.search).toBe("?selected=item-2");
+  });
+
+  it("falls back to the first open decision when ?selected= is missing, without rewriting the URL", async () => {
+    const { fn } = buildDecisionsFetchMock([DECISION_ONE, DECISION_TWO]);
+    vi.stubGlobal("fetch", fn);
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Decision One" })).toBeInTheDocument();
+    expect(window.location.search).toBe("");
+  });
+
+  it("falls back to the first open decision when ?selected= names an unknown id, without rewriting the URL", async () => {
+    window.history.pushState({}, "", "/?selected=does-not-exist");
+    const { fn } = buildDecisionsFetchMock([DECISION_ONE, DECISION_TWO]);
+    vi.stubGlobal("fetch", fn);
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Decision One" })).toBeInTheDocument();
+    expect(window.location.search).toBe("?selected=does-not-exist");
+  });
+
+  it("falls back to the first decided decision when there are no open decisions", async () => {
+    const { fn } = buildDecisionsFetchMock([DECIDED_DECISION]);
+    vi.stubGlobal("fetch", fn);
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Decided Already" })).toBeInTheDocument();
+    expect(screen.getByText("Nothing waiting on you")).toBeInTheDocument();
+  });
+
+  it("shows an explicit empty-state message in the detail pane when there are no decisions at all", async () => {
+    vi.stubGlobal("fetch", firstRunFetchMock({ decisions: [], docs: DOCS_WITH_ENTRY, kbEntries: [KB_ENTRY] }));
+
+    render(<App />);
+
+    expect(await screen.findByText("Select a decision to see its details")).toBeInTheDocument();
+  });
+
+  it("keeps the same decision selected across a verdict-triggered reload, reflecting its updated decided state", async () => {
+    const { fn } = buildDecisionsFetchMock([DECISION_ONE, DECISION_TWO]);
+    vi.stubGlobal("fetch", fn);
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Decision One" });
+
+    fireEvent.click(screen.getByRole("option", { name: /Decision Two/ }));
+    await screen.findByRole("heading", { name: "Decision Two" });
+
+    fireEvent.click(screen.getByRole("button", { name: /^accept$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Needs you (1)")).toBeInTheDocument();
+      expect(screen.getByText("Decided (1)")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("heading", { name: "Decision Two" })).toBeInTheDocument();
+    expect(window.location.search).toBe("?selected=item-2");
+  });
+});

@@ -44,6 +44,12 @@ build/
 !.pHive/epics/consus-phase13-multirepo-doc-resolution/**
 !.pHive/epics/consus-phase14-multirepo-event-pipeline/
 !.pHive/epics/consus-phase14-multirepo-event-pipeline/**
+!.pHive/epics/consus-phase15-wire-decision-classifier/
+!.pHive/epics/consus-phase15-wire-decision-classifier/**
+!.pHive/epics/consus-phase16-two-pane-decisions-layout/
+!.pHive/epics/consus-phase16-two-pane-decisions-layout/**
+!.pHive/epics/consus-phase17-architecture-diagram-endpoint/
+!.pHive/epics/consus-phase17-architecture-diagram-endpoint/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/

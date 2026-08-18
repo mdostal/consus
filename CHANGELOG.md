@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-17
+
+### Added
+
+- **`consus-phase15-wire-decision-classifier`:** `classifyItem` (the existing, fully tested decision-type + triage-bucket classifier) is now actually called — previously no route invoked it, so `decision_type`/`triage_bucket` were always `null` in every API response. Wired into `POST /api/decisions` (classify on create), `GET /api/decisions` (opportunistic backfill for any row whose `decision_type` is still `null`, leaving already-classified rows untouched), and the `decision_needed` event-detection pass (classifies inline, including on content-drift re-upserts). No changes to the classifier's own logic.
+- **`consus-phase16-two-pane-decisions-layout`:** the Decisions tab is now a two-pane layout — a scannable left list and an independently-scrolling right detail panel — instead of one long flat page-scrolling list. The current selection is addressable via `?selected=<id>` on the URL (a hand-rolled hook, no router dependency added). The detail pane reuses the existing, richer `DecisionView` unchanged. Missing/unknown `?selected=` falls back to the first open decision, then first decided, then an empty state, without rewriting the URL; selection persists across a verdict-triggered reload. Collapses to a single column below 768px.
+- **`consus-phase17-architecture-diagram-endpoint`:** a new `GET /api/diagrams/:repo/architecture` renders a repo's actual directory structure as a Mermaid diagram (top-level + a richer depth-2 view folding in file paths mentioned in planning docs), distinct from the existing epic/story dependency cascade at `GET /api/diagrams` (unchanged). Generated fresh on every request — no cache table, given the bounded/capped local scan and this project's single-operator scale. Rendered via a new `ArchitectureDiagramView` alongside the existing diagram/docs views on a project's page.
+
+### Fixed
+
+- **The HTTP server's bind host is now configurable via `HOST`** (default `127.0.0.1`, unchanged for standalone/local-dev). Previously hardcoded, which meant a containerized deploy's `127.0.0.1` bind was unreachable from outside the container — confirmed live via Pantheon's containerized deploy testing. Fixes #100.
+
 ## [0.7.0] - 2026-08-16
 
 ### Added

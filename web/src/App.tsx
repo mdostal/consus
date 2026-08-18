@@ -5,6 +5,7 @@ import { CommentThread, type Comment } from "./features/comments/CommentThread";
 import { GlobalView, type KbEntrySummary } from "./features/projects/GlobalView";
 import { ProjectView } from "./features/projects/ProjectView";
 import { DiagramView, type DiagramEpic } from "./features/projects/DiagramView";
+import { ArchitectureDiagramView } from "./features/projects/ArchitectureDiagramView";
 import { AuditPanel, type AuditTrailEntry } from "./features/audit/AuditPanel";
 import { BacklogBrowser, type BacklogEntry, type KbCollection } from "./features/kb/BacklogBrowser";
 import { DocBrowser, type GroupedDocs } from "./features/docs/DocBrowser";
@@ -13,8 +14,11 @@ import { DocRenderer } from "./features/docs/DocRenderer";
 import { EventsList, type EventRow, type EventStatus } from "./features/events/EventsList";
 import { EventProposeComposer } from "./features/events/EventProposeComposer";
 import type { DecisionPayload, Verdict } from "./features/decisions/answer-shapes/types";
+import { useSelectedDecisionId } from "./features/decisions/useSelectedDecisionId";
+import { DecisionListPane } from "./features/decisions/DecisionListPane";
 import "./theme/tokens.css";
 import "./app.css";
+import "./features/decisions/decisions-two-pane.css";
 
 /* ---------------------------------------------------------------- */
 /* Types + shared helpers                                           */
@@ -247,10 +251,25 @@ function DecisionsSection({
   decisions: DecisionItem[] | null;
   reload: () => void;
 }) {
+  // Hooks run unconditionally, before the `!decisions` early return below,
+  // so the hook order stays stable across the loading -> loaded transition.
+  const [selectedId, select] = useSelectedDecisionId();
+
   if (!decisions) return <p className="state">Loading decisions…</p>;
 
   const open = decisions.filter((d) => !d.decided_at);
   const decided = decisions.filter((d) => d.decided_at);
+
+  // Fallback applies identically whether ?selected= is absent or names an
+  // id not in the fetched set: first open, else first decided, else null.
+  // This is derived on every render, not written back to the URL — only an
+  // explicit row click (via `select`) ever rewrites ?selected=.
+  const effectiveId =
+    selectedId !== null && decisions.some((d) => d.id === selectedId)
+      ? selectedId
+      : (open[0]?.id ?? decided[0]?.id ?? null);
+
+  const selected = effectiveId !== null ? (decisions.find((d) => d.id === effectiveId) ?? null) : null;
 
   return (
     <div>
@@ -259,24 +278,21 @@ function DecisionsSection({
         <p>The go / no-go queue — a question, a recommendation, and a real verdict for each.</p>
       </div>
 
-      <p className="group-heading">Needs you ({open.length})</p>
-      {open.length === 0 ? (
-        <div className="empty">
-          <strong>Nothing waiting on you</strong>
-          Every open decision has been answered. New decisions land here as agents surface them.
+      <div className="decisions-two-pane">
+        <div className="decisions-two-pane__list">
+          <DecisionListPane items={decisions} selectedId={effectiveId} onSelect={select} />
         </div>
-      ) : (
-        open.map((d) => <DecisionView key={d.id} item={d} onDecided={reload} />)
-      )}
-
-      {decided.length > 0 ? (
-        <>
-          <p className="group-heading">Decided ({decided.length})</p>
-          {decided.map((d) => (
-            <DecisionView key={d.id} item={d} onDecided={reload} />
-          ))}
-        </>
-      ) : null}
+        <div className="decisions-two-pane__detail">
+          {selected ? (
+            <DecisionView key={selected.id} item={selected} onDecided={reload} />
+          ) : (
+            <div className="empty">
+              <strong>Select a decision to see its details</strong>
+              Choose a decision from the list on the left.
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -388,6 +404,7 @@ function ProjectsSection() {
                 onSelect={() => {}}
               />
               <ProjectDiagram repo={project} refreshToken={refreshToken} />
+              <ProjectArchitectureDiagram repo={project} refreshToken={refreshToken} />
               <ProjectDocs repo={project} refreshToken={refreshToken} />
             </>
           )}
@@ -464,6 +481,33 @@ function ProjectDiagram({ repo, refreshToken }: { repo: string; refreshToken?: n
       auditEntries={auditEntries}
     />
   );
+}
+
+/**
+ * consus-phase17-architecture-diagram-endpoint: fetches a repo's real
+ * directory-structure architecture diagram (a second, independent diagram
+ * kind from the epic/story cascade above) and renders it via
+ * ArchitectureDiagramView. Same fetch/error/loading pattern as
+ * ProjectDiagram, but no propose-a-change wiring — this endpoint has no
+ * item id to target.
+ */
+function ProjectArchitectureDiagram({ repo, refreshToken }: { repo: string; refreshToken?: number }) {
+  const [data, setData] = useState<{ topLevel: string; fullComponent: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setData(null);
+    setError(null);
+    fetch(`/api/diagrams/${encodeURIComponent(repo)}/architecture`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(setData)
+      .catch((e) => setError(e.message));
+  }, [repo, refreshToken]);
+
+  if (error) return <p className="state state--err">Could not load the architecture diagram: {error}</p>;
+  if (!data) return <p className="state">Loading architecture diagram…</p>;
+
+  return <ArchitectureDiagramView repo={repo} topLevel={data.topLevel} fullComponent={data.fullComponent} />;
 }
 
 /**

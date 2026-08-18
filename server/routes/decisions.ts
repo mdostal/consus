@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
 import type { DecisionPayload } from "../decision-contract/parser.js";
+import { classifyItem } from "../decision-contract/classifier.js";
 
 export interface DecisionRoutesOptions {
   db: Database.Database;
@@ -70,10 +71,26 @@ export function registerDecisionRoutes(app: FastifyInstance, { db }: DecisionRou
 
     const rows = db.prepare(sql).all() as ItemRow[];
 
-    return rows.map((row) => ({
-      ...row,
-      decision_payload: row.decision_payload ? JSON.parse(row.decision_payload) : null,
-    }));
+    return rows.map((row) => {
+      // s1-wire-classifier-into-decisions-route: opportunistic backfill for
+      // rows that predate this wiring (decision_type still null). Rows that
+      // already carry a classification are returned as-is — no call, no
+      // write, no reclassification on every list render.
+      let decisionType = row.decision_type;
+      let triageBucket = row.triage_bucket;
+      if (decisionType === null) {
+        const result = classifyItem(db, row.id);
+        decisionType = result.decisionType;
+        triageBucket = result.triageBucket;
+      }
+
+      return {
+        ...row,
+        decision_type: decisionType,
+        triage_bucket: triageBucket,
+        decision_payload: row.decision_payload ? JSON.parse(row.decision_payload) : null,
+      };
+    });
   });
 
   /**
@@ -108,6 +125,8 @@ export function registerDecisionRoutes(app: FastifyInstance, { db }: DecisionRou
       `INSERT INTO items (id, type, title, status, source_repo, created_at, updated_at, decision_payload)
        VALUES (?, 'decision_request', ?, 'open', ?, ?, ?, ?)`,
     ).run(id, title, sourceRepo ?? null, now, now, JSON.stringify(decisionPayload));
+
+    classifyItem(db, id);
 
     const row = db
       .prepare(
