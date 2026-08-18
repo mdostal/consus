@@ -22,6 +22,7 @@ import { ThemeSkinPicker } from "./theme/ThemeSkinPicker";
 import { SkinBackdrop } from "./theme/skins/SkinBackdrop";
 import { HarnessWindowDots } from "./theme/skins/HarnessWindowDots";
 import { CommandPalette } from "./features/command-palette/CommandPalette";
+import { HarnessConnectBanner } from "./features/harness-connect/HarnessConnectBanner";
 import "./theme/tokens.css";
 import "./app.css";
 import "./features/decisions/decisions-two-pane.css";
@@ -1293,6 +1294,10 @@ export function App() {
             regardless of which tab or skin is active. */}
         <CommandPalette />
       </header>
+
+      {/* s1 (consus-phase19): visible on every tab regardless of which is
+          active, same as the masthead itself — see design-discussion.md. */}
+      <HarnessConnectBanner />
 
       <main className="consus__main">
         {error ? <p className="state state--err">Could not load decisions: {error}</p> : null}
