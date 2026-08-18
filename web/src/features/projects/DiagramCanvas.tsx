@@ -55,6 +55,16 @@ export interface DiagramCanvasProps {
   nodes: DiagramCanvasNodeInput[];
   edges: DiagramCanvasEdgeInput[];
   onChange: (change: DiagramChange) => void;
+  /** s3 (consus-phase18): a read-only broadcast of this canvas's own
+   *  current node/edge state, fired whenever rfNodes/rfEdges change
+   *  (including once on mount). Exists purely so a caller — the
+   *  collapsible Mermaid source panel — can regenerate a live preview from
+   *  the actual current graph rather than replaying the onChange log to
+   *  reconstruct it. This is a read-out only: nothing reads a value back
+   *  from the caller through it, and DiagramCanvas's own rfNodes/rfEdges
+   *  state (via useNodesState/useEdgesState above) remains the single
+   *  place that actually gets mutated. */
+  onLiveStateChange?: (nodes: DiagramCanvasNodeInput[], edges: DiagramCanvasEdgeInput[]) => void;
 }
 
 /**
@@ -304,10 +314,30 @@ function DiagramEdgeComponent({ id, source, target }: EdgeProps<DiagramFlowEdge>
 const NODE_TYPES: NodeTypes = { diagramNode: DiagramNodeComponent };
 const EDGE_TYPES: EdgeTypes = { diagramEdge: DiagramEdgeComponent };
 
-export function DiagramCanvas({ nodes, edges, onChange }: DiagramCanvasProps) {
+export function DiagramCanvas({ nodes, edges, onChange, onLiveStateChange }: DiagramCanvasProps) {
   const initial = useMemo(() => buildInitialGraph(nodes, edges), [nodes, edges]);
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<DiagramFlowNode>(initial.nodes);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<DiagramFlowEdge>(initial.edges);
+
+  // level/groupOrder only ever mattered for the one-time initial layout
+  // (buildInitialGraph above) — rfNodes itself doesn't carry them, so this
+  // looks the original value back up by id (falling back to level 0 for a
+  // node added after mount, e.g. via addNode below, which never had one).
+  const originalLevelById = useMemo(() => {
+    const map = new Map<string, { level: number; groupOrder?: number }>();
+    for (const n of nodes) map.set(n.id, { level: n.level, groupOrder: n.groupOrder });
+    return map;
+  }, [nodes]);
+
+  useEffect(() => {
+    if (!onLiveStateChange) return;
+    const liveNodes: DiagramCanvasNodeInput[] = rfNodes.map((n) => {
+      const orig = originalLevelById.get(n.id);
+      return { id: n.id, label: n.data.label, level: orig?.level ?? 0, groupOrder: orig?.groupOrder };
+    });
+    const liveEdges: DiagramCanvasEdgeInput[] = rfEdges.map((e) => ({ id: e.id, source: e.source, target: e.target }));
+    onLiveStateChange(liveNodes, liveEdges);
+  }, [rfNodes, rfEdges, originalLevelById, onLiveStateChange]);
 
   const [connectMode, setConnectMode] = useState(false);
   const [connectSourceId, setConnectSourceId] = useState<string | null>(null);

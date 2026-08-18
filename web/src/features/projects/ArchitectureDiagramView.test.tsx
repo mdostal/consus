@@ -168,6 +168,53 @@ describe("ArchitectureDiagramView", () => {
     });
   });
 
+  describe("collapsible Mermaid source panel (s3) — same mechanism as DiagramView", () => {
+    it("is closed by default and shows live graph TD source once toggled open", async () => {
+      await renderArchitectureView();
+
+      expect(screen.queryByTestId("diagram-source-panel-text")).not.toBeInTheDocument();
+      fireEvent.click(screen.getByTestId("diagram-source-panel-toggle"));
+
+      const text = screen.getByTestId("diagram-source-panel-text");
+      expect(text).toHaveTextContent("graph TD");
+      expect(text).toHaveTextContent("consus");
+      expect(text).toHaveTextContent("src");
+    });
+
+    it("regenerates after a real add-node edit, without closing/reopening", async () => {
+      await renderArchitectureView();
+      fireEvent.click(screen.getByTestId("diagram-source-panel-toggle"));
+
+      fireEvent.click(screen.getByTestId("diagram-canvas-add-node"));
+
+      expect(screen.getByTestId("diagram-source-panel-text")).toHaveTextContent("New node 1");
+    });
+
+    it("switches to the newly active tab's own live source when the tab changes", async () => {
+      await renderArchitectureView();
+      fireEvent.click(screen.getByTestId("diagram-source-panel-toggle"));
+      expect(screen.getByTestId("diagram-source-panel-text")).not.toHaveTextContent("index.ts");
+
+      fireEvent.click(screen.getByRole("tab", { name: /full component/i }));
+
+      expect(screen.getByTestId("diagram-source-panel-text")).toHaveTextContent("index.ts");
+    });
+
+    it("renders identically in structure across all 3 skins", async () => {
+      for (const skin of ["drafting", "case-board", "harness"] as const) {
+        document.documentElement.setAttribute("data-skin", skin);
+        const { unmount } = await renderArchitectureView();
+
+        expect(screen.getByTestId("diagram-source-panel-toggle")).toBeInTheDocument();
+        fireEvent.click(screen.getByTestId("diagram-source-panel-toggle"));
+        expect(screen.getByTestId("diagram-source-panel-text")).toHaveTextContent("graph TD");
+
+        unmount();
+        document.documentElement.removeAttribute("data-skin");
+      }
+    });
+  });
+
   describe("6+ sibling regression guard (directory graph shape)", () => {
     it("renders 8 top-level directories with no label truncation or overlap", async () => {
       const dirs = ["server", "web", "docs", "scripts", "config", "tests", "assets", "tools"];

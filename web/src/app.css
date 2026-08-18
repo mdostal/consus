@@ -1222,6 +1222,66 @@ body {
   background: var(--consus-bg);
   overflow: hidden;
 }
+
+/* s3, consus-phase18: the collapsible Mermaid source panel's split layout.
+   `.diagram-view__graph-area` / `.architecture-diagram-view__graph-area`
+   replace the old direct `.diagram-view__body` -> `.diagram-view__graph`
+   parent/child, so the visual canvas and (when open) the source preview sit
+   side by side, while `.diagram-view__body`'s other sibling
+   (DiagramChangeset) is unaffected either way. When the panel is closed it
+   renders no source content at all (DiagramSourcePanel.tsx returns no <pre>
+   node — not a CSS-hidden one), so the graph pane's flex: 1 naturally
+   reclaims the full width with no leftover reserved space. */
+.diagram-view__graph-area,
+.architecture-diagram-view__graph-area {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 14px;
+  align-items: stretch;
+}
+.diagram-view__graph-area > .diagram-view__graph,
+.architecture-diagram-view__graph-area > .architecture-diagram-view__graph {
+  flex: 1;
+  min-width: 0;
+}
+.diagram-source-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+}
+.diagram-source-panel[data-open="true"] {
+  flex: 0 0 340px;
+  min-width: 0;
+}
+.diagram-source-panel__toggle {
+  align-self: flex-start;
+  font-family: var(--consus-font-ui);
+  background: var(--consus-bg-subtle);
+  color: var(--consus-ink);
+  border: 1px solid var(--consus-line);
+  padding: 6px 12px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.diagram-source-panel__source {
+  flex: 1;
+  min-height: 0;
+  margin: 8px 0 0;
+  padding: 12px 14px;
+  overflow: auto;
+  font-family: var(--consus-font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--consus-ink);
+  background: var(--consus-bg);
+  border: 1px solid var(--consus-line);
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
+  white-space: pre;
+}
 .diagram-view__history {
   margin-top: 18px;
   padding-top: 16px;

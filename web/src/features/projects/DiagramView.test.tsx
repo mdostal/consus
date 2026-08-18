@@ -216,4 +216,92 @@ describe("DiagramView", () => {
     fireEvent.click(screen.getByTestId("diagram-canvas-add-node"));
     expect(screen.getByText(/no history yet/i)).toBeInTheDocument();
   });
+
+  describe("collapsible Mermaid source panel (s3)", () => {
+    it("is closed by default: toggle present, no source text rendered", async () => {
+      await renderDiagramView();
+
+      expect(screen.getByTestId("diagram-source-panel-toggle")).toBeInTheDocument();
+      expect(screen.queryByTestId("diagram-source-panel-text")).not.toBeInTheDocument();
+    });
+
+    it("toggling shows a Mermaid-shaped graph TD source reflecting the current cascade, and toggling again hides it", async () => {
+      await renderDiagramView();
+
+      fireEvent.click(screen.getByTestId("diagram-source-panel-toggle"));
+      const text = screen.getByTestId("diagram-source-panel-text");
+      expect(text).toHaveTextContent("graph TD");
+      expect(text).toHaveTextContent("Epic A");
+      expect(text).toHaveTextContent("Story One (low)");
+      expect(text).toHaveTextContent("Story Two (medium)");
+
+      fireEvent.click(screen.getByTestId("diagram-source-panel-toggle"));
+      expect(screen.queryByTestId("diagram-source-panel-text")).not.toBeInTheDocument();
+    });
+
+    it("regenerates the displayed source after a real edit via DiagramCanvas's own add-node action, without closing/reopening", async () => {
+      await renderDiagramView();
+      fireEvent.click(screen.getByTestId("diagram-source-panel-toggle"));
+
+      expect(screen.getByTestId("diagram-source-panel-text")).not.toHaveTextContent("New node 1");
+
+      fireEvent.click(screen.getByTestId("diagram-canvas-add-node"));
+
+      expect(screen.getByTestId("diagram-source-panel-text")).toHaveTextContent("New node 1");
+    });
+
+    it("regenerates after a relabel (click-to-edit-in-place via the real DiagramCanvas)", async () => {
+      await renderDiagramView();
+      fireEvent.click(screen.getByTestId("diagram-source-panel-toggle"));
+      expect(screen.getByTestId("diagram-source-panel-text")).toHaveTextContent("Story One (low)");
+
+      fireEvent.click(screen.getByTestId("diagram-node-label-story:s1"));
+      fireEvent.change(screen.getByTestId("diagram-node-input-story:s1"), { target: { value: "Story 1 Renamed" } });
+      fireEvent.blur(screen.getByTestId("diagram-node-input-story:s1"));
+
+      expect(screen.getByTestId("diagram-source-panel-text")).toHaveTextContent("Story 1 Renamed");
+      expect(screen.getByTestId("diagram-source-panel-text")).not.toHaveTextContent("Story One (low)");
+    });
+
+    it("regenerates after removing a node — its line disappears from the source", async () => {
+      await renderDiagramView();
+      fireEvent.click(screen.getByTestId("diagram-source-panel-toggle"));
+      expect(screen.getByTestId("diagram-source-panel-text")).toHaveTextContent("Story One (low)");
+
+      fireEvent.click(screen.getByTestId("diagram-node-remove-story:s1"));
+
+      expect(screen.getByTestId("diagram-source-panel-text")).not.toHaveTextContent("Story One (low)");
+    });
+
+    it("closing the panel again returns the graph pane to its full pre-open layout, with no leftover source content in the DOM", async () => {
+      await renderDiagramView();
+      const graphArea = screen.getByTestId("diagram-view-graph-area");
+      const closedChildCount = graphArea.children.length;
+
+      fireEvent.click(screen.getByTestId("diagram-source-panel-toggle"));
+      expect(screen.getByTestId("diagram-source-panel-text")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId("diagram-source-panel-toggle"));
+
+      expect(screen.queryByTestId("diagram-source-panel-text")).not.toBeInTheDocument();
+      // Structurally back to the pre-open shape — not just visually hidden
+      // behind CSS, which could leave a reserved-but-empty flex slot.
+      expect(graphArea.children.length).toBe(closedChildCount);
+      expect(screen.getByTestId("diagram-source-panel")).toHaveAttribute("data-open", "false");
+    });
+
+    it("renders the toggle and (once open) the panel identically in structure across all 3 skins", async () => {
+      for (const skin of ["drafting", "case-board", "harness"] as const) {
+        document.documentElement.setAttribute("data-skin", skin);
+        const { unmount } = await renderDiagramView();
+
+        expect(screen.getByTestId("diagram-source-panel-toggle")).toBeInTheDocument();
+        fireEvent.click(screen.getByTestId("diagram-source-panel-toggle"));
+        expect(screen.getByTestId("diagram-source-panel-text")).toHaveTextContent("graph TD");
+
+        unmount();
+        document.documentElement.removeAttribute("data-skin");
+      }
+    });
+  });
 });

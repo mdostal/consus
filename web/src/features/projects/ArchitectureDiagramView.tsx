@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DiagramCanvas, type DiagramCanvasEdgeInput, type DiagramCanvasNodeInput } from "./DiagramCanvas";
 import { DiagramChangeset, DiagramDirtyDot } from "./DiagramChangeset";
+import { DiagramSourcePanel } from "./DiagramSourcePanel";
 import { computeLevelsFromEdges } from "./diagramLayout";
 import { formatDiagramDiff, type DiagramChange } from "./diagramDiff";
 import { parseMermaidGraph } from "./mermaidGraphParse";
@@ -72,16 +73,25 @@ function ArchitectureGraphPane({
   label,
   testId,
   onChange,
+  onLiveStateChange,
 }: {
   source: string;
   label: string;
   testId: string;
   onChange: (change: DiagramChange) => void;
+  onLiveStateChange: (nodes: DiagramCanvasNodeInput[], edges: DiagramCanvasEdgeInput[]) => void;
 }) {
-  const graph = buildArchitectureGraph(source);
+  // Memoized on `source` (not recomputed fresh every render): DiagramCanvas
+  // reads identity-stability from its own `nodes`/`edges` props (its
+  // originalLevelById lookup, s3, is keyed on them) to know whether to
+  // re-broadcast its live state upward. Without this memo, every
+  // onLiveStateChange call triggers a re-render here, which would recompute
+  // a brand-new `graph` object, which DiagramCanvas would see as "props
+  // changed," causing it to re-broadcast again — an infinite loop.
+  const graph = useMemo(() => buildArchitectureGraph(source), [source]);
   return (
     <div className="architecture-diagram-view__graph" role="img" aria-label={label} data-testid={testId}>
-      <DiagramCanvas nodes={graph.nodes} edges={graph.edges} onChange={onChange} />
+      <DiagramCanvas nodes={graph.nodes} edges={graph.edges} onChange={onChange} onLiveStateChange={onLiveStateChange} />
     </div>
   );
 }
@@ -108,6 +118,18 @@ export function ArchitectureDiagramView({
   const [tab, setTab] = useState<Tab>("topLevel");
   const [changes, setChanges] = useState<DiagramChange[]>([]);
 
+  // s3 (consus-phase18): the active tab's own current node/edge state, read
+  // out via DiagramCanvas's onLiveStateChange, feeding the collapsible
+  // Mermaid source panel — same mechanism as DiagramView.tsx. Switching
+  // tabs remounts a fresh DiagramCanvas (see the `key` props below), which
+  // immediately re-fires this with that tab's own graph, so this never
+  // mixes state across tabs.
+  const [liveGraph, setLiveGraph] = useState<{ nodes: DiagramCanvasNodeInput[]; edges: DiagramCanvasEdgeInput[] }>({
+    nodes: [],
+    edges: [],
+  });
+  const [sourceOpen, setSourceOpen] = useState(false);
+
   useEffect(() => {
     setChanges([]);
   }, [repo]);
@@ -119,6 +141,12 @@ export function ArchitectureDiagramView({
   const handleCanvasChange = useCallback((change: DiagramChange) => {
     setChanges((prev) => [...prev, change]);
   }, []);
+
+  const handleLiveStateChange = useCallback((nodes: DiagramCanvasNodeInput[], edges: DiagramCanvasEdgeInput[]) => {
+    setLiveGraph({ nodes, edges });
+  }, []);
+
+  const toggleSourcePanel = useCallback(() => setSourceOpen((v) => !v), []);
 
   const fire = () => {
     if (changes.length === 0 || !onProposeChange) return;
@@ -163,23 +191,28 @@ export function ArchitectureDiagramView({
       </div>
 
       <div className="architecture-diagram-view__body">
-        {tab === "topLevel" ? (
-          <ArchitectureGraphPane
-            key="topLevel"
-            source={topLevel}
-            label={`${repo} top-level architecture diagram`}
-            testId="architecture-diagram-view-graph-top-level"
-            onChange={handleCanvasChange}
-          />
-        ) : (
-          <ArchitectureGraphPane
-            key="fullComponent"
-            source={fullComponent}
-            label={`${repo} full-component architecture diagram`}
-            testId="architecture-diagram-view-graph-full-component"
-            onChange={handleCanvasChange}
-          />
-        )}
+        <div className="architecture-diagram-view__graph-area" data-testid="architecture-diagram-view-graph-area">
+          {tab === "topLevel" ? (
+            <ArchitectureGraphPane
+              key="topLevel"
+              source={topLevel}
+              label={`${repo} top-level architecture diagram`}
+              testId="architecture-diagram-view-graph-top-level"
+              onChange={handleCanvasChange}
+              onLiveStateChange={handleLiveStateChange}
+            />
+          ) : (
+            <ArchitectureGraphPane
+              key="fullComponent"
+              source={fullComponent}
+              label={`${repo} full-component architecture diagram`}
+              testId="architecture-diagram-view-graph-full-component"
+              onChange={handleCanvasChange}
+              onLiveStateChange={handleLiveStateChange}
+            />
+          )}
+          <DiagramSourcePanel nodes={liveGraph.nodes} edges={liveGraph.edges} open={sourceOpen} onToggle={toggleSourcePanel} />
+        </div>
         <DiagramChangeset changes={changes} />
       </div>
     </div>

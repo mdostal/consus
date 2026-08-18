@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AuditPanel, type AuditTrailEntry } from "../audit/AuditPanel";
 import { DiagramCanvas, type DiagramCanvasEdgeInput, type DiagramCanvasNodeInput } from "./DiagramCanvas";
 import { DiagramChangeset, DiagramDirtyDot } from "./DiagramChangeset";
+import { DiagramSourcePanel } from "./DiagramSourcePanel";
 import { formatDiagramDiff, type DiagramChange } from "./diagramDiff";
 
 export interface DiagramStory {
@@ -179,6 +180,14 @@ export function DiagramView({ repo, epics, pendingProposal, onProposeChange, aud
   const [changes, setChanges] = useState<DiagramChange[]>([]);
   const graph = useMemo(() => buildCascadeGraph(epics), [epics]);
 
+  // s3 (consus-phase18): the canvas's own current node/edge state, read out
+  // via DiagramCanvas's onLiveStateChange — used only to regenerate the
+  // collapsible Mermaid source panel's preview text. Seeded with `graph` so
+  // there's never a flash of an empty preview before DiagramCanvas's first
+  // mount effect fires.
+  const [liveGraph, setLiveGraph] = useState<{ nodes: DiagramCanvasNodeInput[]; edges: DiagramCanvasEdgeInput[] }>(graph);
+  const [sourceOpen, setSourceOpen] = useState(false);
+
   // A freshly-loaded repo (or a repo switch) starts clean — no carried-over
   // edits from a previous diagram's session.
   useEffect(() => {
@@ -192,6 +201,12 @@ export function DiagramView({ repo, epics, pendingProposal, onProposeChange, aud
   const handleCanvasChange = useCallback((change: DiagramChange) => {
     setChanges((prev) => [...prev, change]);
   }, []);
+
+  const handleLiveStateChange = useCallback((nodes: DiagramCanvasNodeInput[], edges: DiagramCanvasEdgeInput[]) => {
+    setLiveGraph({ nodes, edges });
+  }, []);
+
+  const toggleSourcePanel = useCallback(() => setSourceOpen((v) => !v), []);
 
   const fire = () => {
     if (changes.length === 0) return;
@@ -215,8 +230,17 @@ export function DiagramView({ repo, epics, pendingProposal, onProposeChange, aud
         <p className="state">No epics yet for {repo}.</p>
       ) : (
         <div className="diagram-view__body">
-          <div className="diagram-view__graph" data-testid="diagram-view-graph">
-            <DiagramCanvas key={repo} nodes={graph.nodes} edges={graph.edges} onChange={handleCanvasChange} />
+          <div className="diagram-view__graph-area" data-testid="diagram-view-graph-area">
+            <div className="diagram-view__graph" data-testid="diagram-view-graph">
+              <DiagramCanvas
+                key={repo}
+                nodes={graph.nodes}
+                edges={graph.edges}
+                onChange={handleCanvasChange}
+                onLiveStateChange={handleLiveStateChange}
+              />
+            </div>
+            <DiagramSourcePanel nodes={liveGraph.nodes} edges={liveGraph.edges} open={sourceOpen} onToggle={toggleSourcePanel} />
           </div>
           <DiagramChangeset changes={changes} />
         </div>

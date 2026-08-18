@@ -249,6 +249,69 @@ describe("DiagramCanvas — skin-resolved edge style", () => {
   });
 });
 
+describe("DiagramCanvas — onLiveStateChange (s3: read-out for the collapsible source panel)", () => {
+  it("is optional — omitting it entirely does not crash any interaction", async () => {
+    const changes: DiagramChange[] = [];
+    await act(async () => {
+      render(<DiagramCanvas nodes={NODES} edges={EDGES} onChange={(c) => changes.push(c)} />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(() => fireEvent.click(screen.getByTestId("diagram-canvas-add-node"))).not.toThrow();
+  });
+
+  it("fires once on mount with the initial node/edge state", async () => {
+    const onLiveStateChange = vi.fn();
+    await act(async () => {
+      render(<DiagramCanvas nodes={NODES} edges={EDGES} onChange={() => {}} onLiveStateChange={onLiveStateChange} />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(onLiveStateChange).toHaveBeenCalled();
+    const [lastNodes, lastEdges] = onLiveStateChange.mock.calls[onLiveStateChange.mock.calls.length - 1];
+    expect(lastNodes.map((n: DiagramCanvasNodeInput) => n.label)).toEqual(
+      expect.arrayContaining(["Story One", "Story Two", "Story Three"]),
+    );
+    expect(lastEdges).toEqual(expect.arrayContaining([expect.objectContaining({ id: "e1", source: "a", target: "b" })]));
+  });
+
+  it("fires again, with the updated state, after add-node/relabel/remove/connect edits", async () => {
+    const onLiveStateChange = vi.fn();
+    await act(async () => {
+      render(<DiagramCanvas nodes={NODES} edges={EDGES} onChange={() => {}} onLiveStateChange={onLiveStateChange} />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    onLiveStateChange.mockClear();
+
+    fireEvent.click(screen.getByTestId("diagram-canvas-add-node"));
+
+    expect(onLiveStateChange).toHaveBeenCalled();
+    const [lastNodes] = onLiveStateChange.mock.calls[onLiveStateChange.mock.calls.length - 1];
+    expect(lastNodes.map((n: DiagramCanvasNodeInput) => n.label)).toEqual(expect.arrayContaining(["New node 1"]));
+  });
+
+  it("this is a read-out only — it never receives anything DiagramCanvas didn't itself already decide to change; it is not called at all in response to an unrelated re-render with no edit", async () => {
+    const onLiveStateChange = vi.fn();
+    let utils!: ReturnType<typeof render>;
+    await act(async () => {
+      utils = render(<DiagramCanvas nodes={NODES} edges={EDGES} onChange={() => {}} onLiveStateChange={onLiveStateChange} />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    onLiveStateChange.mockClear();
+
+    // Re-rendering with the exact same props (no edit happened) shouldn't
+    // spuriously re-fire the live-state broadcast.
+    await act(async () => {
+      utils.rerender(<DiagramCanvas nodes={NODES} edges={EDGES} onChange={() => {}} onLiveStateChange={onLiveStateChange} />);
+    });
+
+    expect(onLiveStateChange).not.toHaveBeenCalled();
+  });
+});
+
 describe("DiagramCanvas — node removal (bonus symmetry with add-node)", () => {
   it("removing a node logs a 'removed' row and drops its own edges", async () => {
     const { onChange } = await renderCanvas();
