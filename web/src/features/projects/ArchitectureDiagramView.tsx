@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getMermaidThemeVariables } from "../../theme/mermaidTheme";
 
 export interface ArchitectureDiagramViewProps {
   repo: string;
@@ -29,7 +30,14 @@ async function renderMermaid(
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
     const { default: mermaid } = await import("mermaid");
-    mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
+    // s1 (consus-phase18): see DiagramView.tsx's matching comment — themes
+    // the rendered graph itself from the active --consus-* tokens.
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: "base",
+      themeVariables: getMermaidThemeVariables(),
+    });
 
     const timeout = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(() => reject(new Error("Diagram rendering timed out")), RENDER_TIMEOUT_MS);

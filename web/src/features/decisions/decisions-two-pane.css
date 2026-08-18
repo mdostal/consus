@@ -25,7 +25,7 @@
 
 .decisions-two-pane__list {
   border: 1px solid var(--consus-line);
-  border-radius: 16px;
+  border-radius: calc(16px * var(--consus-radius-scale, 1));
   padding: 14px;
   background: var(--consus-bg-subtle);
 }
@@ -44,7 +44,7 @@
   flex-direction: column;
   gap: 6px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
   border: 1px solid transparent;
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s;
@@ -65,7 +65,7 @@
 }
 
 .decision-list__row-title {
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
   font-size: 13.5px;
   font-weight: 600;
   color: var(--consus-ink);
@@ -79,7 +79,7 @@
 }
 
 .decision-list__row-type {
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
   font-size: 11px;
   color: var(--consus-ink-muted);
 }

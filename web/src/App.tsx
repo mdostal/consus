@@ -16,6 +16,10 @@ import { EventProposeComposer } from "./features/events/EventProposeComposer";
 import type { DecisionPayload, Verdict } from "./features/decisions/answer-shapes/types";
 import { useSelectedDecisionId } from "./features/decisions/useSelectedDecisionId";
 import { DecisionListPane } from "./features/decisions/DecisionListPane";
+import { useSkinPreference } from "./theme/useSkinPreference";
+import { ThemeSkinPicker } from "./theme/ThemeSkinPicker";
+import { SkinBackdrop } from "./theme/skins/SkinBackdrop";
+import { HarnessWindowDots } from "./theme/skins/HarnessWindowDots";
 import "./theme/tokens.css";
 import "./app.css";
 import "./features/decisions/decisions-two-pane.css";
@@ -1116,6 +1120,10 @@ export function App() {
   const [decisions, setDecisions] = useState<DecisionItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [onboardingCheck, setOnboardingCheck] = useState<{ docsEmpty: boolean; kbEmpty: boolean } | null>(null);
+  // s1 (consus-phase18): resolves/persists the operator's skin choice and
+  // applies [data-skin] to the document root — mounted once, here, so the
+  // skin backdrop/chrome below and the picker in the masthead always agree.
+  const { skin } = useSkinPreference();
 
   const reload = useCallback(() => {
     fetch("/api/decisions?all=1")
@@ -1158,6 +1166,7 @@ export function App() {
   if (!error && (onboardingCheck === null || decisions === null)) {
     return (
       <div className="consus">
+        <SkinBackdrop skin={skin} />
         <p className="state">Loading…</p>
       </div>
     );
@@ -1166,6 +1175,7 @@ export function App() {
   if (isFirstRun) {
     return (
       <div className="consus">
+        <SkinBackdrop skin={skin} />
         <OnboardingScreen
           onIngested={() => {
             reload();
@@ -1178,8 +1188,10 @@ export function App() {
 
   return (
     <div className="consus">
+      <SkinBackdrop skin={skin} />
       <header className="consus__masthead">
         <div className="consus__brand">
+          {skin === "harness" ? <HarnessWindowDots /> : null}
           <span className="consus__brand-mark">◈</span>
           Consus
           <span className="consus__brand-sub">decision &amp; knowledge surface</span>
@@ -1196,6 +1208,7 @@ export function App() {
             </button>
           ))}
         </nav>
+        <ThemeSkinPicker />
       </header>
 
       <main className="consus__main">

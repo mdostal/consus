@@ -27,7 +27,7 @@ body {
 body {
   background: var(--consus-bg);
   color: var(--consus-ink);
-  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Georgia", ui-serif, serif;
+  font-family: var(--consus-font-body);
   font-size: 15px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -74,7 +74,7 @@ body {
 }
 .consus__brand-sub {
   font-size: 11px;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
   text-transform: uppercase;
   letter-spacing: 0.16em;
   color: var(--consus-ink-muted);
@@ -89,13 +89,13 @@ body {
   flex-wrap: wrap;
 }
 .consus__nav-btn {
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
   font-size: 13.5px;
   font-weight: 600;
   color: var(--consus-ink-muted);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
   padding: 7px 14px;
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
@@ -113,7 +113,7 @@ body {
   margin-left: 6px;
   font-size: 11px;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: calc(999px * var(--consus-radius-scale, 1));
   background: var(--consus-accent);
   color: var(--consus-bg);
   font-weight: 700;
@@ -128,7 +128,7 @@ body {
 }
 
 .consus__section-lead {
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
   margin: 0 0 20px;
 }
 .consus__section-lead h1 {
@@ -145,7 +145,7 @@ body {
 
 /* --- generic states --- */
 .state {
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
   color: var(--consus-ink-muted);
   padding: 40px 0;
   font-size: 14px;
@@ -154,9 +154,9 @@ body {
   color: var(--consus-bad);
 }
 .empty {
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
   border: 1px dashed var(--consus-line);
-  border-radius: 14px;
+  border-radius: calc(14px * var(--consus-radius-scale, 1));
   padding: 34px 26px;
   text-align: center;
   color: var(--consus-ink-muted);
@@ -170,7 +170,7 @@ body {
 }
 
 .group-heading {
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -188,7 +188,7 @@ body {
 /* ============================================================= */
 .dv {
   border: 1px solid var(--consus-line);
-  border-radius: 16px;
+  border-radius: calc(16px * var(--consus-radius-scale, 1));
   background: var(--consus-bg-subtle);
   padding: 22px 24px;
   margin: 0 0 18px;
@@ -206,7 +206,7 @@ body {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
 }
 .dv__pill {
   align-self: flex-start;
@@ -214,7 +214,7 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   padding: 2px 10px;
-  border-radius: 999px;
+  border-radius: calc(999px * var(--consus-radius-scale, 1));
   background: color-mix(in srgb, var(--consus-accent) 14%, transparent);
   color: var(--consus-accent);
   border: 1px solid color-mix(in srgb, var(--consus-accent) 40%, transparent);
@@ -241,14 +241,14 @@ body {
 .dv__context h3 {
   color: var(--consus-ink);
   margin: 16px 0 6px;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
 }
 .dv__context code {
   background: color-mix(in srgb, var(--consus-ink) 8%, transparent);
   padding: 1px 5px;
-  border-radius: 5px;
+  border-radius: calc(5px * var(--consus-radius-scale, 1));
   font-size: 0.9em;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--consus-font-mono);
 }
 .dv__context a {
   color: var(--consus-accent);
@@ -257,11 +257,11 @@ body {
   overflow-x: auto;
   background: color-mix(in srgb, var(--consus-ink) 6%, transparent);
   padding: 12px 14px;
-  border-radius: 10px;
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
 }
 
 .dv__section-title {
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -285,7 +285,7 @@ body {
 .pv {
   margin: 0;
   border: 1px solid var(--consus-line);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--consus-radius-scale, 1));
   overflow: hidden;
   background: var(--consus-bg);
   display: flex;
@@ -301,12 +301,12 @@ body {
   gap: 8px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--consus-line);
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
 }
 .pv__badge {
   width: 22px;
   height: 22px;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--consus-radius-scale, 1));
   display: grid;
   place-items: center;
   background: var(--consus-accent);
@@ -352,36 +352,36 @@ body {
   font-size: 12.5px;
   color: var(--consus-ink-muted);
   line-height: 1.5;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
 }
 .pv__open {
   padding: 0 12px 12px;
   font-size: 12px;
   color: var(--consus-accent);
   font-weight: 600;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
 }
 
 .dv__hint {
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
   font-size: 13px;
   color: var(--consus-ink-muted);
   line-height: 1.55;
 }
 .dv__decided-note {
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
   font-size: 12.5px;
   color: var(--consus-ink-muted);
   background: color-mix(in srgb, var(--consus-good) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--consus-good) 34%, transparent);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
   padding: 10px 14px;
   margin: 0 0 12px;
 }
 .dv__recorded {
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
   padding: 14px 16px;
-  border-radius: 10px;
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
   background: color-mix(in srgb, var(--consus-good) 16%, transparent);
   border: 1px solid color-mix(in srgb, var(--consus-good) 40%, transparent);
   color: var(--consus-good);
@@ -390,19 +390,19 @@ body {
 .dv__err {
   color: var(--consus-bad);
   font-size: 13px;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
 }
 .dv__warn {
   color: var(--consus-warn);
   font-size: 13px;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
 }
 
 /* ============================================================= */
 /* Shared answer control (decision-request/v1)                   */
 /* ============================================================= */
 .answer-control {
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
 }
 .answer-control__options {
   list-style: none;
@@ -419,14 +419,14 @@ body {
   align-items: center;
   padding: 12px 14px;
   border: 1px solid var(--consus-line);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
   background: var(--consus-bg);
 }
 .answer-control__option-id,
 .answer-control__recommended {
   width: 24px;
   height: 24px;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--consus-radius-scale, 1));
   display: grid;
   place-items: center;
   font-weight: 700;
@@ -457,7 +457,7 @@ body {
   color: var(--consus-bg);
   border: 0;
   padding: 7px 14px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
   font-weight: 600;
   cursor: pointer;
 }
@@ -483,7 +483,7 @@ body {
   border: 1px solid var(--consus-accent);
   color: var(--consus-bg);
   padding: 9px 18px;
-  border-radius: 9px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
   font-weight: 600;
   cursor: pointer;
 }
@@ -498,7 +498,7 @@ body {
   min-height: 60px;
   background: var(--consus-bg);
   border: 1px solid var(--consus-line);
-  border-radius: 9px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
   color: var(--consus-ink);
   padding: 9px;
   font: inherit;
@@ -510,7 +510,7 @@ body {
   color: var(--consus-ink);
   border: 1px solid var(--consus-line);
   padding: 8px 14px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
   cursor: pointer;
   font-weight: 600;
 }
@@ -524,7 +524,7 @@ body {
 /* Comment thread (REQ-04)                                       */
 /* ============================================================= */
 .comment-thread {
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
 }
 .comment-thread__list {
   list-style: none;
@@ -537,7 +537,7 @@ body {
 .comment-thread__item {
   padding: 10px 12px;
   border: 1px solid var(--consus-line);
-  border-radius: 9px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
   background: var(--consus-bg);
 }
 .comment-thread__author {
@@ -565,7 +565,7 @@ body {
   min-height: 54px;
   background: var(--consus-bg);
   border: 1px solid var(--consus-line);
-  border-radius: 9px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
   color: var(--consus-ink);
   padding: 9px;
   font: inherit;
@@ -576,7 +576,7 @@ body {
   color: var(--consus-bg);
   border: 0;
   padding: 10px 18px;
-  border-radius: 9px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
   font-weight: 600;
   cursor: pointer;
 }
@@ -586,19 +586,19 @@ body {
 /* ============================================================= */
 .decision-card {
   border: 1px solid var(--consus-line);
-  border-radius: 16px;
+  border-radius: calc(16px * var(--consus-radius-scale, 1));
   background: var(--consus-bg-subtle);
   padding: 20px 22px;
   margin: 0 0 16px;
 }
 .decision-card__pill {
   display: inline-block;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   padding: 2px 10px;
-  border-radius: 999px;
+  border-radius: calc(999px * var(--consus-radius-scale, 1));
   background: color-mix(in srgb, var(--consus-accent) 14%, transparent);
   color: var(--consus-accent);
   border: 1px solid color-mix(in srgb, var(--consus-accent) 40%, transparent);
@@ -611,14 +611,14 @@ body {
   color: var(--consus-ink);
 }
 .decision-card__recommendation {
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
   color: var(--consus-ink-muted);
   font-size: 13.5px;
   margin: 0 0 14px;
 }
 .decision-card__source {
   margin-top: 14px;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
 }
 .decision-card__source summary {
   cursor: pointer;
@@ -640,14 +640,14 @@ body {
 .qa-queue,
 .survey-group,
 .kb-browser {
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
 }
 .backlog-browser input[type="search"] {
   width: 100%;
   max-width: 420px;
   padding: 10px 14px;
   border: 1px solid var(--consus-line);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
   background: var(--consus-bg-subtle);
   color: var(--consus-ink);
   font: inherit;
@@ -670,7 +670,7 @@ body {
   text-align: left;
   padding: 12px 16px;
   border: 1px solid var(--consus-line);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
   background: var(--consus-bg-subtle);
   color: var(--consus-ink);
   font: inherit;
@@ -701,7 +701,7 @@ body {
   list-style: none;
   padding: 0;
   margin: 16px 0 0;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
 }
 .version-history__item {
   padding: 10px 12px;
@@ -717,7 +717,7 @@ body {
   list-style: none;
   padding: 0;
   margin: 16px 0 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--consus-font-mono);
   font-size: 12px;
   color: var(--consus-ink-muted);
 }
@@ -758,7 +758,7 @@ body {
   display: inline-block;
   font-size: 11px;
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: calc(999px * var(--consus-radius-scale, 1));
   background: color-mix(in srgb, var(--consus-accent) 12%, transparent);
   color: var(--consus-accent);
   margin-right: 8px;
@@ -767,7 +767,7 @@ body {
   text-align: left;
   padding: 8px 14px;
   border: 1px solid var(--consus-line);
-  border-radius: 9px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
   background: var(--consus-bg-subtle);
   color: var(--consus-ink);
   font: inherit;
@@ -780,7 +780,7 @@ body {
 
 /* p14-6: doc search box + results, alongside the doc-browser tree above */
 .doc-search {
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
   margin-bottom: 20px;
 }
 .doc-search input[type="search"] {
@@ -788,7 +788,7 @@ body {
   max-width: 420px;
   padding: 10px 14px;
   border: 1px solid var(--consus-line);
-  border-radius: 10px;
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
   background: var(--consus-bg-subtle);
   color: var(--consus-ink);
   font: inherit;
@@ -814,7 +814,7 @@ body {
   text-align: left;
   padding: 8px 14px;
   border: 1px solid var(--consus-line);
-  border-radius: 9px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
   background: var(--consus-bg-subtle);
   color: var(--consus-ink);
   font: inherit;
@@ -836,7 +836,7 @@ body {
 .doc-search__badge {
   font-size: 11px;
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: calc(999px * var(--consus-radius-scale, 1));
   white-space: nowrap;
 }
 .doc-search__badge--path {
@@ -849,7 +849,7 @@ body {
 }
 .doc-renderer {
   border: 1px solid var(--consus-line);
-  border-radius: 14px;
+  border-radius: calc(14px * var(--consus-radius-scale, 1));
   background: var(--consus-bg-subtle);
   padding: 24px 28px;
   margin-top: 18px;
@@ -872,18 +872,18 @@ body {
   max-width: 100%;
 }
 .doc-renderer code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--consus-font-mono);
   background: color-mix(in srgb, var(--consus-ink) 8%, transparent);
   padding: 1px 5px;
-  border-radius: 5px;
+  border-radius: calc(5px * var(--consus-radius-scale, 1));
 }
 .doc-back {
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
   background: transparent;
   border: 1px solid var(--consus-line);
   color: var(--consus-ink);
   padding: 7px 14px;
-  border-radius: 9px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
   cursor: pointer;
   font-weight: 600;
   font-size: 13px;
@@ -897,7 +897,7 @@ body {
   flex-wrap: wrap;
   gap: 16px;
   margin-bottom: 18px;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
 }
 .events-filters label {
   display: flex;
@@ -909,7 +909,7 @@ body {
 .events-filters select {
   padding: 7px 10px;
   border: 1px solid var(--consus-line);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
   background: var(--consus-bg-subtle);
   color: var(--consus-ink);
   font: inherit;
@@ -917,7 +917,7 @@ body {
 .events-list {
   width: 100%;
   border-collapse: collapse;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
   font-size: 13.5px;
 }
 .events-list th {
@@ -942,19 +942,19 @@ body {
 }
 .event-propose-composer {
   border: 1px solid var(--consus-line);
-  border-radius: 14px;
+  border-radius: calc(14px * var(--consus-radius-scale, 1));
   background: var(--consus-bg-subtle);
   padding: 20px 24px;
   margin-top: 18px;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--consus-font-ui);
   color: var(--consus-ink);
 }
 .event-propose-composer__diff {
   overflow-x: auto;
   background: color-mix(in srgb, var(--consus-ink) 6%, transparent);
   padding: 12px 14px;
-  border-radius: 10px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
+  font-family: var(--consus-font-mono);
   font-size: 12.5px;
   white-space: pre-wrap;
 }
@@ -972,7 +972,7 @@ body {
 .event-propose-composer__description input {
   padding: 8px 12px;
   border: 1px solid var(--consus-line);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
   background: var(--consus-bg);
   color: var(--consus-ink);
   font: inherit;
@@ -991,16 +991,16 @@ body {
 .qa-queue__ticket {
   display: inline-block;
   font-size: 11px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--consus-font-mono);
   padding: 2px 8px;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--consus-radius-scale, 1));
   background: color-mix(in srgb, var(--consus-accent) 12%, transparent);
   color: var(--consus-accent);
   margin-bottom: 8px;
 }
 .survey-group {
   border: 1px solid var(--consus-line);
-  border-radius: 16px;
+  border-radius: calc(16px * var(--consus-radius-scale, 1));
   background: var(--consus-bg-subtle);
   padding: 18px 20px;
   margin-bottom: 18px;
@@ -1049,7 +1049,7 @@ body {
 .onboarding__step {
   text-align: left;
   border: 1px solid var(--consus-line);
-  border-radius: 16px;
+  border-radius: calc(16px * var(--consus-radius-scale, 1));
   background: var(--consus-bg-subtle);
   padding: 20px 24px;
   margin-bottom: 16px;
@@ -1069,9 +1069,341 @@ body {
   margin-bottom: 0;
 }
 .onboarding__step code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--consus-font-mono);
   padding: 1px 6px;
-  border-radius: 5px;
+  border-radius: calc(5px * var(--consus-radius-scale, 1));
   background: color-mix(in srgb, var(--consus-accent) 12%, transparent);
   color: var(--consus-accent);
+}
+
+/* ============================================================= */
+/* Theme + skin picker (s1, consus-phase18)                      */
+/* ============================================================= */
+.theme-skin-picker {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: var(--consus-font-ui);
+}
+.theme-skin-picker__control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--consus-ink-muted);
+  font-weight: 600;
+}
+.theme-skin-picker__control select {
+  font-family: var(--consus-font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--consus-ink);
+  background: var(--consus-bg-subtle);
+  border: 1px solid var(--consus-line);
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+/* ============================================================= */
+/* Diagram views — cascade + architecture (s1, consus-phase18)    */
+/* Previously entirely unstyled; now driven by the same --consus-* */
+/* tokens as every other surface, so all three skins reach these   */
+/* views too, not just the ones that already had CSS.              */
+/* ============================================================= */
+.diagram-view,
+.architecture-diagram-view {
+  border: 1px solid var(--consus-line);
+  border-radius: calc(16px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg-subtle);
+  padding: 22px 24px;
+  margin: 0 0 18px;
+  font-family: var(--consus-font-ui);
+}
+.diagram-view__header,
+.architecture-diagram-view__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.diagram-view__header h3,
+.architecture-diagram-view__header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--consus-ink);
+  flex: 1;
+}
+.diagram-view__header button {
+  font-family: var(--consus-font-ui);
+  background: var(--consus-accent);
+  color: var(--consus-bg);
+  border: 0;
+  padding: 7px 14px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+}
+.pill {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: calc(999px * var(--consus-radius-scale, 1));
+  font-weight: 600;
+}
+.pill--pending {
+  background: color-mix(in srgb, var(--consus-warn) 16%, transparent);
+  color: var(--consus-warn);
+  border: 1px solid color-mix(in srgb, var(--consus-warn) 40%, transparent);
+}
+.diagram-view__propose-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px dashed var(--consus-line);
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg);
+}
+.diagram-view__propose-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--consus-ink-muted);
+}
+.diagram-view__propose-form input,
+.diagram-view__propose-form textarea {
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg-subtle);
+  color: var(--consus-ink);
+}
+.diagram-view__propose-form textarea {
+  min-height: 70px;
+  font-family: var(--consus-font-mono);
+  font-size: 12.5px;
+}
+.diagram-view__propose-form button {
+  align-self: flex-start;
+  font-family: var(--consus-font-ui);
+  background: var(--consus-accent);
+  color: var(--consus-bg);
+  border: 0;
+  padding: 8px 16px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+}
+.diagram-view__propose-form button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.diagram-view__body {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+.diagram-view__graph,
+.architecture-diagram-view__graph {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(12px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg);
+  padding: 16px;
+}
+.diagram-view__graph svg,
+.architecture-diagram-view__graph svg {
+  max-width: 100%;
+  height: auto;
+}
+.diagram-view__detail {
+  width: 260px;
+  flex: none;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(12px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg);
+  padding: 14px 16px;
+}
+.diagram-view__detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.diagram-view__detail-header h4 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--consus-ink);
+}
+.diagram-view__detail-header button {
+  background: transparent;
+  border: 0;
+  color: var(--consus-ink-muted);
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+}
+.diagram-view__detail dl {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--consus-ink-muted);
+}
+.diagram-view__detail dt {
+  font-weight: 600;
+  color: var(--consus-ink);
+  margin-top: 8px;
+}
+.diagram-view__detail dt:first-child {
+  margin-top: 0;
+}
+.diagram-view__detail dd {
+  margin: 2px 0 0;
+}
+.diagram-view__history {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--consus-line);
+}
+.diagram-view__history h4 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--consus-ink-muted);
+}
+.architecture-diagram-view__tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+@media (max-width: 720px) {
+  .diagram-view__body {
+    flex-direction: column;
+  }
+  .diagram-view__detail {
+    width: auto;
+  }
+}
+
+/* ============================================================= */
+/* Per-skin decorative rendering (s1, consus-phase18)             */
+/*                                                                 */
+/* Drafting Table: a grid-paper background (pure CSS — no canvas   */
+/* needed for straight ruled lines) plus corner registration marks */
+/* (theme/skins/DraftingRegistrationMarks.tsx, real SVG, not CSS   */
+/* alone, since fixed-viewport corner placement needs real nodes). */
+/* ============================================================= */
+[data-skin="drafting"] body {
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      color-mix(in srgb, var(--consus-line) 60%, transparent) 0,
+      color-mix(in srgb, var(--consus-line) 60%, transparent) 1px,
+      transparent 1px,
+      transparent 24px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--consus-line) 60%, transparent) 0,
+      color-mix(in srgb, var(--consus-line) 60%, transparent) 1px,
+      transparent 1px,
+      transparent 24px
+    );
+  background-attachment: fixed;
+}
+.drafting-registration-marks {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+.drafting-registration-marks__mark {
+  position: fixed;
+  opacity: 0.55;
+}
+.drafting-registration-marks__mark--tl {
+  top: 8px;
+  left: 8px;
+}
+.drafting-registration-marks__mark--tr {
+  top: 8px;
+  right: 8px;
+}
+.drafting-registration-marks__mark--bl {
+  bottom: 8px;
+  left: 8px;
+}
+.drafting-registration-marks__mark--br {
+  bottom: 8px;
+  right: 8px;
+}
+
+/* Case Board: the cork-grain canvas texture
+   (theme/skins/CaseBoardCorkTexture.tsx) tiled behind everything. */
+.case-board-cork-texture {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-repeat: repeat;
+  background-size: 128px 128px;
+  background-color: var(--consus-bg);
+}
+
+/* Harness: terminal-window traffic-light dots
+   (theme/skins/HarnessWindowDots.tsx) plus a blinking command-prompt
+   cursor after the brand mark — the "command-prompt-style header
+   treatment" this story calls for. Dot colors resolve from the same
+   --consus-* tokens as everything else (bad/warn/good), not hardcoded
+   hex, so they stay theme-adaptive too. */
+.harness-window-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 6px;
+}
+.harness-window-dots__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+}
+.harness-window-dots__dot--red {
+  background: var(--consus-bad);
+}
+.harness-window-dots__dot--yellow {
+  background: var(--consus-warn);
+}
+.harness-window-dots__dot--green {
+  background: var(--consus-good);
+}
+[data-skin="harness"] .consus__brand-sub::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 3px;
+  vertical-align: -2px;
+  background: var(--consus-accent);
+  animation: harness-cursor-blink 1s steps(1, jump-none) infinite;
+}
+@keyframes harness-cursor-blink {
+  50% {
+    opacity: 0;
+  }
+}
+[data-skin="harness"] .consus__masthead {
+  border-bottom-style: dashed;
 }

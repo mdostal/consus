@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AuditPanel, type AuditTrailEntry } from "../audit/AuditPanel";
+import { getMermaidThemeVariables } from "../../theme/mermaidTheme";
 
 export interface DiagramStory {
   id: string;
@@ -156,7 +157,16 @@ export function DiagramView({ repo, epics, pendingProposal, onProposeChange, aud
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
       try {
         const { default: mermaid } = await import("mermaid");
-        mermaid.initialize({ startOnLoad: false, securityLevel: "strict" });
+        // s1 (consus-phase18): "base" + real themeVariables sourced from the
+        // active --consus-* tokens, so the rendered graph itself follows the
+        // active skin/theme instead of always using Mermaid's fixed default
+        // light palette (styling only — the graph source/shape is unchanged).
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: "base",
+          themeVariables: getMermaidThemeVariables(),
+        });
 
         const source = buildMermaidSource(epics);
         const timeout = new Promise<never>((_, reject) => {
