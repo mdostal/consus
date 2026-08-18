@@ -5,6 +5,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { ArchitectureDiagramView, buildArchitectureGraph } from "./ArchitectureDiagramView";
+import { __resetDiagramRevisionForTests } from "./diagramRevisionCounter";
 
 const TOP_LEVEL = 'graph TD\n  root["consus"]\n  root --> src["src"]\n  root --> server["server"]';
 const FULL_COMPONENT = 'graph TD\n  root["consus"]\n  root --> src["src"]\n  src --> src_index["index.ts"]';
@@ -30,6 +31,7 @@ async function renderArchitectureView(props: Partial<ComponentProps<typeof Archi
 
 afterEach(() => {
   document.documentElement.style.removeProperty("--consus-edge-style");
+  __resetDiagramRevisionForTests();
 });
 
 describe("buildArchitectureGraph", () => {
@@ -234,6 +236,45 @@ describe("ArchitectureDiagramView", () => {
       const sorted = [...boxes].sort((a, b) => a.x - b.x);
       for (let i = 1; i < sorted.length; i++) {
         expect(sorted[i].x).toBeGreaterThanOrEqual(sorted[i - 1].x + sorted[i - 1].width);
+      }
+    });
+  });
+
+  describe("shared diagram-metadata strip (s5) — same shared component/counter DiagramView.tsx uses", () => {
+    it("renders the shared metadata strip in the header", async () => {
+      await renderArchitectureView();
+      expect(screen.getByTestId("diagram-metadata-strip")).toBeInTheDocument();
+    });
+
+    it("shows 0 as the revision count before anything has been fired", async () => {
+      await renderArchitectureView();
+      expect(screen.getByTestId("diagram-metadata-strip-revision")).toHaveTextContent("0");
+    });
+
+    it("a real fire increments the shared revision count", async () => {
+      await renderArchitectureView();
+
+      fireEvent.click(screen.getByTestId("diagram-canvas-add-node"));
+      fireEvent.click(screen.getByRole("button", { name: /fire to harness/i }));
+
+      expect(screen.getByTestId("diagram-metadata-strip-revision")).toHaveTextContent("1");
+    });
+
+    it("is the exact same counter DiagramView.tsx's fires increment — a fire from ArchitectureDiagramView is visible in a freshly-mounted DiagramView's own strip too", async () => {
+      const { DiagramView } = await import("./DiagramView");
+
+      await renderArchitectureView();
+      fireEvent.click(screen.getByTestId("diagram-canvas-add-node"));
+      fireEvent.click(screen.getByRole("button", { name: /fire to harness/i }));
+
+      const onProposeChange = vi.fn();
+      await act(async () => {
+        render(<DiagramView repo="consus" epics={[]} onProposeChange={onProposeChange} />);
+      });
+
+      const strips = screen.getAllByTestId("diagram-metadata-strip-revision");
+      for (const strip of strips) {
+        expect(strip).toHaveTextContent("1");
       }
     });
   });

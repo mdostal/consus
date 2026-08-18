@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DiagramCanvas, type DiagramCanvasEdgeInput, type DiagramCanvasNodeInput } from "./DiagramCanvas";
 import { DiagramChangeset, DiagramDirtyDot } from "./DiagramChangeset";
+import { DiagramMetadataStrip } from "./DiagramMetadataStrip";
 import { DiagramSourcePanel } from "./DiagramSourcePanel";
 import { computeLevelsFromEdges } from "./diagramLayout";
 import { formatDiagramDiff, type DiagramChange } from "./diagramDiff";
+import { incrementDiagramRevision } from "./diagramRevisionCounter";
 import { parseMermaidGraph } from "./mermaidGraphParse";
 import { useRegisterDiagramActions } from "../command-palette/diagramActionRegistry";
 
@@ -152,6 +154,10 @@ export function ArchitectureDiagramView({
   const fire = useCallback(() => {
     if (changes.length === 0 || !onProposeChange) return;
     onProposeChange({ diff: formatDiagramDiff(changes), description: summarizeChanges(changes) });
+    // s5 (consus-phase18): same shared counter DiagramView.tsx increments —
+    // only a real fire (pending changes + onProposeChange actually called,
+    // both already guarded above) counts.
+    incrementDiagramRevision();
     setChanges([]);
   }, [changes, onProposeChange]);
 
@@ -193,6 +199,7 @@ export function ArchitectureDiagramView({
             Fire to harness
           </button>
         ) : null}
+        <DiagramMetadataStrip repo={repo} />
       </div>
 
       <div className="architecture-diagram-view__tabs" role="tablist">

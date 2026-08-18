@@ -1683,6 +1683,90 @@ body {
 }
 
 /* ================================================================ */
+/* s5 (consus-phase18): the shared diagram-metadata strip            */
+/* (DiagramMetadataStrip.tsx) — one component, three skins of the    */
+/* same revision/operator/date/repo data (design-discussion.md       */
+/* resolved decision #9). Structure is identical across skins        */
+/* (always a single wrapper div); only the reskinned inner block      */
+/* differs, driven entirely by the shared --consus-* tokens, same     */
+/* discipline as every other diagram surface.                        */
+/* ================================================================ */
+.diagram-metadata-strip {
+  font-family: var(--consus-font-ui);
+  font-size: 12px;
+  color: var(--consus-ink-muted);
+  margin-left: auto;
+}
+
+/* Drafting Table: a technical-drawing title block — a tight grid of
+   labeled fields with crisp rules, echoing DraftingRegistrationMarks.tsx's
+   precise linework. */
+.diagram-metadata-strip__drafting {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 2px 14px;
+  padding: 6px 10px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(4px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg);
+}
+.diagram-metadata-strip__field {
+  white-space: nowrap;
+}
+.diagram-metadata-strip__field--rev {
+  font-weight: 700;
+  color: var(--consus-accent);
+}
+.diagram-metadata-strip__label {
+  font-weight: 700;
+  color: var(--consus-ink);
+  letter-spacing: 0.04em;
+}
+
+/* Case Board: an inked "CASE NO." stamp — a slight rotation and a heavier
+   border, evoking a rubber-stamped case-file tab, matching
+   CaseBoardCorkTexture.tsx's warm, humanist aesthetic. */
+.diagram-metadata-strip__case-board {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border: 2px solid var(--consus-accent);
+  border-radius: calc(6px * var(--consus-radius-scale, 1));
+  color: var(--consus-accent);
+  transform: rotate(-1.5deg);
+  background: color-mix(in srgb, var(--consus-accent) 6%, var(--consus-bg));
+}
+.diagram-metadata-strip__stamp-label {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.diagram-metadata-strip__stamp-value {
+  font-weight: 700;
+}
+.diagram-metadata-strip__stamp-meta {
+  color: var(--consus-ink-muted);
+  font-weight: 400;
+}
+
+/* Harness: a terminal prompt-style footer status line, matching
+   HarnessWindowDots.tsx's command-prompt aesthetic. */
+.diagram-metadata-strip__harness {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--consus-font-mono);
+  padding: 4px 10px;
+  border: 1px dashed var(--consus-line);
+  border-radius: calc(4px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg);
+}
+.diagram-metadata-strip__harness-prompt {
+  color: var(--consus-accent);
+  font-weight: 700;
+}
+
+/* ================================================================ */
 /* s4 (consus-phase18): universal ⌘K command palette + shortcuts.    */
 /* Present and functionally identical in every skin — only its own   */
 /* chrome differs, via the same --consus-* tokens every other        */

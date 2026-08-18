@@ -2,6 +2,7 @@ import type { ComponentProps } from "react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { DiagramView, buildMermaidSource, buildNodeLookup, buildCascadeGraph } from "./DiagramView";
+import { __resetDiagramRevisionForTests } from "./diagramRevisionCounter";
 
 const EPICS = [
   {
@@ -33,6 +34,7 @@ async function renderDiagramView(props: Partial<ComponentProps<typeof DiagramVie
 
 afterEach(() => {
   document.documentElement.style.removeProperty("--consus-edge-style");
+  __resetDiagramRevisionForTests();
 });
 
 describe("buildMermaidSource (preserved for s3's collapsible source panel)", () => {
@@ -302,6 +304,38 @@ describe("DiagramView", () => {
         unmount();
         document.documentElement.removeAttribute("data-skin");
       }
+    });
+  });
+
+  describe("shared diagram-metadata strip (s5)", () => {
+    it("renders the shared metadata strip in the header", async () => {
+      await renderDiagramView();
+      expect(screen.getByTestId("diagram-metadata-strip")).toBeInTheDocument();
+    });
+
+    it("shows 0 as the revision count before anything has been fired", async () => {
+      await renderDiagramView();
+      expect(screen.getByTestId("diagram-metadata-strip-revision")).toHaveTextContent("0");
+    });
+
+    it("a real fire (real pending changes, Fire to harness actually clicked) increments the shared revision count", async () => {
+      await renderDiagramView();
+
+      fireEvent.click(screen.getByTestId("diagram-canvas-add-node"));
+      fireEvent.click(screen.getByRole("button", { name: /fire to harness/i }));
+
+      expect(screen.getByTestId("diagram-metadata-strip-revision")).toHaveTextContent("1");
+    });
+
+    it("does NOT increment the revision count when Fire to harness is disabled (zero pending changes) — a fire attempt that never actually calls onProposeChange must never count", async () => {
+      await renderDiagramView();
+
+      // The button is disabled with zero pending changes (asserted
+      // elsewhere); clicking a disabled button is a no-op in the DOM, same
+      // as a real operator being unable to click it at all.
+      fireEvent.click(screen.getByRole("button", { name: /fire to harness/i }));
+
+      expect(screen.getByTestId("diagram-metadata-strip-revision")).toHaveTextContent("0");
     });
   });
 });

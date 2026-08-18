@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuditPanel, type AuditTrailEntry } from "../audit/AuditPanel";
 import { DiagramCanvas, type DiagramCanvasEdgeInput, type DiagramCanvasNodeInput } from "./DiagramCanvas";
 import { DiagramChangeset, DiagramDirtyDot } from "./DiagramChangeset";
+import { DiagramMetadataStrip } from "./DiagramMetadataStrip";
 import { DiagramSourcePanel } from "./DiagramSourcePanel";
 import { formatDiagramDiff, type DiagramChange } from "./diagramDiff";
+import { incrementDiagramRevision } from "./diagramRevisionCounter";
 import { useRegisterDiagramActions } from "../command-palette/diagramActionRegistry";
 
 export interface DiagramStory {
@@ -212,6 +214,10 @@ export function DiagramView({ repo, epics, pendingProposal, onProposeChange, aud
   const fire = useCallback(() => {
     if (changes.length === 0) return;
     onProposeChange({ diff: formatDiagramDiff(changes), description: summarizeChanges(changes) });
+    // s5 (consus-phase18): only a real fire — one that actually had pending
+    // changes and actually called onProposeChange, both already guarded
+    // above — increments the shared metadata strip's revision count.
+    incrementDiagramRevision();
     setChanges([]);
   }, [changes, onProposeChange]);
 
@@ -247,6 +253,7 @@ export function DiagramView({ repo, epics, pendingProposal, onProposeChange, aud
         <button type="button" onClick={fire} disabled={changes.length === 0}>
           Fire to harness
         </button>
+        <DiagramMetadataStrip repo={repo} />
       </div>
 
       {epics.length === 0 ? (

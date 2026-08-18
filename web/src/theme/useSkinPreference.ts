@@ -66,3 +66,44 @@ export function useSkinPreference(): { skin: SkinPreference; setSkin: (next: Ski
 
   return { skin, setSkin };
 }
+
+/** Reads whatever [data-skin] is actually applied to the document root
+ *  right now, defaulting to Drafting Table for a missing/invalid value —
+ *  same fallback DEFAULT_SKIN as everywhere else in this file. */
+function readActiveSkinAttribute(): SkinPreference {
+  const raw = document.documentElement.getAttribute("data-skin");
+  return isSkinPreference(raw) ? raw : DEFAULT_SKIN;
+}
+
+/**
+ * Read-only complement to useSkinPreference (s5, consus-phase18): reflects
+ * whatever [data-skin] is *actually* applied to the document root right
+ * now, live, without owning or persisting a preference of its own — the
+ * same read-only "watch the live attribute" role CaseBoardCorkTexture.tsx's
+ * own MutationObserver already plays there for its cork-grain redraw,
+ * reused here rather than introducing a second, parallel per-skin
+ * mechanism.
+ *
+ * Meant for presentational components (DiagramMetadataStrip) that must
+ * always match whichever skin is genuinely in effect, including under test
+ * setups that apply [data-skin] directly to the document root rather than
+ * through useSkinPreference's own localStorage-backed state — without
+ * themselves becoming another independent preference-owning instance whose
+ * own mount effect could clobber a manually-applied attribute (the way a
+ * second useSkinPreference() call legitimately would, since that hook's
+ * whole job is to assert its own resolved value onto the document).
+ */
+export function useActiveSkin(): SkinPreference {
+  const [skin, setSkin] = useState<SkinPreference>(() => readActiveSkinAttribute());
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const sync = () => setSkin(readActiveSkinAttribute());
+    sync(); // covers a change between this component's initial render and this effect running
+    const observer = new MutationObserver(sync);
+    observer.observe(root, { attributes: true, attributeFilter: ["data-skin"] });
+    return () => observer.disconnect();
+  }, []);
+
+  return skin;
+}
