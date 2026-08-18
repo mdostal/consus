@@ -1,0 +1,115 @@
+id: s1-keyboard-accessible-node-move-and-edge-delete
+epic: consus-phase20-diagram-editor-a11y
+title: Real keyboard equivalents for dragging a node and deleting an edge in DiagramCanvas
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: []
+parallel_allowed: true
+parallel_rationale: bounded-slice
+
+description: |
+  A real accessibility audit (fork, not guesswork) read the actual shipped DiagramCanvas.tsx and
+  confirmed two real, verified gaps: the node drag handle (~line 224, a bare `<span
+  className="diagram-canvas__drag-handle" aria-label={...}>`) has no tabIndex/role/onKeyDown — it's
+  never in the tab order, so moving a node is only possible via pointer drag; and the edge path
+  (~line 276, `DiagramEdgeComponent`, an SVG `<path onClick={...}>`) is equally pointer-only, with
+  `<ReactFlow deleteKeyCode={null} ...>` (~line 624) explicitly disabling React Flow's own built-in
+  keyboard-Delete support and nothing wired in its place.
+
+  This story adds real keyboard equivalents for both, without touching the existing pointer-drag
+  and click-to-snip behavior consus-phase18's s2 already shipped and tested. Node move: the drag
+  handle becomes a real focusable control (tabIndex=0, role appropriate to a button-like action,
+  a real accessible name already present via aria-label) — while it has focus, arrow keys nudge the
+  node by a fixed, real, visible step in the corresponding direction, producing the exact same kind
+  of "moved" changeset row (see diagramDiff.ts) a pointer drag already produces, not a separate,
+  untracked kind of change. Edge delete: the edge path becomes focusable (tabIndex=0, an accessible
+  name describing what it connects), and Enter/Space triggers the same snip behavior a click already
+  does (same ctx.onSnipEdge call, same changeset row).
+
+  `deleteKeyCode={null}` on the ReactFlow component itself stays as-is — it disables React Flow's
+  own internal selection-model delete handling, which doesn't match this app's own selection state
+  (ctx.onToggleEdgeSelection / the multi-select changeset). Do not simply flip it back on; wire a
+  real keyboard delete path through this app's own selection/snip logic instead, consistent with
+  how the existing multi-select "Delete selected" button already works.
+
+acceptance_criteria:
+  - "Given a diagram node, when the operator Tabs to its drag handle, then it receives real visible focus (not just a DOM tabIndex with no visual indicator) and is announced with a real accessible name (the existing aria-label, e.g. 'Move Story One')."
+  - "Given the drag handle has focus, when the operator presses an arrow key, then the node visibly moves a real, fixed amount in the corresponding direction, and a 'moved' row appears in the changeset — the same DiagramChange kind/shape a pointer drag already produces (see diagramDiff.ts's createDiagramChange with kind: 'moved'), not a new, separate change type."
+  - "Given a diagram edge, when the operator Tabs to it, then it receives real visible focus and an accessible name describing what it connects (e.g. 'Connection from Story One to Story Two')."
+  - "Given a focused edge, when the operator presses Enter or Space, then it is removed exactly as if it had been clicked — the same ctx.onSnipEdge call, the same 'removed' changeset row — verified by a test that exercises the keyboard path directly, not by re-testing the existing click path."
+  - "Given the existing pointer-drag, click-to-edit-label, click-to-snip-edge, and multi-select-then-'Delete selected' behaviors from consus-phase18's s2, when this story's changes land, then all of them continue to work completely unchanged — this is additive keyboard support, not a rework of the existing pointer interactions."
+  - "Given the existing DiagramCanvas.test.tsx suite from s2, when this story's changes land, then every existing test in that file passes unmodified."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Add vitest + RTL specs covering: the drag handle is a real focusable element with the
+      expected accessible name; arrow-key-while-focused moves the node a real amount and produces a
+      'moved' changeset row identical in shape to the existing pointer-drag test's own assertion
+      (read DiagramCanvas.test.tsx's existing drag test first and match its row-shape assertion
+      style, don't invent a different one); the edge path is a real focusable element with an
+      accessible name describing source->target; Enter and Space on a focused edge both trigger
+      removal and a 'removed' changeset row, matching the existing click-to-snip test's assertion
+      shape. Follow this repo's existing DiagramCanvas.test.tsx conventions throughout.
+    agent: tester
+  - id: implement-keyboard-support
+    description: >
+      Make the drag handle a real focusable, keyboard-operable element (tabIndex=0, appropriate
+      role, keep the existing aria-label) with an onKeyDown handler for arrow keys that computes a
+      new position and calls the same change-producing path the pointer-drag handler already uses
+      (reuse buildMovedChange or the equivalent existing helper — do not duplicate the "is this a
+      real move" logic). Make the edge path focusable (tabIndex=0) with a real accessible name
+      (e.g. via aria-label or an SVG <title>) and an onKeyDown handler for Enter/Space calling the
+      same ctx.onSnipEdge the click handler already calls. Do not modify deleteKeyCode or any
+      existing pointer-event handler's behavior.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: make-tests-pass
+    description: >
+      Run the full test suite and fix as needed until every new test passes and the full existing
+      suite — including DiagramCanvas.test.tsx's pointer-drag/click-to-edit/click-to-snip/multi-select
+      tests — passes completely unmodified.
+    agent: developer
+    depends_on: [implement-keyboard-support]
+  - id: review
+    description: >
+      Review for: the keyboard move/delete paths genuinely reuse the same change-producing logic
+      the pointer paths already use (not a parallel, possibly-divergent implementation); no existing
+      pointer-driven test needed to change; a real, visible focus indicator exists (not just
+      tabIndex with no styling); the accessible names are genuinely descriptive, not generic
+      placeholders.
+    agent: reviewer
+    depends_on: [make-tests-pass]
+  - id: integrate
+    description: Commit the keyboard-accessible node move and edge delete support.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: web/src/features/projects/DiagramCanvas.tsx
+      purpose: "The file this story edits — drag handle around line 224, DiagramEdgeComponent around line 276, deleteKeyCode={null} around line 624. Read the full file first; do not guess at exact current line numbers, they may have shifted since this spec was written."
+    - path: web/src/features/projects/DiagramCanvas.test.tsx
+      purpose: "Existing test coverage for the pointer-drag/click/connect/delete flows this story adds a keyboard equivalent alongside, not a replacement for. Match its assertion style for the new tests."
+    - path: web/src/features/projects/diagramDiff.ts
+      purpose: "createDiagramChange and the DiagramChange kind/shape — the keyboard-triggered moved/removed rows must be indistinguishable in shape from the existing pointer-triggered ones."
+    - path: .pHive/epics/consus-phase20-diagram-editor-a11y/docs/design-discussion.md
+      purpose: "Full audit findings and the reasoning for NOT simply re-enabling deleteKeyCode — read before assuming that's the fix."
+
+files_to_modify:
+  - file: web/src/features/projects/DiagramCanvas.tsx
+    change: "Add tabIndex/keyboard handlers to the drag handle (arrow-key move) and the edge path (Enter/Space delete), reusing existing change-producing logic."
+  - file: web/src/features/projects/DiagramCanvas.test.tsx
+    change: "Add specs for both new keyboard paths; existing specs stay unmodified."
+
+design_decisions:
+  - decision: "deleteKeyCode={null} on the ReactFlow component itself is not re-enabled."
+    rationale: "It operates on React Flow's own internal selection model, which doesn't match this app's own selection/changeset state (ctx.onToggleEdgeSelection etc.) — a real keyboard delete path is wired through the app's own logic instead, consistent with how the existing multi-select 'Delete selected' button already works."
+  - decision: "Keyboard-triggered moves/deletes produce the exact same DiagramChange shape as pointer-triggered ones."
+    rationale: "Avoids a second, possibly-divergent change-tracking path — the changeset panel, the diff formatter, and Fire-to-harness should all be completely agnostic to whether an edit came from a mouse or a keyboard."
+
+risks:
+  - severity: low
+    description: "Exact keyboard-move step size is a real design choice with no single right answer — too small feels unresponsive, too large feels imprecise."
+    mitigation: "Left as a focused point for implementation to tune, matching how s2 handled the analogous drag-vs-click hit-target question. Acceptance criteria test the behavior (a real, visible move happens) without over-specifying an exact pixel value."

@@ -118,6 +118,19 @@ interface DiagramCanvasContextValue {
   selectedEdgeIds: Set<string>;
   onSnipEdge: (id: string) => void;
   onToggleEdgeSelection: (id: string) => void;
+  /** Keyboard equivalent of a pointer drag (s1, consus-phase20): nudges a
+   *  node by a fixed (dx, dy) step and — via the same buildMovedChange this
+   *  file's pointer-drag handler already uses below — logs the identical
+   *  "moved" DiagramChange shape a pointer drag produces. Kept on context
+   *  (not a prop on DiagramNodeComponent) for the same reason every other
+   *  edit-producing callback here is: the node component only knows its own
+   *  id/data, not the rest of the graph or how to mutate rfNodes/onChange. */
+  onNudgeNode: (id: string, dx: number, dy: number) => void;
+  /** Every current node's own label, keyed by id — DiagramEdgeComponent uses
+   *  this to build a real accessible name ("Connection from X to Y") for its
+   *  keyboard-focusable path, the same source/target label pairing
+   *  buildEdgeLabel already uses for changeset rows. */
+  nodeLabelById: Map<string, string>;
   /** Every current node's own box, keyed by id — DiagramEdgeComponent uses
    *  this (not React Flow's own computed EdgeProps sourceX/Y/targetX/Y) to
    *  place edge endpoints. React Flow only fills in sourceX/Y once a node
@@ -153,6 +166,19 @@ const NODE_HEIGHT_PX = 48;
  *  click-to-edit-label gesture and a drag-to-move gesture are never
  *  ambiguous for the same click target. */
 const DRAG_HANDLE_SELECTOR = ".diagram-canvas__drag-handle";
+
+/** Fixed keyboard-nudge step (px) for arrow-key node move (s1,
+ *  consus-phase20) — a real, visible design choice with no single right
+ *  answer (see design-discussion.md's risk note), tuned to be clearly
+ *  perceptible without needing many presses to cross the canvas. */
+const NUDGE_STEP_PX = 20;
+
+const ARROW_KEY_DELTAS: Record<string, { dx: number; dy: number }> = {
+  ArrowUp: { dx: 0, dy: -NUDGE_STEP_PX },
+  ArrowDown: { dx: 0, dy: NUDGE_STEP_PX },
+  ArrowLeft: { dx: -NUDGE_STEP_PX, dy: 0 },
+  ArrowRight: { dx: NUDGE_STEP_PX, dy: 0 },
+};
 
 function buildInitialGraph(
   inputNodes: DiagramCanvasNodeInput[],
@@ -214,6 +240,21 @@ function DiagramNodeComponent({ id, data }: NodeProps<DiagramFlowNode>) {
 
   const isConnectSource = ctx.connectSourceId === id;
 
+  /** Keyboard equivalent of the pointer drag (s1, consus-phase20): while the
+   *  handle has focus, arrow keys nudge the node by NUDGE_STEP_PX in the
+   *  corresponding direction via ctx.onNudgeNode, which reuses buildMovedChange
+   *  — the exact same "is this a real move" logic and "moved" row shape
+   *  handleNodeDragStop already produces for a pointer drag, not a second,
+   *  parallel implementation. Any other key is left alone (e.g. Tab still
+   *  moves focus normally). */
+  const handleDragHandleKeyDown = (event: KeyboardEvent<HTMLSpanElement>) => {
+    const delta = ARROW_KEY_DELTAS[event.key];
+    if (!delta) return;
+    event.preventDefault();
+    event.stopPropagation();
+    ctx.onNudgeNode(id, delta.dx, delta.dy);
+  };
+
   return (
     <div
       className={`diagram-canvas__node${isConnectSource ? " diagram-canvas__node--connect-source" : ""}`}
@@ -227,6 +268,9 @@ function DiagramNodeComponent({ id, data }: NodeProps<DiagramFlowNode>) {
           data-testid={`diagram-node-drag-handle-${id}`}
           aria-label={`Move ${label}`}
           title="Drag to move"
+          role="button"
+          tabIndex={0}
+          onKeyDown={handleDragHandleKeyDown}
         >
           ⠿
         </span>
@@ -289,6 +333,9 @@ function DiagramEdgeComponent({ id, source, target }: EdgeProps<DiagramFlowEdge>
     ctx.edgeStyle,
   );
 
+  const sourceLabel = ctx.nodeLabelById.get(source) ?? source;
+  const targetLabel = ctx.nodeLabelById.get(target) ?? target;
+
   const handleClick = (event: MouseEvent<SVGPathElement>) => {
     event.stopPropagation();
     if (event.shiftKey) {
@@ -296,6 +343,20 @@ function DiagramEdgeComponent({ id, source, target }: EdgeProps<DiagramFlowEdge>
     } else {
       ctx.onSnipEdge(id);
     }
+  };
+
+  /** Keyboard equivalent of the direct-click snip path (s1, consus-phase20):
+   *  Enter or Space on a focused edge calls the exact same ctx.onSnipEdge
+   *  the click handler above already calls — same "removed" changeset row.
+   *  Deliberately does not mirror the shift-click toggle-select path; a
+   *  keyboard operator has no equivalent of "shift" here to disambiguate,
+   *  and the multi-select "Delete selected" flow is already fully
+   *  keyboard-operable via its own real <button>. */
+  const handleKeyDown = (event: KeyboardEvent<SVGPathElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopPropagation();
+    ctx.onSnipEdge(id);
   };
 
   return (
@@ -306,7 +367,11 @@ function DiagramEdgeComponent({ id, source, target }: EdgeProps<DiagramFlowEdge>
       data-testid={`diagram-edge-${id}`}
       data-source={source}
       data-target={target}
+      tabIndex={0}
+      role="button"
+      aria-label={`Connection from ${sourceLabel} to ${targetLabel}`}
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
     />
   );
 }
@@ -367,6 +432,14 @@ export function DiagramCanvas({ nodes, edges, onChange, onLiveStateChange }: Dia
     for (const n of rfNodes) {
       map.set(n.id, { x: n.position.x, y: n.position.y, width: n.data.width, height: NODE_HEIGHT_PX });
     }
+    return map;
+  }, [rfNodes]);
+  // Same reactivity rationale as nodeRectById above — DiagramEdgeComponent's
+  // accessible name must reflect the current label, including right after a
+  // click-to-edit-label rename, not a stale one from a ref.
+  const nodeLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const n of rfNodes) map.set(n.id, n.data.label);
     return map;
   }, [rfNodes]);
   const buildEdgeLabel = useCallback(
@@ -529,6 +602,24 @@ export function DiagramCanvas({ nodes, edges, onChange, onLiveStateChange }: Dia
     [onChange],
   );
 
+  /** Keyboard equivalent of handleNodeDragStop above (s1, consus-phase20):
+   *  applies a fixed (dx, dy) step to the node's current position and runs
+   *  it through the exact same buildMovedChange pure helper the pointer-drag
+   *  path uses — same "is this a real move" threshold, same "moved" row
+   *  shape — rather than a second, parallel implementation. */
+  const onNudgeNode = useCallback(
+    (id: string, dx: number, dy: number) => {
+      const current = rfNodesRef.current.find((n) => n.id === id);
+      if (!current) return;
+      const start = { x: current.position.x, y: current.position.y };
+      const end = { x: start.x + dx, y: start.y + dy };
+      setRfNodes((nds) => nds.map((n) => (n.id === id ? { ...n, position: end } : n)));
+      const change = buildMovedChange(id, current.data.label, start, end);
+      if (change) onChange(change);
+    },
+    [onChange, setRfNodes],
+  );
+
   const onConnect = useCallback(
     (connection: Connection) => {
       if (!connection.source || !connection.target || connection.source === connection.target) return;
@@ -564,6 +655,8 @@ export function DiagramCanvas({ nodes, edges, onChange, onLiveStateChange }: Dia
       selectedEdgeIds,
       onSnipEdge,
       onToggleEdgeSelection,
+      onNudgeNode,
+      nodeLabelById,
       nodeRectById,
     }),
     [
@@ -576,6 +669,8 @@ export function DiagramCanvas({ nodes, edges, onChange, onLiveStateChange }: Dia
       selectedEdgeIds,
       onSnipEdge,
       onToggleEdgeSelection,
+      onNudgeNode,
+      nodeLabelById,
       nodeRectById,
     ],
   );

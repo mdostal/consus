@@ -284,6 +284,188 @@ describe("CommandPalette — global shortcuts never hijack real typing (critical
   });
 });
 
+/**
+ * Adds one extra element to the standard harness: a plain stand-in button
+ * for HarnessConnectBanner's real dismiss button, mounted as a genuine
+ * sibling elsewhere in the DOM — not a synthetic assertion-only prop, an
+ * actual focusable element a real Tab press could reach. This mirrors the
+ * audit's own live reproduction of the bug this file's new "focus trap"
+ * describe block below fixes: open the palette, press Tab once, and watch
+ * whether focus lands here (it must never again, once s2 lands).
+ */
+async function renderFocusTrapHarness({
+  onProposeChangeCascade = vi.fn(),
+  onProposeChangeArchitecture = vi.fn(),
+}: {
+  onProposeChangeCascade?: ReturnType<typeof vi.fn>;
+  onProposeChangeArchitecture?: ReturnType<typeof vi.fn>;
+} = {}) {
+  let utils!: ReturnType<typeof render>;
+  await act(async () => {
+    utils = render(
+      <>
+        <CommandPalette />
+        <DiagramView repo="consus" epics={EPICS} onProposeChange={onProposeChangeCascade} />
+        <ArchitectureDiagramView
+          repo="consus"
+          topLevel={TOP_LEVEL}
+          fullComponent={FULL_COMPONENT}
+          onProposeChange={onProposeChangeArchitecture}
+        />
+        <button type="button" data-testid="harness-banner-dismiss-standin">
+          Dismiss
+        </button>
+      </>,
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  return { ...utils, onProposeChangeCascade, onProposeChangeArchitecture };
+}
+
+/** The real, current in-palette Tab order: the search input, then every
+ *  non-disabled result-list item, in DOM order — computed from the live DOM
+ *  rather than hardcoded, so these specs stay correct regardless of exactly
+ *  which/how-many actions are registered. */
+function getExpectedFocusOrder(): HTMLElement[] {
+  const input = screen.getByTestId("command-palette-input");
+  const items = screen.getAllByRole("option").filter((el) => !(el as HTMLButtonElement).disabled);
+  return [input, ...items];
+}
+
+describe("CommandPalette — genuine Tab-cycle focus trap (s2, consus-phase20)", () => {
+  it("Tab cycles forward through every in-palette focusable element, wraps the last back to the first, and never once lands on a real sibling element outside the palette — the audit's own live-repro scenario, fixed", async () => {
+    await renderFocusTrapHarness();
+    fireEvent.click(screen.getByTestId("command-palette-trigger"));
+
+    const order = getExpectedFocusOrder();
+    expect(order.length).toBeGreaterThan(1); // a real, non-trivial list, not a degenerate single-element case
+    expect(order[0]).toHaveFocus(); // autoFocus lands on the search input first
+
+    const bannerDismissStandIn = screen.getByTestId("harness-banner-dismiss-standin");
+    const trigger = screen.getByTestId("command-palette-trigger");
+
+    for (let i = 0; i < order.length; i++) {
+      fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Tab" });
+      const expected = order[(i + 1) % order.length];
+      expect(expected).toHaveFocus();
+      expect(bannerDismissStandIn).not.toHaveFocus();
+      expect(trigger).not.toHaveFocus();
+    }
+
+    // A full cycle landed back on the first element — a real wrap, not a
+    // dead end that fell through to the page.
+    expect(order[0]).toHaveFocus();
+  });
+
+  it("Shift+Tab from the first focusable element wraps to the last — the reverse-direction case — never escaping to the trigger button that precedes the palette in the DOM", async () => {
+    await renderFocusTrapHarness();
+    fireEvent.click(screen.getByTestId("command-palette-trigger"));
+
+    const order = getExpectedFocusOrder();
+    expect(order[0]).toHaveFocus();
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Tab", shiftKey: true });
+
+    expect(order[order.length - 1]).toHaveFocus();
+    expect(screen.getByTestId("command-palette-trigger")).not.toHaveFocus();
+
+    // And Shift+Tab from there moves back one step, still fully contained.
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Tab", shiftKey: true });
+    expect(order[order.length - 2]).toHaveFocus();
+  });
+
+  it("existing arrow-key list navigation, Enter-to-select, and type-to-filter all keep working unchanged now that the trap is wired in", async () => {
+    const onProposeChangeCascade = vi.fn();
+    await renderFocusTrapHarness({ onProposeChangeCascade });
+    fireEvent.click(screen.getByTestId("command-palette-trigger"));
+
+    const input = screen.getByTestId("command-palette-input");
+    fireEvent.change(input, { target: { value: "architecture" } });
+    const items = screen.getAllByRole("option");
+    expect(items.length).toBeGreaterThan(0);
+    for (const item of items) {
+      expect(item).toHaveTextContent(/architecture/i);
+    }
+
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(screen.getAllByRole("option")[Math.min(1, items.length - 1)]).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.queryByTestId("command-palette")).not.toBeInTheDocument();
+  });
+});
+
+describe("CommandPalette — focus returns to the actual pre-open element on close (not a hardcoded trigger assumption)", () => {
+  /**
+   * A plain, stable, always-present button elsewhere on the page — the
+   * architecture diagram's "Full component" tab button — used as the
+   * "some other element had focus" pre-open target per the design
+   * decision's own framing (opened via the global shortcut from wherever
+   * focus happens to be, not necessarily the ⌘K trigger). Deliberately not
+   * DiagramCanvas's node-label edit input: that input commits and unmounts
+   * itself on blur (its own, unrelated `onBlur={commit}`), so losing focus
+   * to the palette would make it vanish regardless of this story's fix —
+   * a real interaction of a different feature, not something this focus
+   * trap should be judged against.
+   */
+  function getPreOpenTarget(): HTMLElement {
+    return screen.getAllByRole("tab", { name: /full component/i })[0];
+  }
+
+  it("returns focus to whatever had it before the palette opened via the global shortcut when closed via Escape", async () => {
+    await renderHarness();
+    const preOpenTarget = getPreOpenTarget();
+    preOpenTarget.focus();
+    expect(preOpenTarget).toHaveFocus();
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    expect(screen.getByTestId("command-palette-input")).toHaveFocus();
+
+    fireEvent.keyDown(screen.getByTestId("command-palette-input"), { key: "Escape" });
+
+    expect(screen.queryByTestId("command-palette")).not.toBeInTheDocument();
+    expect(preOpenTarget).toHaveFocus();
+    expect(screen.getByTestId("command-palette-trigger")).not.toHaveFocus();
+  });
+
+  it("returns focus to the actual pre-open element when closed via selecting an item", async () => {
+    await renderHarness();
+    const preOpenTarget = getPreOpenTarget();
+    preOpenTarget.focus();
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    fireEvent.click(screen.getByTestId("command-palette-item-focus:cascade"));
+
+    expect(screen.queryByTestId("command-palette")).not.toBeInTheDocument();
+    expect(preOpenTarget).toHaveFocus();
+  });
+
+  it("returns focus to the actual pre-open element when closed via clicking the backdrop", async () => {
+    await renderHarness();
+    const preOpenTarget = getPreOpenTarget();
+    preOpenTarget.focus();
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    fireEvent.click(screen.getByTestId("command-palette-backdrop"));
+
+    expect(screen.queryByTestId("command-palette")).not.toBeInTheDocument();
+    expect(preOpenTarget).toHaveFocus();
+  });
+
+  it("returns focus to the ⌘K trigger button when that's genuinely what had focus before open — the common case, still correct, just not hardcoded", async () => {
+    await renderHarness();
+    const trigger = screen.getByTestId("command-palette-trigger");
+    trigger.focus();
+    fireEvent.click(trigger); // clicking it both focuses it (jsdom needs the explicit .focus() above) and opens the palette
+
+    fireEvent.keyDown(screen.getByTestId("command-palette-input"), { key: "Escape" });
+
+    expect(screen.queryByTestId("command-palette")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+});
+
 describe("CommandPalette — universal across all 3 skins", () => {
   it("renders the same trigger + palette structure and non-empty action set regardless of the active skin", async () => {
     for (const skin of ["drafting", "case-board", "harness"] as const) {
