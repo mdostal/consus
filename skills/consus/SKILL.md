@@ -5,9 +5,10 @@ description: Read Consus's open-decision queue and submit verdicts — for any C
 
 # Consus — Agent Harness Skill
 
-Consus is the Pantheon's rendered doc/decision surface. This skill lets an agent harness read
-its open-decision queue and submit verdicts without reading Consus's source code. Full route
-detail: [`docs/api-reference.md`](../../docs/api-reference.md) in the Consus repo.
+Consus is a standalone knowledgebase, graph, and doc editor for a repo's own decisions, docs, and
+architecture. This skill lets an agent harness read its open-decision queue and submit verdicts
+without reading Consus's source code. Full route detail:
+[`docs/api-reference.md`](../../docs/api-reference.md) in the Consus repo.
 
 ## Base URL
 
@@ -88,11 +89,11 @@ just the decision itself.
 
 ## What this skill does NOT cover yet
 
-- Answering a Minerva survey/human-request question through a dedicated endpoint — currently
-  only reachable via the generic `/api/items/:id/decide` above (see `docs/api-reference.md`'s
-  "Known gaps" section). Treat a survey's sub-questions as ordinary items from this skill's
-  point of view.
-- Posting comments — no HTTP route exists yet.
+This skill is deliberately scoped to the decision queue (read/verdict/push) — it's not a full
+mirror of every route Consus exposes. Real capabilities that exist but aren't documented here yet:
+comment threads (`GET`/`POST /api/items/:id/comments`), proposing a change to a doc or diagram
+(`POST /api/proposals`), and the multi-repo event review queue (`GET /api/events`). See
+`docs/api-reference.md` for the full, current contract if your harness needs any of those.
 
 ## Standalone vs. Pantheon-plugin mode
 
