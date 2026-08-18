@@ -44,6 +44,19 @@ flowchart TB
 
 Internally: a **Fastify** HTTP server (`server/index.ts`) bound to `127.0.0.1:8722` by default, serving both the JSON API and the built web SPA (`dist-web/`, via `@fastify/static`); an idempotent **SQLite** schema (`server/db/migrate.ts`); a **doc scanner** (`server/adapters/doc-scanner` — the only adapter in the codebase) that indexes a repo's own generated docs; a `dostal:decision-request/v1` contract parser; a **KB store** with append-only audit log, draft/publish separation, and versioning; and the generic **`HarnessTransport`** seam (`server/harness/transport.ts`) for the propose-a-change mechanism — it defaults to a no-op and has no knowledge of what, if anything, is configured on the other end. The web layer is a Vite + React SPA (`web/src/App.tsx`) whose feature components render docs via `marked`, diagrams via an editable **React Flow** canvas, and present theme-aware decision cards across three switchable visual skins.
 
+## Connect an agent harness
+
+```bash
+npm run agent:init     # installs skills/consus/SKILL.md into ~/.claude/skills/consus/
+npm run agent:status   # read-only — check whether it's installed and current
+```
+
+One command gets a Claude Code session on this machine reading and acting on this repo's decision
+queue, regardless of which repo that session is running from — idempotent, safe to re-run any
+time. The running app itself surfaces this same command in a banner at the top of every tab. v1
+targets Claude Code only; see [`skills/consus/SKILL.md`](skills/consus/SKILL.md) for the full
+agent-facing contract.
+
 ## How it fits
 
 Consus is a standalone tool today — it does not reach out to any other system's API or client library (see `package.json`'s dependency list). Any agent harness that understands `skills/consus/SKILL.md` can drive it over plain HTTP: read the decision queue, push a decision or CBA, propose a doc/diagram change. Cross-system integration (e.g. a future Pantheon L2 adapter layer) is explicitly out of Consus's own codebase — if it ever exists, it talks to Consus over these same generic HTTP routes, the same as any other harness would.

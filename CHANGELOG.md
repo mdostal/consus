@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`consus-phase19-agent-harness-onboarding`:** `npm run agent:init`/`agent:status` — a real install action for Consus's agent-facing skill, dropping `skills/consus/SKILL.md` into `~/.claude/skills/consus/SKILL.md` (Claude Code's real skill-discovery location) so any Claude Code session on the machine can use it, regardless of which repo it's running from. Idempotent (a real byte-level content comparison, not existence/mtime), never creates `~/.claude/` itself if absent, reports three distinct outcomes (installed / already up to date / updated). A new `HarnessConnectBanner` in the app shell surfaces this prominently on every tab, collapsible to a small reopenable affordance whose state persists across reloads. Scoped to Claude Code only for v1.
+
+### Fixed
+
+- **The production server now serves its own built dashboard.** `GET /` was previously a bare 404 — no static-file-serving route existed anywhere, so only the JSON API was reachable in production; every shipped frontend feature was unreachable through the actual server. Fixes #105.
+
+### Changed
+
+- README, VISION, `docs/api-reference.md`, and `skills/consus/SKILL.md` brought current with real v0.9.0 capability — all had drifted behind real shipped code (stale read-only-diagram framing, a v0.6.0 version marker, missing routes, and leftover references to the pre-strip Pantheon/Minerva coupling). Removed the `mermaid` npm dependency and its own now-dead `mermaidTheme.ts` helper, both fully unused since consus-phase18 replaced Mermaid rendering with React Flow.
+
 ## [0.9.0] - 2026-08-18
 
 ### Added
