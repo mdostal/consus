@@ -34,6 +34,14 @@ describe("HarnessConnectBanner", () => {
     expect(screen.getByText("docs/api-reference.md")).toBeInTheDocument();
   });
 
+  it("mentions both Claude Code and Codex CLI are supported by the same npm run agent:init command, without claiming MCP", () => {
+    render(<HarnessConnectBanner />);
+    const banner = screen.getByRole("region", { name: /connect a claude code or codex cli agent/i });
+    expect(banner).toHaveTextContent(/claude code/i);
+    expect(banner).toHaveTextContent(/codex cli/i);
+    expect(banner.textContent).not.toMatch(/\bmcp\b/i);
+  });
+
   it("collapses to a small reopenable affordance when dismissed — not a full disappear", () => {
     render(<HarnessConnectBanner />);
     fireEvent.click(screen.getByRole("button", { name: /collapse the claude code connect banner/i }));

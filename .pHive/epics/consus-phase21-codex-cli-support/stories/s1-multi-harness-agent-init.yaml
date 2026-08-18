@@ -1,0 +1,151 @@
+id: s1-multi-harness-agent-init
+epic: consus-phase21-codex-cli-support
+title: Generalize agent-init.mjs to a per-harness table (Claude Code + Codex CLI), plus --harness flag
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: []
+
+description: |
+  consus-phase19 shipped scripts/agent-init.mjs hardcoded to one harness (Claude Code:
+  ~/.claude/skills/consus/SKILL.md). This story generalizes it to a small per-harness table and
+  adds Codex CLI as a second real target, using a directly-confirmed mechanism (not guessed) — see
+  this epic's design-discussion.md for the full verification: Codex's own `skill-installer` system
+  skill documents "Installs into $CODEX_HOME/skills/<skill-name> (defaults to ~/.codex/skills)",
+  found by reading the real, installed Codex CLI on this machine (~/.codex/skills/.system/*/SKILL.md
+  all exist and use the identical SKILL.md filename convention Claude Code uses).
+
+  Generalize scripts/agent-init.mjs's current hardcoded claudeDirFor/targetSkillDirFor/
+  targetSkillPathFor functions into a small array/table of harness definitions, each with: a name
+  ("claude" | "codex"), a detection-directory resolver (claude: home + "/.claude", honoring the
+  existing CONSUS_AGENT_INIT_HOME test override; codex: process.env.CODEX_HOME if set, else home +
+  "/.codex" — the real env var Codex itself documents, not invented here), and the skill target
+  subpath (identical for both: "skills/consus/SKILL.md" under that base directory). Preserve the
+  EXACT existing byte-level idempotent comparison logic (installed / already up to date /
+  updated-was-stale, never creates the base directory itself if absent) — parameterize it per
+  harness, do not duplicate or diverge it.
+
+  npm run agent:init and npm run agent:status now iterate every harness by default, reporting each
+  one's own outcome distinctly (an operator with only Claude Code installed sees a clean "not
+  detected" for Codex, not an error, and vice versa). Add a --harness claude / --harness codex CLI
+  flag (the operator's own cited Portunus precedent) that narrows to just one harness when passed;
+  omitting it runs against all configured harnesses, matching today's Claude-Code-only default
+  behavior for anyone who doesn't pass the flag (backward compatible — an operator who never learns
+  about the new flag gets both harnesses checked/installed, which is a strict superset of today's
+  behavior, not a behavior change requiring opt-in).
+
+  Also update: skills/consus/SKILL.md gains the optional metadata.short-description frontmatter key
+  Codex's own skills use (cheap, real enhancement found during verification) — confirm this doesn't
+  break Claude Code's own reading of the file (it shouldn't; extra YAML keys are inert to Claude
+  Code's parser, but verify, don't assume). HarnessConnectBanner.tsx and the onboarding screen's
+  "Install into harness" copy update to mention both harnesses are supported by the same command,
+  without claiming an MCP integration this story doesn't build.
+
+acceptance_criteria:
+  - "Given a machine with ~/.claude/ present and ~/.codex/ absent (using the existing HOME-override test mechanism for both), when `npm run agent:init` runs with no --harness flag, then it installs/reports for Claude Code and reports Codex as not detected — both outcomes in one run, neither treated as a fatal error for the other."
+  - "Given a machine with both ~/.claude/ and ~/.codex/ (or a $CODEX_HOME override) present, when `npm run agent:init` runs, then both harnesses get real, independent detection/install/status results — installing into ~/.claude/skills/consus/SKILL.md and $CODEX_HOME/skills/consus/SKILL.md (or ~/.codex/skills/consus/SKILL.md when $CODEX_HOME is unset) respectively, each with its own byte-level idempotent comparison (not a shared/coupled state)."
+  - "Given `--harness codex` is passed, when `npm run agent:init -- --harness codex` runs, then only the Codex path is detected/installed/reported — Claude Code is not touched or even checked, matching the exact narrowing behavior the operator cited from Portunus's own --harness flag."
+  - "Given $CODEX_HOME is explicitly set to a real directory, when the Codex detection runs, then it uses that directory (not ~/.codex) — mirroring exactly how the existing CONSUS_AGENT_INIT_HOME test override already works for the home-directory-level resolution, applied now to the Codex-specific env var real operators/CI might set."
+  - "Given the existing Claude Code install/status logic and its full existing test suite from consus-phase19, when this story's changes land, then all of it continues to work identically — this is a generalization of the existing table-driven structure, not a rewrite of Claude Code's own behavior or a regression in its test coverage."
+  - "Given skills/consus/SKILL.md gains the new metadata.short-description frontmatter key, when the existing Claude Code install path runs (byte-comparison, write), then it behaves identically to before — the new key is just additional content in the same file being compared/copied, not a special case requiring new logic."
+  - "Given HarnessConnectBanner.tsx and the onboarding screen, when rendered, then their copy mentions both Claude Code and Codex CLI are supported by the same npm run agent:init command, without claiming an MCP server or any capability this story doesn't actually build."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Add vitest + Node tests (extend scripts/agent-init.test.mjs, following its existing
+      hermetic-via-HOME-override pattern) covering: Codex detection using a real temp directory
+      (via a new CONSUS_AGENT_INIT_CODEX_HOME test override, or by honoring a real CODEX_HOME env
+      var pointed at a temp dir — pick whichever keeps the test hermetic without ever touching the
+      operator's real ~/.codex/, matching how CONSUS_AGENT_INIT_HOME already protects ~/.claude/ in
+      tests) through all four states (absent/fresh/current/stale) mirroring the existing Claude Code
+      test coverage exactly; both harnesses running together in one invocation report independent,
+      correct results; --harness claude and --harness codex each narrow correctly and don't touch
+      the other harness's directory at all (assert the other harness's target file literally does
+      not get created/read during a single-harness run). Add a component test confirming
+      HarnessConnectBanner's copy mentions both harnesses. Follow this repo's existing test
+      conventions throughout.
+    agent: tester
+  - id: implement-multi-harness-table
+    description: >
+      Refactor scripts/agent-init.mjs's hardcoded Claude Code functions into a small harness-table
+      structure (an array of { name, dirFor(home), skillPathFor(home) } or equivalent), with Codex's
+      entry honoring the real CODEX_HOME env var (falling back to home + "/.codex"). Update
+      detect/runInit/runStatus to accept a harness definition and stay otherwise unchanged in their
+      actual comparison logic. Update main() to iterate the harness table (filtered by --harness if
+      passed) and print one result line per harness. Update skills/consus/SKILL.md's frontmatter to
+      add metadata.short-description. Update HarnessConnectBanner.tsx and the onboarding screen's
+      copy in web/src/App.tsx.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: make-tests-pass
+    description: >
+      Run the full test suite and fix as needed until every new test passes and the full existing
+      suite — including consus-phase19's original Claude-Code-only agent-init tests and
+      HarnessConnectBanner tests — passes completely unmodified in behavior (test file content may
+      need trivial updates only if the story's own new copy changes literally touch text those
+      tests assert on; do not weaken any assertion to make it pass).
+    agent: developer
+    depends_on: [implement-multi-harness-table]
+  - id: review
+    description: >
+      Review for: the Codex detection genuinely never touches the real operator ~/.codex/ during
+      tests (hermetic, like the existing Claude Code tests); --harness narrowing genuinely skips the
+      other harness entirely (not just skips its write while still reading/checking it); the
+      byte-comparison logic is truly shared/parameterized, not duplicated with a subtle divergence
+      between the two harnesses; Claude Code's existing behavior is unchanged for an operator who
+      never passes --harness. Also do a real, live run of `npm run agent:init` against this actual
+      machine (both ~/.claude/ and ~/.codex/ genuinely exist here) and confirm both real files land
+      correctly and match this repo's skills/consus/SKILL.md exactly — not just the hermetic
+      test-harness version of this check.
+    agent: reviewer
+    depends_on: [make-tests-pass]
+  - id: integrate
+    description: Commit the multi-harness agent-init generalization and Codex CLI support.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: scripts/agent-init.mjs
+      purpose: "The file this story generalizes. Read in full first — claudeDirFor/targetSkillDirFor/targetSkillPathFor and the detect/runInit/runStatus functions are the existing Claude-Code-only logic to parameterize, not replace."
+    - path: scripts/agent-init.test.mjs
+      purpose: "Existing hermetic test coverage via CONSUS_AGENT_INIT_HOME — the pattern this story's new Codex tests must mirror for their own hermetic isolation."
+    - path: skills/consus/SKILL.md
+      purpose: "Gains metadata.short-description; otherwise the same file installed to both harnesses' target paths."
+    - path: web/src/features/harness-connect/HarnessConnectBanner.tsx
+      purpose: "Copy update to mention both harnesses — read its current text first, don't guess at the exact current wording."
+    - path: web/src/App.tsx
+      purpose: "The onboarding screen's 'Install into harness' section (~line 1165 as of consus-phase19, may have shifted) needs the same copy update."
+    - path: .pHive/epics/consus-phase21-codex-cli-support/docs/design-discussion.md
+      purpose: "Full verification trail for why Codex's mechanism is real and confirmed, not guessed — read before assuming any detail about the Codex convention, cite this doc's own primary-source quote rather than re-deriving it."
+
+files_to_modify:
+  - file: scripts/agent-init.mjs
+    change: "Generalize to a per-harness table; add Codex CLI's real, confirmed detection + skill-install path; add --harness flag."
+  - file: scripts/agent-init.test.mjs
+    change: "Add hermetic Codex-path tests mirroring the existing Claude Code coverage; add multi-harness and --harness-narrowing tests."
+  - file: skills/consus/SKILL.md
+    change: "Add the optional metadata.short-description frontmatter key."
+  - file: web/src/features/harness-connect/HarnessConnectBanner.tsx
+    change: "Update copy to mention both Claude Code and Codex CLI."
+  - file: web/src/features/harness-connect/HarnessConnectBanner.test.tsx
+    change: "Update/extend the copy assertion to match."
+  - file: web/src/App.tsx
+    change: "Update the onboarding screen's 'Install into harness' copy to mention both harnesses."
+
+design_decisions:
+  - decision: "agent:init/agent:status run against every configured harness by default; --harness narrows to one."
+    rationale: "Backward compatible — an operator who never learns about the new flag still gets Claude Code checked exactly as before, plus Codex now also gets checked (a superset, not a behavior change requiring opt-in). Matches the operator's own cited Portunus precedent for the --harness flag's exact purpose."
+  - decision: "The byte-comparison/idempotency logic is parameterized, not duplicated, across harnesses."
+    rationale: "Two independent implementations of the same install/detect logic would be a real maintenance risk — a bug fixed in one path and not the other. A shared, harness-parameterized implementation is the whole point of generalizing this file."
+  - decision: "No MCP server is built in this epic."
+    rationale: "Consistent with consus-phase19's own reasoning — Consus's agent-facing surface stays a plain REST API + skill file. Codex's MCP support is real (confirmed during this epic's own research) but is a separate, bigger, differently-shaped capability not needed to give Codex users the same skill-file-based integration Claude Code users already have."
+
+risks:
+  - severity: low
+    description: "metadata.short-description is a new frontmatter key — a theoretical risk that some YAML/frontmatter parser somewhere chokes on an unrecognized key, though this is not how YAML frontmatter parsers typically behave."
+    mitigation: "Acceptance criteria explicitly require confirming Claude Code's own existing install/comparison path still behaves identically with the new key present — a real verification, not an assumption that 'YAML parsers usually ignore unknown keys' is true here specifically."
+  - severity: low
+    description: "CODEX_HOME might not be honored identically across all Codex CLI versions if the tool changes its own conventions."
+    mitigation: "This epic's design-discussion.md cites the exact source (Codex's own bundled skill-installer doc, version 0.143.0 on this machine) — a real, dated primary source, not an assumption that will silently stay true forever. If Codex changes this convention later, that's a real, visible break to notice and fix, not a silent one, since the acceptance criteria include a live verification step against the real installed CLI."
