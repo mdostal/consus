@@ -1,0 +1,162 @@
+id: s1-agent-init-script-and-connect-banner
+epic: consus-phase19-agent-harness-onboarding
+title: npm run agent:init/agent:status (Claude Code skill install) + HarnessConnectBanner in the app shell
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: []
+
+description: |
+  Two halves of one feature: a real install action for the agent-facing skill file, and a
+  prominent, collapsible UI panel surfacing it — so an operator setting up Consus (or an agent
+  reading the running app) can see, at a glance, what to run to get harness interactivity going,
+  without having to already know `skills/consus/SKILL.md` exists.
+
+  Precedent cited (operator's own words): Portunus's `portunus agent init`/`agent status` pair —
+  detect the harness, install its skill files, idempotent, read-only status check. Consus's real
+  analog is narrower: no MCP server exists or is proposed here (Consus's own agent-facing surface
+  is a plain REST API + a documented skill file, not an MCP integration), and v1 targets Claude
+  Code only — `skills/consus/SKILL.md`'s own frontmatter already scopes to "any
+  Claude-Code-compatible agent harness," and Claude Code's `~/.claude/skills/<name>/SKILL.md`
+  file-drop convention is a real, directly-confirmed mechanism (see design-discussion.md). Codex
+  CLI or any other harness is explicit future work requiring its own real mechanism research, not
+  fabricated here.
+
+  Half 1 — `scripts/agent-init.mjs`, a small dependency-free Node script (matches this repo's
+  existing `scripts/start.sh` plain-script convention), wired to two new package.json scripts:
+  `agent:init` (detects `~/.claude/` existing on the machine as the install signal — a simple
+  filesystem check, deliberately not shelling out to the `claude` binary, since the precedent's own
+  build found that `claude mcp list`-style invocations can be slow (health-checks every registered
+  server); copies `skills/consus/SKILL.md` to `~/.claude/skills/consus/SKILL.md`, creating the
+  directory if needed; idempotent — compares content before writing and reports one of "installed"
+  / "already up to date" / "updated (was stale)", never silently overwriting without saying which
+  case applied) and `agent:status` (read-only: reports whether `~/.claude/` exists, whether the
+  skill is installed, and whether it's current — never writes).
+
+  Half 2 — a new `HarnessConnectBanner` component mounted in `web/src/App.tsx` directly below the
+  masthead (visible on every tab), showing the exact `npm run agent:init` command, a one-line
+  explanation, and a link to `skills/consus/SKILL.md`/`docs/api-reference.md`. Collapses to a
+  small, persistent, reopenable affordance on dismiss (not gone forever) — persisted via a new
+  `consus:harness-banner-collapsed` localStorage key, following the exact hook pattern
+  `web/src/theme/useThemePreference.ts`/`useSkinPreference.ts` already established (namespaced
+  key, try/catch around localStorage access, never throws). Renders correctly across all 3 skins
+  and both themes.
+
+acceptance_criteria:
+  - "Given a machine with no ~/.claude/ directory, when `npm run agent:init` runs, then it reports clearly that no Claude Code installation was detected and makes no filesystem writes outside of a real ~/.claude/ (i.e. it must not create ~/.claude/ itself just to install into it)."
+  - "Given a machine with ~/.claude/ present and no existing consus skill installed, when `npm run agent:init` runs, then it creates ~/.claude/skills/consus/SKILL.md with content identical to the repo's own skills/consus/SKILL.md, and reports 'installed'."
+  - "Given the skill is already installed and identical to the repo's current copy, when `npm run agent:init` runs again, then it makes no write and reports 'already up to date' — a real content comparison, not just an existence check."
+  - "Given the installed skill file's content differs from the repo's current copy (simulating a prior, now-stale install), when `npm run agent:init` runs, then it overwrites it and reports 'updated (was stale)', distinctly from the 'installed' and 'already up to date' cases."
+  - "Given any of the three states above, when `npm run agent:status` runs instead, then it accurately reports the same detection/installed/current information without writing anything to disk — verified by asserting the target file's mtime/content is unchanged after running status."
+  - "Given the HarnessConnectBanner is visible and the operator dismisses it, when the page is reloaded, then it stays collapsed (shown only as the small reopenable affordance) — the collapse persists across a reload, not just within the same session."
+  - "Given the banner (expanded or collapsed) is rendered under each of the 3 skins and both themes, then it remains legible and correctly styled in all 6 combinations — the same bar every phase18 surface was held to."
+  - "Given the banner's collapsed affordance, when clicked, then the full banner reopens — collapsing is reversible, not a one-way dismiss."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Add tests for scripts/agent-init.mjs covering the four real states (no ~/.claude, fresh
+      install, already-current no-op, stale-update) using a real temporary directory standing in
+      for HOME (never touch the actual operator's real ~/.claude/ during automated tests — inject
+      a HOME override the script itself must honor, e.g. via an environment variable or an
+      explicit CLI arg, so tests are hermetic). Add vitest + RTL specs for HarnessConnectBanner
+      covering: initial expanded state, dismiss persists across a simulated reload (re-mounting
+      with the same localStorage), the reopen affordance works, and rendering across all 3 skins.
+      Follow this repo's existing test conventions (useThemePreference.test.ts/
+      useSkinPreference.test.ts for the localStorage-hook pattern this banner's persistence should
+      mirror).
+    agent: tester
+  - id: implement-agent-init-script
+    description: >
+      Write scripts/agent-init.mjs and wire package.json's `agent:init`/`agent:status` scripts to
+      it (pass a mode flag distinguishing init from status, or two thin wrapper invocations —
+      implementer's call). Real content comparison (not just existence) before deciding
+      install/no-op/update. Must accept a HOME-override mechanism so it's testable without ever
+      touching the real operator machine during automated tests, while defaulting to the real
+      os.homedir() when not overridden (so `npm run agent:init` run for real by an operator behaves
+      correctly with zero extra flags/env vars needed).
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: implement-connect-banner
+    description: >
+      Add web/src/features/harness-connect/HarnessConnectBanner.tsx and a small
+      useHarnessBannerCollapsed.ts hook (mirroring useThemePreference.ts's/useSkinPreference.ts's
+      exact localStorage pattern: namespaced key `consus:harness-banner-collapsed`, try/catch,
+      never throws). Mount it in web/src/App.tsx directly below the masthead, above <main>, so
+      it's visible regardless of active tab. Style across all 3 skins using the existing
+      --consus-* token system (no new, parallel per-skin mechanism).
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: make-tests-pass
+    description: >
+      Run the full test suite and fix as needed until every new test passes and the full existing
+      suite (including all of consus-phase18's tests) still passes unmodified. Also actually run
+      `npm run agent:init` for real against this machine (a real ~/.claude/ already exists here —
+      confirmed during planning) and confirm the real file lands at the real
+      ~/.claude/skills/consus/SKILL.md, then run it again to confirm the idempotent no-op path
+      genuinely fires — not just the hermetic test-harness version of this check.
+    agent: developer
+    depends_on: [implement-agent-init-script, implement-connect-banner]
+  - id: review
+    description: >
+      Review for: the init script's content-comparison is genuinely byte-level (not just checking
+      a timestamp or file existence); no accidental write happens on the ~/.claude/-absent path;
+      the real, live agent:init run actually installed a working, correct skill file (open it and
+      compare against the repo's own copy); the banner's collapse state genuinely persists across
+      a real reload, not just a re-render in a test; all 6 skin×theme combinations checked, not
+      assumed.
+    agent: reviewer
+    depends_on: [make-tests-pass]
+  - id: integrate
+    description: Commit the agent-init script and the HarnessConnectBanner.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: skills/consus/SKILL.md
+      purpose: "The file this story's init script installs to ~/.claude/skills/consus/SKILL.md — already accurate/current as of this branch's own earlier fix commit. Read-only source for this story, not modified."
+    - path: scripts/start.sh
+      purpose: "This repo's existing convention for a plain, dependency-free script — agent-init.mjs should match this convention's spirit (simple, no build step) even though it's Node instead of shell."
+    - path: web/src/theme/useThemePreference.ts
+      purpose: "The exact localStorage-hook pattern (namespaced key, try/catch, never throws, applied on mount) this story's useHarnessBannerCollapsed.ts should mirror, not reinvent."
+    - path: web/src/App.tsx
+      purpose: "Masthead is around line 1268-1294 (ThemeSkinPicker + CommandPalette mounted here); the new banner mounts directly below it, before <main> (~line 1296), so it's visible on every tab."
+    - path: .pHive/epics/consus-phase19-agent-harness-onboarding/docs/design-discussion.md
+      purpose: "Full reasoning for the Claude-Code-only v1 scope decision and the no-MCP-server-needed analysis — read before assuming this story should detect/support any other harness."
+
+files_to_modify:
+  - file: scripts/agent-init.mjs
+    change: "New: detects ~/.claude/, installs/updates/no-ops the consus skill file idempotently, reports which case applied. Also serves the read-only status check (mode flag or shared logic)."
+  - file: scripts/agent-init.test.mjs
+    change: "New test file covering the four real states hermetically via a HOME override."
+  - file: package.json
+    change: "Add agent:init and agent:status scripts."
+  - file: web/src/features/harness-connect/HarnessConnectBanner.tsx
+    change: "New: the prominent, collapsible connect-a-harness panel."
+  - file: web/src/features/harness-connect/HarnessConnectBanner.test.tsx
+    change: "New test file."
+  - file: web/src/features/harness-connect/useHarnessBannerCollapsed.ts
+    change: "New: localStorage-persisted collapse state, mirroring useThemePreference.ts's pattern."
+  - file: web/src/features/harness-connect/useHarnessBannerCollapsed.test.ts
+    change: "New test file."
+  - file: web/src/App.tsx
+    change: "Mount HarnessConnectBanner directly below the masthead, above <main>."
+
+design_decisions:
+  - decision: "v1 supports Claude Code only — no Codex CLI or other harness detection."
+    rationale: "skills/consus/SKILL.md is already explicitly scoped to Claude-Code-compatible harnesses, and Claude Code's file-drop skill convention is a real, confirmed mechanism on this machine. Codex's own mechanism hasn't been researched; guessing at it risks a non-functional install step. See design-discussion.md."
+  - decision: "No MCP server registration step — Consus has no MCP server and none is proposed here."
+    rationale: "Unlike Portunus (an MCP-integrated tool), Consus's agent-facing surface is a plain REST API plus a documented skill file. The entire 'install' action is the skill-file drop; there is nothing else to register."
+  - decision: "Detection is a filesystem check (~/.claude/ existing), not shelling out to the claude CLI."
+    rationale: "The cited precedent's own build found that a naive `claude mcp list`-style call health-checks every registered MCP server (30+ seconds on a machine with many configured) — the equivalent trap here is invoking the CLI at all for a question a filesystem check answers just as well."
+  - decision: "The install/status script takes a HOME-override mechanism so automated tests never touch the real operator machine."
+    rationale: "This story's own acceptance criteria require exercising all four real states (absent/fresh/current/stale) — doing that against the real ~/.claude/ in CI or any other test run would be both unsafe and non-hermetic. The real, unoverridden path is still verified live as a manual step (see make-tests-pass)."
+
+risks:
+  - severity: medium
+    description: "An idempotency bug that overwrites a hand-edited ~/.claude/skills/consus/SKILL.md without warning would be a real, if minor, surprise data loss for an operator who customized their local copy."
+    mitigation: "Acceptance criteria require a real byte-level content comparison (not existence/mtime) before deciding install/no-op/update, and the script must report which case applied every time it writes."
+  - severity: low
+    description: "A banner that re-shows every session despite being dismissed would read as broken nag-ware, undermining the whole point of making it collapsible."
+    mitigation: "Acceptance criteria explicitly require the collapse to survive a real reload (re-mount with the same localStorage), not just an in-memory dismiss."

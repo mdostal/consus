@@ -1884,3 +1884,88 @@ body {
   outline: 2px solid var(--consus-accent);
   outline-offset: 2px;
 }
+
+/* ================================================================ */
+/* s1 (consus-phase19): HarnessConnectBanner — mounted once, directly */
+/* below the masthead, visible on every tab regardless of active     */
+/* skin. Structure identical across all 3 skins/both themes; only     */
+/* the shared --consus-* tokens vary, same discipline every other     */
+/* phase18 surface (command-palette-trigger, diagram-metadata-strip)  */
+/* was held to — no new, parallel per-skin mechanism.                 */
+/* ================================================================ */
+.harness-connect-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 26px;
+  background: color-mix(in srgb, var(--consus-accent) 8%, var(--consus-bg));
+  border-bottom: 1px solid var(--consus-line);
+  font-size: 13px;
+}
+.harness-connect-banner__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.harness-connect-banner__lead {
+  margin: 0;
+  color: var(--consus-ink);
+  font-weight: 600;
+}
+.harness-connect-banner__detail {
+  margin: 0;
+  color: var(--consus-ink-muted);
+}
+.harness-connect-banner__lead code,
+.harness-connect-banner__detail code {
+  font-family: var(--consus-font-mono);
+  font-size: 12px;
+  background: var(--consus-bg-subtle);
+  border: 1px solid var(--consus-line);
+  border-radius: calc(4px * var(--consus-radius-scale, 1));
+  padding: 1px 6px;
+}
+.harness-connect-banner__command {
+  color: var(--consus-accent);
+  font-weight: 700;
+}
+.harness-connect-banner__dismiss {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: calc(6px * var(--consus-radius-scale, 1));
+  color: var(--consus-ink-muted);
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.harness-connect-banner__dismiss:hover {
+  color: var(--consus-ink);
+  background: color-mix(in srgb, var(--consus-ink) 8%, transparent);
+}
+
+.harness-connect-banner--collapsed {
+  padding: 6px 26px;
+  background: transparent;
+}
+.harness-connect-banner__reopen {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--consus-font-ui);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--consus-ink-muted);
+  background: var(--consus-bg-subtle);
+  border: 1px solid var(--consus-line);
+  border-radius: calc(999px * var(--consus-radius-scale, 1));
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.harness-connect-banner__reopen:hover {
+  color: var(--consus-accent);
+  border-color: color-mix(in srgb, var(--consus-accent) 40%, transparent);
+}

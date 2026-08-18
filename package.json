@@ -13,7 +13,9 @@
     "build": "npm run build:web && npm run build:server",
     "start": "node dist-server/index.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "agent:init": "node scripts/agent-init.mjs init",
+    "agent:status": "node scripts/agent-init.mjs status"
   },
   "dependencies": {
     "@fastify/static": "^10.1.3",

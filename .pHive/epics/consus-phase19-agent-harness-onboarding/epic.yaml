@@ -1,0 +1,10 @@
+name: consus-phase19-agent-harness-onboarding
+title: Agent-harness install/init script + a prominent, collapsible "connect a harness" UI panel
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: tdd
+
+stories:
+  - id: s1-agent-init-script-and-connect-banner
+    title: npm run agent:init/agent:status (Claude Code skill install) + HarnessConnectBanner in the app shell
+    complexity: medium
+    depends_on: []
