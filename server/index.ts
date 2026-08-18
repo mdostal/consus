@@ -61,6 +61,11 @@ export function buildServer({
 const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
   const port = Number(process.env.PORT ?? 8722);
+  // Defaults to loopback-only so standalone/local-dev behavior is unchanged
+  // for anyone not setting HOST. Containerized deploys (where 127.0.0.1
+  // means the container's own loopback, unreachable from outside) set
+  // HOST=0.0.0.0 explicitly — see mdostal/consus#100.
+  const host = process.env.HOST ?? "127.0.0.1";
   const dbPath = process.env.CONSUS_DB_PATH ?? ".pHive/consus.sqlite";
   const projectsConfigPath = process.env.CONSUS_PROJECTS_CONFIG ?? ".pHive/consus-projects.json";
   const repos = loadProjectRegistry(projectsConfigPath, process.cwd());
@@ -76,7 +81,7 @@ if (isMain) {
       : NOOP_HARNESS_TRANSPORT;
 
   const app = buildServer({ dbPath, repos, transport });
-  app.listen({ port, host: "127.0.0.1" }).then(() => {
+  app.listen({ port, host }).then(() => {
     // eslint-disable-next-line no-console
     console.log(`Consus server listening on :${port} (db: ${dbPath})`);
   });

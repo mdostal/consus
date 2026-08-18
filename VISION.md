@@ -17,7 +17,7 @@ a fixed boundary, not an open question (see below).
 
 ## ① Current — where it is now (v0.6.0)
 
-Consus runs as a **Fastify server on `:8722`**, bound to `127.0.0.1` only, backed by a local
+Consus runs as a **Fastify server on `:8722`**, bound to `127.0.0.1` by default, backed by a local
 **SQLite** file (`.pHive/consus.sqlite`), started with `npm run dev` (server + Vite web) or
 `npm start` in production.
 
@@ -102,8 +102,10 @@ These are settled, not open questions:
 - **Harness interaction only through the generic seam.** `HarnessTransport` is the sole
   integration point for "propose a change and let something apply it," with no knowledge of what's
   configured on the other end.
-- **Local-only.** `127.0.0.1` binding on both the Vite dev server and the Fastify server — no
-  network exposure.
+- **Local-only by default.** `127.0.0.1` binding on both the Vite dev server and the Fastify
+  server unless explicitly overridden. The production server reads `HOST` (default `127.0.0.1`)
+  so a containerized deploy can bind `0.0.0.0` — nothing changes for anyone who doesn't set it.
+  Not a network-exposure-by-default policy shift, just an explicit opt-in for a deliberate deploy.
 
 ---
 
