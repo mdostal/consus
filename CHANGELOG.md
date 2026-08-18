@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-18
+
 ### Added
 
 - **`consus-phase19-agent-harness-onboarding`:** `npm run agent:init`/`agent:status` — a real install action for Consus's agent-facing skill, dropping `skills/consus/SKILL.md` into `~/.claude/skills/consus/SKILL.md` (Claude Code's real skill-discovery location) so any Claude Code session on the machine can use it, regardless of which repo it's running from. Idempotent (a real byte-level content comparison, not existence/mtime), never creates `~/.claude/` itself if absent, reports three distinct outcomes (installed / already up to date / updated). A new `HarnessConnectBanner` in the app shell surfaces this prominently on every tab, collapsible to a small reopenable affordance whose state persists across reloads. Scoped to Claude Code only for v1.
