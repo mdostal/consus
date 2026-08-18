@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-18
+
+### Added
+
+- **`consus-phase18-diagram-editor-and-skin-system`:** diagrams (both the epic/story cascade and the architecture diagram) are now directly editable — drag nodes, edit labels, add/remove nodes, connect or delete edges (click-to-snip or multi-select) — with a real structured changeset and a "Fire to harness" action that reuses the existing `POST /api/proposals` mechanism unchanged. Powered by a real editable canvas (`@xyflow/react`), replacing the previous read-only Mermaid rendering. Alongside this, Consus gets its first-ever manual theme control (light/dark/system — previously OS-preference-only, with no override) and a new, fully independent visual-skin system with three real, switchable skins: Drafting Table (blueprint/drafting-table), Case Board (corkboard/case-file), and Harness (terminal/IDE) — each with genuine per-skin decoration, not just recolored chrome. A collapsible, read-only Mermaid source preview (regenerated live, never a second editable surface) and a universal ⌘K command palette with keyboard shortcuts round out the pass. Design synthesized from three independent, blind design-agent mockups plus a real cost-benefit analysis on the editing library (both artifacts live in the epic's `docs/`).
+
 ## [0.8.0] - 2026-08-17
 
 ### Added

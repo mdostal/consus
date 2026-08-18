@@ -4,6 +4,33 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Consus</title>
+    <!--
+      Applies the operator's persisted theme/skin choice to <html> before
+      React mounts and before first paint, so there's no flash of the
+      wrong skin/theme on load (s1, consus-phase18). Kept as a tiny inline
+      script (no build-step dependency) rather than an early React effect,
+      since an effect only runs after the initial render has already
+      painted with the default attributes. useThemePreference/
+      useSkinPreference re-apply the same resolution idempotently once
+      React mounts, so this script and the hooks can never disagree.
+    -->
+    <script>
+      (function () {
+        try {
+          var theme = window.localStorage.getItem("consus:theme-preference");
+          if (theme === "light" || theme === "dark") {
+            document.documentElement.setAttribute("data-theme", theme);
+          }
+          var skin = window.localStorage.getItem("consus:skin-preference");
+          document.documentElement.setAttribute(
+            "data-skin",
+            skin === "case-board" || skin === "harness" ? skin : "drafting",
+          );
+        } catch (e) {
+          document.documentElement.setAttribute("data-skin", "drafting");
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

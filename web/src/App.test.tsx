@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within, act } from "@testing-library/react";
 import { App } from "./App";
 
 const KB_ENTRY = { id: "kb-1", title: "Architecture note", source_repo: "consus", created_at: "2026-08-01T00:00:00Z" };
@@ -1045,5 +1045,122 @@ describe("App — Decisions tab two-pane layout (phase16 s1)", () => {
     });
     expect(screen.getByRole("heading", { name: "Decision Two" })).toBeInTheDocument();
     expect(window.location.search).toBe("?selected=item-2");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* App — global pending-changes count across the two diagram kinds    */
+/* (s2, consus-phase18) — DiagramView (cascade) and                   */
+/* ArchitectureDiagramView are now both real, editable React Flow      */
+/* canvases; ProjectsSection lifts each one's own pending-change count */
+/* into one accurate global total, while each diagram's own dirty dot */
+/* only lights up for the diagram that's actually dirty.              */
+/* ------------------------------------------------------------------ */
+
+const ARCHITECTURE_RESPONSE = {
+  topLevel: 'graph TD\n  root["consus"]\n  root --> src["src"]',
+  fullComponent: 'graph TD\n  root["consus"]\n  root --> src["src"]',
+};
+
+const CASCADE_WITH_STORIES = {
+  itemId: "diagram:consus",
+  epics: [
+    {
+      id: "epic-a",
+      title: "Epic A",
+      stories: [{ id: "s1", title: "Story One", complexity: "low", dependsOn: [] }],
+    },
+  ],
+};
+
+function diagramEditorFetchMock() {
+  return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.toString();
+    const method = init?.method ?? "GET";
+
+    if (method === "POST" && url === "/api/proposals") {
+      return Promise.resolve({ ok: true, json: async () => ({ id: "prop-1", status: "pending" }) });
+    }
+    // Checked before the plain /api/diagrams branch below, since that
+    // branch's own prefix ("/api/diagrams") also matches this URL.
+    if (url.startsWith("/api/diagrams/consus/architecture")) {
+      return Promise.resolve({ ok: true, json: async () => ARCHITECTURE_RESPONSE });
+    }
+    if (url.startsWith("/api/diagrams")) {
+      return Promise.resolve({ ok: true, json: async () => CASCADE_WITH_STORIES });
+    }
+    if (url.startsWith("/api/decisions")) return Promise.resolve({ ok: true, json: async () => [] });
+    if (url.startsWith("/api/kb-entries")) return Promise.resolve({ ok: true, json: async () => [KB_ENTRY] });
+    if (url.startsWith("/api/docs")) return Promise.resolve({ ok: true, json: async () => DOCS_WITH_ENTRY });
+    if (url.startsWith("/api/items/")) return Promise.resolve({ ok: true, json: async () => [] });
+    if (url.startsWith("/api/projects")) return Promise.resolve({ ok: true, json: async () => ({ projects: ["consus"] }) });
+    return Promise.resolve({ ok: true, json: async () => [] });
+  });
+}
+
+describe("App — diagram editor global pending count (s2, consus-phase18)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("shows an accurate global total across both diagram kinds, with only the dirty one's dot lit", async () => {
+    vi.stubGlobal("fetch", diagramEditorFetchMock());
+
+    render(<App />);
+    await openConsusProject();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByTestId("diagram-pending-count")).toHaveTextContent("0 pending changes");
+    expect(screen.queryByTestId("diagram-dirty-dot")).not.toBeInTheDocument();
+
+    // index 0 = the cascade's own canvas (DiagramView renders first),
+    // index 1 = the architecture diagram's canvas (renders second) — see
+    // ProjectsSection's render order.
+    const addButtons = screen.getAllByTestId("diagram-canvas-add-node");
+    expect(addButtons).toHaveLength(2);
+
+    fireEvent.click(addButtons[1]); // edit architecture only
+
+    await waitFor(() => expect(screen.getByTestId("diagram-pending-count")).toHaveTextContent("1 pending change"));
+    expect(screen.getAllByTestId("diagram-dirty-dot")).toHaveLength(1); // only architecture's dot, not the cascade's
+
+    fireEvent.click(addButtons[0]); // now edit the cascade too
+
+    await waitFor(() => expect(screen.getByTestId("diagram-pending-count")).toHaveTextContent("2 pending changes"));
+    expect(screen.getAllByTestId("diagram-dirty-dot")).toHaveLength(2);
+  });
+
+  it("fires the architecture diagram's proposal via POST /api/proposals with the reconstructed diagram:<repo> itemId", async () => {
+    const fetchMock = diagramEditorFetchMock();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await openConsusProject();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const addButtons = screen.getAllByTestId("diagram-canvas-add-node");
+    fireEvent.click(addButtons[1]);
+
+    const fireButtons = screen.getAllByRole("button", { name: /fire to harness/i });
+    expect(fireButtons).toHaveLength(2);
+    fireEvent.click(fireButtons[1]);
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([u, i]) => u === "/api/proposals" && (i as RequestInit | undefined)?.method === "POST");
+      expect(call).toBeDefined();
+    });
+    const [, postInit] = fetchMock.mock.calls.find(
+      ([u, i]) => u === "/api/proposals" && (i as RequestInit | undefined)?.method === "POST",
+    )!;
+    const body = JSON.parse((postInit as RequestInit).body as string);
+    expect(body).toMatchObject({ itemId: "diagram:consus", targetType: "diagram", requestedBy: "Mathew" });
+    expect(body.diff).toContain("+ node New node 1");
+    expect(body.description).toMatch(/1 change/);
   });
 });

@@ -6,6 +6,7 @@ import { GlobalView, type KbEntrySummary } from "./features/projects/GlobalView"
 import { ProjectView } from "./features/projects/ProjectView";
 import { DiagramView, type DiagramEpic } from "./features/projects/DiagramView";
 import { ArchitectureDiagramView } from "./features/projects/ArchitectureDiagramView";
+import { DiagramPendingCount } from "./features/projects/DiagramChangeset";
 import { AuditPanel, type AuditTrailEntry } from "./features/audit/AuditPanel";
 import { BacklogBrowser, type BacklogEntry, type KbCollection } from "./features/kb/BacklogBrowser";
 import { DocBrowser, type GroupedDocs } from "./features/docs/DocBrowser";
@@ -16,6 +17,11 @@ import { EventProposeComposer } from "./features/events/EventProposeComposer";
 import type { DecisionPayload, Verdict } from "./features/decisions/answer-shapes/types";
 import { useSelectedDecisionId } from "./features/decisions/useSelectedDecisionId";
 import { DecisionListPane } from "./features/decisions/DecisionListPane";
+import { useSkinPreference } from "./theme/useSkinPreference";
+import { ThemeSkinPicker } from "./theme/ThemeSkinPicker";
+import { SkinBackdrop } from "./theme/skins/SkinBackdrop";
+import { HarnessWindowDots } from "./theme/skins/HarnessWindowDots";
+import { CommandPalette } from "./features/command-palette/CommandPalette";
 import "./theme/tokens.css";
 import "./app.css";
 import "./features/decisions/decisions-two-pane.css";
@@ -309,6 +315,13 @@ function ProjectsSection() {
   const [refreshToken, setRefreshToken] = useState(0);
   const [ingesting, setIngesting] = useState(false);
   const [ingestError, setIngestError] = useState<string | null>(null);
+  // s2 (consus-phase18): the two diagram kinds (epic/story cascade,
+  // architecture) each report their own pending-change count so this
+  // section can show one accurate global "N pending changes" total
+  // alongside each diagram's own per-tab dirty dot — see design-
+  // discussion.md decision #3.
+  const [cascadePendingChanges, setCascadePendingChanges] = useState(0);
+  const [architecturePendingChanges, setArchitecturePendingChanges] = useState(0);
 
   const loadEntries = useCallback(() => {
     fetch("/api/kb-entries")
@@ -403,8 +416,13 @@ function ProjectsSection() {
                 entries={entries.filter((e) => (e.source_repo ?? "unassigned") === project)}
                 onSelect={() => {}}
               />
-              <ProjectDiagram repo={project} refreshToken={refreshToken} />
-              <ProjectArchitectureDiagram repo={project} refreshToken={refreshToken} />
+              <DiagramPendingCount count={cascadePendingChanges + architecturePendingChanges} />
+              <ProjectDiagram repo={project} refreshToken={refreshToken} onPendingChangesChange={setCascadePendingChanges} />
+              <ProjectArchitectureDiagram
+                repo={project}
+                refreshToken={refreshToken}
+                onPendingChangesChange={setArchitecturePendingChanges}
+              />
               <ProjectDocs repo={project} refreshToken={refreshToken} />
             </>
           )}
@@ -414,12 +432,34 @@ function ProjectsSection() {
   );
 }
 
+/** Same `diagram:${repo}` item-id convention server/routes/diagrams.ts's
+ *  own diagramItemIdFor uses (s2, consus-phase18) — reconstructed
+ *  client-side rather than duplicating a server import, since the
+ *  architecture endpoint's response has no itemId field of its own (see
+ *  ProjectArchitectureDiagram below). Safe because ProjectDiagram's own
+ *  GET /api/diagrams fetch (always rendered alongside this one, see
+ *  ProjectsSection) already upserts that exact item row on every load. */
+function diagramItemIdFor(repo: string): string {
+  return `diagram:${repo}`;
+}
+
 /**
  * s4: fetches a repo's epic/story diagram and wires the propose-a-change
  * action through POST /api/proposals (s3) — fire, then poll once for a
- * result so "pending" doesn't hang silently forever in the UI.
+ * result so "pending" doesn't hang silently forever in the UI. s2
+ * (consus-phase18) adds onPendingChangesChange, forwarded straight through
+ * to DiagramView so ProjectsSection can show a global pending-changes count
+ * alongside this diagram's own per-tab dirty dot.
  */
-function ProjectDiagram({ repo, refreshToken }: { repo: string; refreshToken?: number }) {
+function ProjectDiagram({
+  repo,
+  refreshToken,
+  onPendingChangesChange,
+}: {
+  repo: string;
+  refreshToken?: number;
+  onPendingChangesChange?: (count: number) => void;
+}) {
   const [data, setData] = useState<{ itemId: string; epics: DiagramEpic[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingProposalId, setPendingProposalId] = useState<string | null>(null);
@@ -479,6 +519,7 @@ function ProjectDiagram({ repo, refreshToken }: { repo: string; refreshToken?: n
       pendingProposal={pendingProposalId !== null}
       onProposeChange={proposeChange}
       auditEntries={auditEntries}
+      onPendingChangesChange={onPendingChangesChange}
     />
   );
 }
@@ -487,13 +528,24 @@ function ProjectDiagram({ repo, refreshToken }: { repo: string; refreshToken?: n
  * consus-phase17-architecture-diagram-endpoint: fetches a repo's real
  * directory-structure architecture diagram (a second, independent diagram
  * kind from the epic/story cascade above) and renders it via
- * ArchitectureDiagramView. Same fetch/error/loading pattern as
- * ProjectDiagram, but no propose-a-change wiring — this endpoint has no
- * item id to target.
+ * ArchitectureDiagramView. s2 (consus-phase18) adds real propose-a-change
+ * wiring here too (this endpoint's own response still has no itemId of its
+ * own, so diagramItemIdFor() above reconstructs the same id
+ * GET /api/diagrams already upserts) plus onPendingChangesChange, the same
+ * contract ProjectDiagram uses.
  */
-function ProjectArchitectureDiagram({ repo, refreshToken }: { repo: string; refreshToken?: number }) {
+function ProjectArchitectureDiagram({
+  repo,
+  refreshToken,
+  onPendingChangesChange,
+}: {
+  repo: string;
+  refreshToken?: number;
+  onPendingChangesChange?: (count: number) => void;
+}) {
   const [data, setData] = useState<{ topLevel: string; fullComponent: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingProposalId, setPendingProposalId] = useState<string | null>(null);
 
   useEffect(() => {
     setData(null);
@@ -504,10 +556,41 @@ function ProjectArchitectureDiagram({ repo, refreshToken }: { repo: string; refr
       .catch((e) => setError(e.message));
   }, [repo, refreshToken]);
 
+  const proposeChange = useCallback(
+    ({ diff, description }: { diff: string; description: string }) => {
+      fetch("/api/proposals", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          itemId: diagramItemIdFor(repo),
+          targetType: "diagram",
+          diff,
+          description,
+          requestedBy: "Mathew",
+        }),
+      })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+        .then((proposal) => {
+          setPendingProposalId(proposal.status === "pending" ? proposal.id : null);
+        })
+        .catch((e) => setError(e.message));
+    },
+    [repo],
+  );
+
   if (error) return <p className="state state--err">Could not load the architecture diagram: {error}</p>;
   if (!data) return <p className="state">Loading architecture diagram…</p>;
 
-  return <ArchitectureDiagramView repo={repo} topLevel={data.topLevel} fullComponent={data.fullComponent} />;
+  return (
+    <ArchitectureDiagramView
+      repo={repo}
+      topLevel={data.topLevel}
+      fullComponent={data.fullComponent}
+      onProposeChange={proposeChange}
+      pendingProposal={pendingProposalId !== null}
+      onPendingChangesChange={onPendingChangesChange}
+    />
+  );
 }
 
 /**
@@ -1116,6 +1199,10 @@ export function App() {
   const [decisions, setDecisions] = useState<DecisionItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [onboardingCheck, setOnboardingCheck] = useState<{ docsEmpty: boolean; kbEmpty: boolean } | null>(null);
+  // s1 (consus-phase18): resolves/persists the operator's skin choice and
+  // applies [data-skin] to the document root — mounted once, here, so the
+  // skin backdrop/chrome below and the picker in the masthead always agree.
+  const { skin } = useSkinPreference();
 
   const reload = useCallback(() => {
     fetch("/api/decisions?all=1")
@@ -1158,6 +1245,7 @@ export function App() {
   if (!error && (onboardingCheck === null || decisions === null)) {
     return (
       <div className="consus">
+        <SkinBackdrop skin={skin} />
         <p className="state">Loading…</p>
       </div>
     );
@@ -1166,6 +1254,7 @@ export function App() {
   if (isFirstRun) {
     return (
       <div className="consus">
+        <SkinBackdrop skin={skin} />
         <OnboardingScreen
           onIngested={() => {
             reload();
@@ -1178,8 +1267,10 @@ export function App() {
 
   return (
     <div className="consus">
+      <SkinBackdrop skin={skin} />
       <header className="consus__masthead">
         <div className="consus__brand">
+          {skin === "harness" ? <HarnessWindowDots /> : null}
           <span className="consus__brand-mark">◈</span>
           Consus
           <span className="consus__brand-sub">decision &amp; knowledge surface</span>
@@ -1196,6 +1287,11 @@ export function App() {
             </button>
           ))}
         </nav>
+        <ThemeSkinPicker />
+        {/* s4 (consus-phase18): universal across all 3 skins, not decoration
+            exclusive to Harness — mounted once, here, so ⌘K/Ctrl+K works
+            regardless of which tab or skin is active. */}
+        <CommandPalette />
       </header>
 
       <main className="consus__main">
