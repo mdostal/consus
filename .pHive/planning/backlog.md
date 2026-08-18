@@ -67,6 +67,13 @@ This is the loop's thinnest link today — read the vision doc's core-loop secti
 | A second, independently-built KB collection schema + API filter | `superseded-do-not-build` | archived-dev, `afe4c3b` (PAN-6478), `f93d4f1` (kb-02-collection-api). Same capability as mainline's kb-01 — redundant, not a gap. Noting only so it isn't mistaken for missing scope. |
 | Multi-project "different areas" — a `project` dimension across items/KB, per-project + cross-project views | `done` | mainline `ProjectsSection`/`ProjectView`/`GlobalView`, roadmap.md's REQ-27 |
 
+## Agent-harness onboarding
+
+| Item | Status | Source |
+|---|---|---|
+| A real install/connect action for agent harnesses (previously: manually find and read `skills/consus/SKILL.md`, no install step, no UI visibility), plus a prominent UI panel surfacing it | `done` | consus-phase19-agent-harness-onboarding, `be4436a`, merged to `dev` via PR #108. `npm run agent:init`/`agent:status` installs the skill file to `~/.claude/skills/consus/SKILL.md` (Claude Code's real, confirmed skill-discovery location), idempotent with a real byte-level content comparison. `HarnessConnectBanner` in the app shell, collapsible/persisted like the theme/skin pickers. Scoped to Claude Code only — Codex CLI or other harnesses need their own confirmed discovery mechanism researched first, not guessed at. Design precedent: sibling project Portunus's `agent init`/`agent status` pair, adapted to Consus's narrower real surface (no MCP server — a plain REST API + skill file). |
+| Codex CLI (or other non-Claude-Code harness) install/detection support | `backlogged` — needs real research into that harness's actual discovery mechanism first | consus-phase19's own design-discussion.md, explicit scope-narrowing decision, not a gap left by accident |
+
 ## Multi-repo event pipeline
 
 | Item | Status | Source |

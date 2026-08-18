@@ -52,6 +52,8 @@ build/
 !.pHive/epics/consus-phase17-architecture-diagram-endpoint/**
 !.pHive/epics/consus-phase18-diagram-editor-and-skin-system/
 !.pHive/epics/consus-phase18-diagram-editor-and-skin-system/**
+!.pHive/epics/consus-phase19-agent-harness-onboarding/
+!.pHive/epics/consus-phase19-agent-harness-onboarding/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/

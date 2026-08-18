@@ -1,9 +1,9 @@
 {
   "name": "consus",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
-  "description": "Consus — the Pantheon's rendered doc/decision surface",
+  "description": "Consus — a standalone knowledgebase, graph, and doc editor for any repo's decisions, docs, and architecture",
   "scripts": {
     "dev:web": "vite",
     "dev:server": "tsx watch server/index.ts",
@@ -13,15 +13,17 @@
     "build": "npm run build:web && npm run build:server",
     "start": "node dist-server/index.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "agent:init": "node scripts/agent-init.mjs init",
+    "agent:status": "node scripts/agent-init.mjs status"
   },
   "dependencies": {
+    "@fastify/static": "^10.1.3",
     "@xyflow/react": "^12.11.3",
     "better-sqlite3": "^11.3.0",
     "fastify": "^5.0.0",
     "js-yaml": "^5.2.3",
     "marked": "^14.1.3",
-    "mermaid": "^11.16.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

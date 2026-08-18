@@ -22,6 +22,7 @@ import { ThemeSkinPicker } from "./theme/ThemeSkinPicker";
 import { SkinBackdrop } from "./theme/skins/SkinBackdrop";
 import { HarnessWindowDots } from "./theme/skins/HarnessWindowDots";
 import { CommandPalette } from "./features/command-palette/CommandPalette";
+import { HarnessConnectBanner } from "./features/harness-connect/HarnessConnectBanner";
 import "./theme/tokens.css";
 import "./app.css";
 import "./features/decisions/decisions-two-pane.css";
@@ -1163,9 +1164,11 @@ function OnboardingScreen({ onIngested }: { onIngested: () => void }) {
       <section className="onboarding__step">
         <h2>Install into harness</h2>
         <p>
-          Any Claude-Code-compatible agent harness can read Consus's open-decision queue and
-          submit verdicts directly — see <code>skills/consus/SKILL.md</code> for the full
-          agent-facing contract.
+          Run <code>npm run agent:init</code> to install Consus's agent-facing skill into
+          <code>~/.claude/skills/</code> — any Claude Code session on this machine can then read
+          Consus's open-decision queue and submit verdicts directly. See{" "}
+          <code>skills/consus/SKILL.md</code> for the full contract. Idempotent, safe to re-run
+          any time (<code>npm run agent:status</code> checks without installing).
         </p>
       </section>
 
@@ -1293,6 +1296,10 @@ export function App() {
             regardless of which tab or skin is active. */}
         <CommandPalette />
       </header>
+
+      {/* s1 (consus-phase19): visible on every tab regardless of which is
+          active, same as the masthead itself — see design-discussion.md. */}
+      <HarnessConnectBanner />
 
       <main className="consus__main">
         {error ? <p className="state state--err">Could not load decisions: {error}</p> : null}
