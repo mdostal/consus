@@ -1,0 +1,10 @@
+name: consus-phase21-codex-cli-support
+title: Extend agent:init/agent:status to Codex CLI (confirmed real ~/.codex/skills/ convention)
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: tdd
+
+stories:
+  - id: s1-multi-harness-agent-init
+    title: Generalize agent-init.mjs to a per-harness table (Claude Code + Codex CLI), plus --harness flag
+    complexity: medium
+    depends_on: []
