@@ -258,6 +258,8 @@ describe("App — first-run onboarding screen (phase6 s3)", () => {
     expect(await screen.findByText("Install into harness")).toBeInTheDocument();
     expect(screen.getByText(/skills\/consus\/SKILL\.md/)).toBeInTheDocument();
     expect(screen.getByText("Interact with plugin-hive")).toBeInTheDocument();
+    expect(screen.getByText(/claude code/i)).toBeInTheDocument();
+    expect(screen.getByText(/codex cli/i)).toBeInTheDocument();
   });
 });
 

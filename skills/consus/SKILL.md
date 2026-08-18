@@ -1,6 +1,8 @@
 ---
 name: consus
 description: Read Consus's open-decision queue and submit verdicts — for any Claude-Code-compatible agent harness, standalone or Pantheon-plugin mode.
+metadata:
+  short-description: Consus decision queue — read and submit verdicts
 ---
 
 # Consus — Agent Harness Skill
