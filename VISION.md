@@ -15,66 +15,78 @@ a fixed boundary, not an open question (see below).
 
 ---
 
-## ① Current — where it is now (v0.6.0)
+## ① Current — where it is now (v0.9.0)
 
 Consus runs as a **Fastify server on `:8722`**, bound to `127.0.0.1` by default, backed by a local
 **SQLite** file (`.pHive/consus.sqlite`), started with `npm run dev` (server + Vite web) or
-`npm start` in production.
+`npm start` in production — the production server now serves the built web SPA itself
+(`dist-web/`, via `@fastify/static`), not just the JSON API.
 
 **What actually works (live and tested):**
 
-- **HTTP API** — `GET /health`; `GET`/`POST /api/decisions` (read the open queue, or push a new
-  decision/CBA in); `POST /api/items/:id/decide` and `POST /api/decisions/:id/verdict` (record a
-  verdict, append-only audit log); `GET /api/items/:id/comments` + `POST` (comment threads);
-  `GET /api/docs` + `/api/docs/content` (generated docs, repo→phase→doc); `GET /api/projects` +
-  `POST /api/projects/:project/ingest` (on-demand indexing); KB routes including draft/submit
-  separation and versioning; `POST /api/proposals` + `/result` (propose a change, fire it to a
-  harness); `GET /api/diagrams` (epic/story cascade); `GET /api/items/:id/audit-trail`; artifact
+- **HTTP API** — `GET /health`; `GET`/`POST /api/decisions` (read the open queue, now with
+  `decision_type`/`triage_bucket` actually populated, or push a new decision/CBA in);
+  `POST /api/items/:id/decide` and `POST /api/decisions/:id/verdict` (record a verdict,
+  append-only audit log); `GET /api/items/:id/comments` + `POST` (comment threads);
+  `GET /api/docs` + `/api/docs/content` (ref-aware, resolves across every configured repo) +
+  `/api/docs/resolve` + `/api/docs/search`; `GET /api/projects` + `POST /api/projects/:project/ingest`
+  + `POST /api/projects/scan-all`; KB routes including draft/submit separation and versioning;
+  `POST /api/proposals` + `/result` (propose a change, fire it to a harness — shared by decisions,
+  diagrams, and docs); `GET /api/diagrams` (epic/story cascade) + `/api/diagrams/:repo/architecture`
+  (real per-repo directory-structure diagram); `GET /api/events` + `/history` + `PATCH .../status` +
+  `POST .../propose` (the pre-decision review queue); `GET /api/items/:id/audit-trail`; artifact
   links. Full contract in [`docs/api-reference.md`](docs/api-reference.md).
 - **Store** — idempotent SQLite migration; `items`, `audit_log`, `doc_index`, `kb_entries`,
-  `kb_versions`, `proposals` with append-only versioning (a decided item never loses history).
+  `kb_versions`, `proposals`, `events` with append-only versioning (a decided item never loses
+  history).
 - **Decision contract** — a `dostal:decision-request/v1` parser (options A–Z, tradeoffs, required
-  `recommended`), with tiered extraction (structured block vs. heuristic-from-prose, tagged via
-  `extractionTier` so a guess isn't surfaced with the same weight as a deliberate decision).
+  `recommended`), tiered extraction (structured block vs. heuristic-from-prose, tagged via
+  `extractionTier`), and a classifier that's actually wired into the write paths that populate it.
 - **Doc scanner** — the only adapter in the codebase (`server/adapters/doc-scanner`); indexes a
-  repo's own `.pHive/planning/` and `.pHive/epics/**` on an operator-triggered ingest.
-- **Diagram cascade** — real Mermaid-rendered epic/story dependency trees, click-to-detail on story
-  nodes, built client-side from `GET /api/diagrams`.
+  repo's own `.pHive/planning/` and `.pHive/epics/**`, resolving doc references across *every*
+  configured repo, not just the one currently open.
+- **Editable diagrams** — both the epic/story cascade and the architecture diagram are a real,
+  direct-manipulation React Flow canvas: drag nodes, edit labels, add/remove nodes, connect or
+  delete edges, with a structured changeset and a "Fire to harness" action reusing the same
+  proposal mechanism as doc edits. A collapsible, derived (never independently-editable) Mermaid
+  source preview sits alongside it.
+- **A real visual system** — a manual light/dark/system theme control, and three switchable visual
+  skins (Drafting Table, Case Board, Harness) — genuine per-skin decoration, not just recolored
+  chrome. A universal `⌘K` command palette covers the keyboard-shortcut floor.
+- **Multi-repo event pipeline** — scanning any project (single or `scan-all`) detects `doc_changed`
+  and `decision_needed` triggers, each becoming a reviewable event (diff + composed prompt) with a
+  manual status lifecycle, archived out of the active queue once resolved. An event can graduate
+  into a real proposal on demand — the seam a future Pantheon L2 ticket-adapter would consume for
+  automatic dispatch in paired mode, deliberately not built here.
 - **Propose-a-change** — the sole write path into a repo's own content. A diff + description goes
   through the generic `HarnessTransport` (`server/harness/transport.ts`); a harness applies it and
   reports back. Defaults to a no-op unless a local command is configured.
-- **Web SPA** — `web/src/App.tsx` is assembled and wired: a per-project view showing a project's
-  diagrams, docs, and KB entries together, an in-place doc editor with section-scoped diffs and a
-  "Fire to harness" action, and a first-run onboarding screen for a fresh install.
+- **Web SPA** — `web/src/App.tsx`: a per-project view showing a project's diagrams, docs, and KB
+  entries together, a two-pane Decisions layout, an in-place doc editor with section-scoped diffs,
+  and a first-run onboarding screen for a fresh install.
 
 **Honest gaps right now:**
 
-- **Interact is the loop's thinnest link.** Today "interact" means reading a doc or diagram and
-  composing/firing a diff — a real in-place editor exists for docs, but the fuller
-  architecture-level interact-and-propose experience the archived `dev` lineage explored is still
-  ahead of the current mainline. See `.pHive/planning/backlog.md`'s "Architecture-level interact &
-  propose changes" section.
-- **Single-repo doc resolution.** The doc scanner walks one configured repo's own `.pHive/` tree;
-  resolving docs across every repo under a code root is backlogged, not built.
 - **PR/branch-level surfacing is not started.** Most work-in-progress lives on feature branches
   before reaching `main`; surfacing a branch's or PR's own docs/CBA/decisions the way merged-to-main
   state is surfaced today is a real, explicitly deferred item — see the backlog's dedicated theme.
+  **Do not scope this until explicitly asked.**
+- **Interaction polish / accessibility pass** on the newer surfaces (the diagram editor, the skin
+  system) is backlogged, not started.
+- **Dual-mode integration tests** (standalone vs. a future Pantheon-plugin mode) are backlogged —
+  worth revisiting once there's an actual second mode to test against; today's mainline has only
+  ever run standalone.
 
 ---
 
 ## ② Goals — near-term next steps
 
-1. **Strengthen "interact."** Push further on architecture-level interaction — not just editing a
-   doc's text, but interacting with the diagram/decision graph itself.
-2. **Multi-repo doc resolution.** Resolve a doc path across every repo under a code root, not just
-   one repo's own tree (a reference implementation already exists in prior lineages to learn from,
-   not port as-is).
-3. **Decision-type/triage classification, wired in.** The heuristic classifier
-   (`server/decision-contract/classifier.ts`) exists and is tested but isn't called from any route
-   yet — `decision_type`/`triage_bucket` are always `null` on decisions returned today.
-4. **Keep the harness-facing surface current.** `skills/consus/SKILL.md` and
-   `docs/api-reference.md` are the read/write contract for any Claude-Code-compatible harness —
-   extend them (never invent a parallel channel) as new capabilities land.
+The backlog is intentionally thin right now — most of what was tracked as a near-term gap shipped
+in tonight's run (see `.pHive/planning/backlog.md` for the full, cited history). The one item kept
+visible but explicitly *not* queued is PR/branch-level surfacing (above) — real, not forgotten, but
+not to be scoped until the operator asks for it by name. Beyond that, near-term direction is
+operator-driven rather than a standing queue; see **Good first contributions** below for concrete,
+safe-to-pick-up work that doesn't require a new design decision first.
 
 ---
 
@@ -111,13 +123,14 @@ These are settled, not open questions:
 
 ## Good first contributions
 
-- **Wire the decision classifier** — call `classifyItem` from the decisions routes so
-  `decision_type`/`triage_bucket` are populated instead of always `null`.
-- **Multi-repo doc resolution** — extend the doc scanner past a single configured repo.
-- **Architecture-level interact** — push past diff-compose editing toward richer interaction with
-  the diagram/decision graph itself.
+- **Interaction polish / accessibility pass** on the diagram editor and the 3-skin visual system —
+  a real backlogged item, not yet scoped into stories.
+- **Decided-store reconciliation semantics**, if a concrete need for a "defer" concept (distinct
+  from Consus's simple `decided_at` timestamp) ever comes up in practice — closed as not-needed for
+  now per an explicit operator call, but the door isn't nailed shut if a real case appears.
 - **Docs/tests** — extend `docs/api-reference.md` as routes land, and add tests for any newly-wired
-  UI.
+  UI. Keep this doc's own claim ("a harness author should be able to use Consus from this doc
+  alone") true as new routes ship — it drifted behind real code more than once already.
 
 New here? Read [`.pHive/planning/vision-and-way-of-working.md`](.pHive/planning/vision-and-way-of-working.md)
 and [`.pHive/planning/backlog.md`](.pHive/planning/backlog.md) for the fuller current-state picture,

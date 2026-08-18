@@ -4,15 +4,17 @@
 
 ## What & why
 
-A repo accumulates decisions, briefs, PRDs, architecture docs, plans, CBAs, and epic/story plans as `.md`/`.html`/YAML files on disk. **Reading those cleanly from a shell session, or tracking which decisions are still open, is tedious.** Consus indexes a repo's own `.pHive/` tree and gives it a real surface: browse the docs, see the diagram cascade, read and answer the open decision queue, edit a doc and propose the change back.
+A repo accumulates decisions, briefs, PRDs, architecture docs, plans, CBAs, and epic/story plans as `.md`/`.html`/YAML files on disk. **Reading those cleanly from a shell session, or tracking which decisions are still open, is tedious.** Consus indexes a repo's own `.pHive/` tree and gives it a real surface: browse the docs, edit and rewire the diagram cascade directly, read and answer the open decision queue, edit a doc and propose the change back.
 
 The core loop: **index → open → interact → propose a change → shared-truth KB.**
 
-1. **Index** — an operator-triggered, on-demand scan (`POST /api/projects/:project/ingest`) walks a repo's `.pHive/planning/` and `.pHive/epics/**` and populates the doc index. Deliberately not a background poll.
-2. **Open** — the per-project view shows a project's diagram cascade, its docs, and its KB entries together.
-3. **Interact** — read a rendered doc or a Mermaid diagram cascade, edit a doc section in place.
-4. **Propose a change** — `POST /api/proposals` fires a `{diff, description}` at whatever local harness is configured (`HarnessTransport`); the harness applies it and reports back.
+1. **Index** — an operator-triggered, on-demand scan (`POST /api/projects/:project/ingest`, or `POST /api/projects/scan-all` across every configured repo) walks a repo's `.pHive/planning/` and `.pHive/epics/**` and populates the doc index. Deliberately not a background poll.
+2. **Open** — the per-project view shows a project's diagram cascade, its architecture diagram, its docs, and its KB entries together.
+3. **Interact** — read a rendered doc or edit a section in place; drag, relabel, connect, and delete nodes directly on either diagram (a real editable canvas, not a static render) with a live changeset of what's pending.
+4. **Propose a change** — one "Fire to harness" action (from a doc edit or a diagram edit) sends a `{diff, description}` through whatever local harness is configured (`HarnessTransport`); the harness applies it and reports back.
 5. **Shared-truth KB** — an approved decision or doc becomes a durable, versioned `kb_entries` row, grouped by collection (`marketing` / `boundary-decisions` / `plans` / `artifacts` / `general`).
+
+Pick a visual skin (Drafting Table, Case Board, or Harness) and a light/dark/system theme from the masthead — three genuinely different looks over the same interactions, not just a recolor. A `⌘K` command palette covers the keyboard-shortcut floor for everything above.
 
 Consus is fully standalone: **zero live coupling to any other system.** It reads and writes only local SQLite and the local filesystem. It binds to `127.0.0.1` by default — no network exposure unless you explicitly opt in via `HOST` (e.g. for a containerized deploy).
 
@@ -22,7 +24,7 @@ Consus is fully standalone: **zero live coupling to any other system.** It reads
 flowchart TB
   subgraph Consus["Consus (this repo)"]
     direction TB
-    Web["Web SPA — Vite + React<br/>Decisions · DocRenderer · Diagrams (Mermaid)<br/>KB Browser · ProjectView (theme-aware)"]
+    Web["Web SPA — Vite + React<br/>Decisions · DocRenderer · editable Diagrams (React Flow)<br/>KB Browser · ProjectView · 3 skins × light/dark"]
     API["Fastify server :8722<br/>(127.0.0.1 by default, HOST-configurable)"]
     DB[("SQLite<br/>better-sqlite3<br/>items · audit_log · doc_index · kb_entries · proposals")]
     Scanner["Doc Scanner<br/>(server/adapters/doc-scanner)"]
@@ -40,7 +42,7 @@ flowchart TB
   Human -->|GET/POST| API
 ```
 
-Internally: a **Fastify** HTTP server (`server/index.ts`) bound to `127.0.0.1:8722` by default, an idempotent **SQLite** schema (`server/db/migrate.ts`), a **doc scanner** (`server/adapters/doc-scanner` — the only adapter in the codebase) that indexes a repo's own generated docs, a `dostal:decision-request/v1` contract parser, a **KB store** with append-only audit log, draft/publish separation, and versioning, and the generic **`HarnessTransport`** seam (`server/harness/transport.ts`) for the propose-a-change mechanism — it defaults to a no-op and has no knowledge of what, if anything, is configured on the other end. The web layer is a Vite + React SPA (`web/src/App.tsx`) whose feature components render docs via `marked`, diagrams via Mermaid, and present theme-aware decision cards.
+Internally: a **Fastify** HTTP server (`server/index.ts`) bound to `127.0.0.1:8722` by default, serving both the JSON API and the built web SPA (`dist-web/`, via `@fastify/static`); an idempotent **SQLite** schema (`server/db/migrate.ts`); a **doc scanner** (`server/adapters/doc-scanner` — the only adapter in the codebase) that indexes a repo's own generated docs; a `dostal:decision-request/v1` contract parser; a **KB store** with append-only audit log, draft/publish separation, and versioning; and the generic **`HarnessTransport`** seam (`server/harness/transport.ts`) for the propose-a-change mechanism — it defaults to a no-op and has no knowledge of what, if anything, is configured on the other end. The web layer is a Vite + React SPA (`web/src/App.tsx`) whose feature components render docs via `marked`, diagrams via an editable **React Flow** canvas, and present theme-aware decision cards across three switchable visual skins.
 
 ## How it fits
 
@@ -79,7 +81,7 @@ The full HTTP contract lives in [`docs/api-reference.md`](docs/api-reference.md)
 
 ## Status
 
-**v0.6.0.** The server, HTTP API, SQLite store, on-demand doc scanner, decision contract, KB store (with draft/submit separation and versioning), the generic proposal/harness mechanism, and the Mermaid-rendered diagram cascade are **live and tested**. The SPA shell (`web/src/App.tsx`) is assembled and wired: a per-project view shows a project's diagrams, docs, and KB entries together, with an in-place doc editor and a "Fire to harness" propose-a-change action.
+**v0.9.0.** The server (now serving its own built dashboard, not just the JSON API), SQLite store, on-demand doc scanner + multi-repo scan-all, decision contract + classifier, KB store (with draft/submit separation and versioning), the generic proposal/harness mechanism, an editable diagram canvas (React Flow) for both the epic/story cascade and the architecture diagram, a real light/dark/system theme control, three switchable visual skins, and a `⌘K` command palette are all **live and tested**. See `CHANGELOG.md` for the full release history.
 
 Consus went through a real architectural correction along the way: it briefly grew live integrations with several other systems, and that coupling was fully stripped back out (see `CHANGELOG.md`'s `[0.6.0]` entry) — the codebase today has no adapter for, client for, or dependency on any external system beyond what's listed in `package.json`. See [VISION.md](VISION.md) for the current state and where things go next.
 
