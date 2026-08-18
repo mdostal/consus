@@ -1678,6 +1678,15 @@ body {
     opacity: 0;
   }
 }
+/* s3 (consus-phase20): operators with the OS "reduce motion" preference
+   still get the command-prompt cursor as a visual affordance — just not
+   the infinite blink. Static and visible, not display:none/visibility:hidden
+   (reduced motion means no animation, not no content). */
+@media (prefers-reduced-motion: reduce) {
+  [data-skin="harness"] .consus__brand-sub::after {
+    animation: none;
+  }
+}
 [data-skin="harness"] .consus__masthead {
   border-bottom-style: dashed;
 }
