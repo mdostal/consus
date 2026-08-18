@@ -323,3 +323,108 @@ describe("DiagramCanvas — node removal (bonus symmetry with add-node)", () => 
     expect(screen.queryByTestId("diagram-edge-e1")).not.toBeInTheDocument(); // a->b edge dropped too
   });
 });
+
+describe("DiagramCanvas — keyboard-accessible node move (consus-phase20 s1)", () => {
+  it("the drag handle is a real focusable element with the existing aria-label as its accessible name", async () => {
+    await renderCanvas();
+
+    const handle = screen.getByTestId("diagram-node-drag-handle-a");
+    expect(handle).toHaveAttribute("tabIndex", "0");
+    expect(handle).toHaveAccessibleName("Move Story One");
+  });
+
+  it("pressing an arrow key while the drag handle has focus visibly moves the node and logs a 'moved' row — same shape as a pointer drag (kind/entity/entityId/label, see buildMovedChange above)", async () => {
+    const { onChange } = await renderCanvas();
+
+    const handle = screen.getByTestId("diagram-node-drag-handle-a");
+    const nodeEl = screen.getByTestId("diagram-node-a");
+    const wrapper = nodeEl.parentElement as HTMLElement;
+    const beforeX = Number(wrapper.style.transform?.match(/translate\(([-\d.]+)px/)?.[1] ?? NaN);
+
+    handle.focus();
+    fireEvent.keyDown(handle, { key: "ArrowRight" });
+
+    const afterX = Number(wrapper.style.transform?.match(/translate\(([-\d.]+)px/)?.[1] ?? NaN);
+    expect(afterX).toBeGreaterThan(beforeX); // a real, visible move happened
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "moved", entity: "node", entityId: "a", label: "Story One" }),
+    );
+  });
+
+  it("arrow-key move works in all four directions", async () => {
+    const { onChange } = await renderCanvas();
+    const handle = screen.getByTestId("diagram-node-drag-handle-a");
+    handle.focus();
+
+    for (const key of ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]) {
+      fireEvent.keyDown(handle, { key });
+    }
+
+    expect(onChange).toHaveBeenCalledTimes(4);
+    for (const call of onChange.mock.calls) {
+      expect(call[0]).toEqual(expect.objectContaining({ kind: "moved", entity: "node", entityId: "a" }));
+    }
+  });
+
+  it("a non-arrow key on the focused drag handle does nothing", async () => {
+    const { onChange } = await renderCanvas();
+    const handle = screen.getByTestId("diagram-node-drag-handle-a");
+    handle.focus();
+
+    fireEvent.keyDown(handle, { key: "a" });
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("DiagramCanvas — keyboard-accessible edge delete (consus-phase20 s1)", () => {
+  it("the edge path is a real focusable element with an accessible name describing what it connects", async () => {
+    await renderCanvas();
+
+    const edge = screen.getByTestId("diagram-edge-e1");
+    // SVG attribute names are case-sensitive (unlike HTML's), so React
+    // renders this as the lowercase "tabindex" DOM attribute here — assert
+    // it that way rather than the "tabIndex" spelling used for the (HTML)
+    // drag handle above.
+    expect(edge).toHaveAttribute("tabindex", "0");
+    expect(edge).toHaveAccessibleName("Connection from Story One to Story Two");
+  });
+
+  it("pressing Enter on a focused edge removes it exactly as a click would — same ctx.onSnipEdge call, same 'removed' row shape as the click-to-snip test above", async () => {
+    const { onChange } = await renderCanvas();
+
+    const edge = screen.getByTestId("diagram-edge-e1");
+    edge.focus();
+    fireEvent.keyDown(edge, { key: "Enter" });
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "removed", entity: "edge", entityId: "e1", label: "Story One -> Story Two" }),
+    );
+    expect(screen.queryByTestId("diagram-edge-e1")).not.toBeInTheDocument();
+  });
+
+  it("pressing Space on a focused edge also removes it, same as Enter", async () => {
+    const { onChange } = await renderCanvas();
+
+    const edge = screen.getByTestId("diagram-edge-e1");
+    edge.focus();
+    fireEvent.keyDown(edge, { key: " " });
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "removed", entity: "edge", entityId: "e1", label: "Story One -> Story Two" }),
+    );
+    expect(screen.queryByTestId("diagram-edge-e1")).not.toBeInTheDocument();
+  });
+
+  it("a non-Enter/Space key on the focused edge does nothing", async () => {
+    const { onChange } = await renderCanvas();
+
+    const edge = screen.getByTestId("diagram-edge-e1");
+    edge.focus();
+    fireEvent.keyDown(edge, { key: "a" });
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByTestId("diagram-edge-e1")).toBeInTheDocument();
+  });
+});

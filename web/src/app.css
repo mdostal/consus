@@ -1400,6 +1400,13 @@ body {
 .diagram-canvas__drag-handle:active {
   cursor: grabbing;
 }
+/* s1 (consus-phase20): the drag handle is now a real focusable,
+   keyboard-operable control (arrow keys nudge the node) — a real, visible
+   focus indicator, not just tabIndex with no styling. */
+.diagram-canvas__drag-handle:focus-visible {
+  outline: 2px solid var(--consus-accent);
+  outline-offset: 2px;
+}
 .diagram-canvas__node-label,
 .diagram-canvas__node-input {
   flex: 1;
@@ -1457,6 +1464,13 @@ body {
 .diagram-canvas__edge--selected {
   stroke: var(--consus-accent);
   stroke-width: 2.5;
+}
+/* s1 (consus-phase20): the edge path is now a real focusable,
+   keyboard-operable control (Enter/Space snips it) — a real, visible focus
+   indicator, not just tabIndex with no styling. */
+.diagram-canvas__edge:focus-visible {
+  outline: 2px solid var(--consus-accent);
+  outline-offset: 2px;
 }
 
 /* ============================================================= */
