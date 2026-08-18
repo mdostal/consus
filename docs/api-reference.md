@@ -1,9 +1,9 @@
 # Consus API Reference
 
-Every route Consus's server registers, kept current through `consus-phase12-sectional-diff-view`
-(v0.6.0). A harness author should be able to use Consus from this doc alone, without reading
+Every route Consus's server registers, kept current through `consus-phase18-diagram-editor-and-skin-system`
+(v0.9.0). A harness author should be able to use Consus from this doc alone, without reading
 source. All routes are relative to the server's base URL (default `http://localhost:8722`,
-override via `PORT`).
+override via `PORT`/`HOST`).
 
 Consus is fully standalone — the server has zero live network coupling to any other system. It
 reads and writes only local SQLite (`server/db/`) and the local filesystem (doc scanner, epic/story
@@ -29,13 +29,27 @@ Lists the configured project names (from `CONSUS_PROJECTS_CONFIG`, default
 
 **Response 200:** `{ "projects": string[] }` — e.g. `{ "projects": ["consus"] }`.
 
+### `POST /api/projects/scan-all`
+Sweeps every configured project in one action — the same scan `POST /api/projects/:project/ingest`
+runs, plus the same event-detection pass (`doc_changed`/`decision_needed`, see **Events** below),
+applied per-project. A single project failing (e.g. a bad path) doesn't abort the sweep for the
+rest.
+
+**Response 200:**
+```json
+{ "results": [{ "project": "consus", "ok": true, "docsScanned": 21, "eventsCreated": 2 }] }
+```
+A failed project reports `{ "project": "...", "ok": false, "error": "..." }` instead of the counts.
+
 ### `POST /api/projects/:project/ingest`
 Operator-triggered, on-demand scan: walks the project's `.pHive/planning/` and `.pHive/epics/**`
-for `.md`/`.html` files and (re)populates `doc_index`. Not a background poll — nothing scans
-automatically; this is the only way `doc_index` gets populated or refreshed.
+for `.md`/`.html` files and (re)populates `doc_index`, then runs the same event-detection pass
+`scan-all` runs for every project (see **Events** below) — a doc that's new or changed since the
+last scan, or an unresolved decision-request block, becomes a reviewable event. Not a background
+poll — nothing scans automatically; this is the only way `doc_index` gets populated or refreshed.
 
-**Response 200:** `{ "project": string, "docsScanned": number }`. **404** if `:project` isn't a
-configured repo.
+**Response 200:** `{ "project": string, "docsScanned": number, "eventsCreated": number }`.
+**404** if `:project` isn't a configured repo.
 
 ## Decisions (the queue an agent harness reads)
 
@@ -153,13 +167,35 @@ scope to one.
 }
 ```
 
-### `GET /api/docs/content?repo=<name>&path=<file_path>`
+### `GET /api/docs/content?repo=<name>&path=<file_path>&ref=<git-ref>`
 Returns a specific doc's rendered content, read live off disk. Also upserts a target item
 (`itemId`, e.g. `doc:consus:docs/api-reference.md`) so the doc always has something to target a
 `POST /api/proposals` change proposal against — Consus never writes to the doc's source directly.
 
-**Response 200:** `{ "repo": string, "path": string, "format": "md"|"html", "content": string, "itemId": string }`.
-**404** if `repo` isn't configured.
+Optional `ref` reads the doc's content at that git ref instead of the working tree (`git show
+ref:path`, via `execFileSync`'s argument-array form — no shell, immune to metacharacter
+injection). **400** if `ref` doesn't resolve (bad ref, path not present at that ref).
+
+**Response 200:** `{ "repo": string, "path": string, "format": "md"|"html", "content": string, "itemId": string, "ref"?: string }`
+(`ref` present only when the request included one). **404** if `repo` isn't configured.
+
+### `GET /api/docs/resolve?text=<free-form text>`
+Given free-form text (e.g. a doc's prose), extracts path-shaped substrings and resolves each
+against *every* configured repo — not just the one currently open — so a reference like
+`server/adapters/foo.ts` found in one repo's doc can be traced to whichever configured repo it
+actually lives in.
+
+**Response 200:**
+```json
+{ "candidates": [{ "candidate": "server/adapters/foo.ts", "resolved": true, "repo": "consus", "path": "server/adapters/foo.ts" }] }
+```
+An unresolvable candidate reports `{ "candidate": "...", "resolved": false }` instead of `repo`/`path`.
+
+### `GET /api/docs/search?q=<query>&project=<name>`
+Cross-repo doc search — matches on file path and on live doc content (not just the last-indexed
+snapshot). Omit `project` to search every configured repo; **400** if `q` is omitted. An empty
+`scopedRepos` list (an unrecognized `project`) returns `{ "query": "...", "results": [] }`, not
+an error.
 
 ## Knowledgebase
 
@@ -251,7 +287,13 @@ with a clear reason (no startup error). If set, Consus spawns that command per p
 (`StdioHarnessTransport`) and speaks one JSON object per line over stdin/stdout.
 `CONSUS_HARNESS_ARGS` — comma-separated args for that command.
 
-## Diagrams (epic/story cascade)
+## Diagrams (epic/story cascade + architecture)
+
+Both diagram kinds below are read-only over HTTP — read the current graph, edit it in the web UI's
+React Flow canvas, then fire the change through the same `POST /api/proposals` every other edit
+surface uses (`targetType: "diagram"`, `itemId` from whichever route below you're editing). There
+is no diagram-specific write route; the diff sent is a plain text summary of the added/removed/
+changed/moved nodes and edges, legible without the live graph.
 
 ### `GET /api/diagrams?repo=<name>`
 The cascade org-tree for a repo: every epic under its `.pHive/epics/`, each with its stories'
@@ -280,6 +322,19 @@ not per epic/story node.
 }
 ```
 
+### `GET /api/diagrams/:repo/architecture`
+A second, independent diagram kind — a real per-repo architecture diagram derived from the repo's
+actual directory structure (not planning docs), fully separate from the epic/story cascade above.
+Generated fresh on every request (depth-2 walk, capped at 50 components, common build/vcs
+directories ignored) — no cache table. Also folds in file-path-shaped mentions found in
+`.pHive/epics/*/docs/design-discussion.md` files, best-effort (a malformed doc is skipped, never
+a 500).
+
+**Response 200:** `{ "repo": string, "topLevel": string, "fullComponent": string }` — both a
+Mermaid `graph TD` source string, one shallow (top-level dirs only) and one richer (depth-2 plus
+design-doc mentions). **404** with `{ "error": "unknown repo: <repo>" }` for an unconfigured repo
+— the same shape the cascade endpoint above uses.
+
 ## Audit Trail (the shared history panel's data source)
 
 ### `GET /api/items/:id/audit-trail`
@@ -296,6 +351,51 @@ at from shape alone.
   { "kind": "proposal", "id": "uuid", "target_type": "diagram", "description": "...", "status": "applied", "requested_by": "mathew", "timestamp": "...", "applied_diff": "...", "failure_reason": null }
 ]
 ```
+
+## Events (the pre-decision review queue)
+
+An event is deliberately a different concept from a proposal: a proposal always means "fired at a
+harness"; an event is a pre-decision review-queue item created by scanning (`doc_changed` — a
+doc's content changed or is new; `decision_needed` — an unresolved decision-request block found in
+a doc) that may never become a proposal. Every scan (`POST /api/projects/:project/ingest` or
+`POST /api/projects/scan-all`) can create events.
+
+### `GET /api/events?project=<name>&status=<status>&sort=<field>&order=<asc|desc>`
+Lists active (non-archived) events. All query params optional. `status` must be one of `new`,
+`in_progress`, `done`, `dismissed`; `sort` one of `detected_at`, `status`, `project`; `order` one
+of `asc`, `desc`. **400** for an unrecognized value on any of them.
+
+**Response 200:** array of event rows — `{ id, project, trigger_kind, source_repo, source_path,
+content_hash, previous_hash, diff, item_id, composed_prompt, status, detected_at,
+status_updated_at, archived_at, proposal_id }`. `trigger_kind` is `"doc_changed"` or
+`"decision_needed"`; `diff` and `composed_prompt` are built once at detection time (diff +
+surrounding doc content + area context).
+
+### `GET /api/events/history?project=<name>&status=<status>&sort=<field>&order=<asc|desc>`
+Same filters, same response shape as above, but scoped to **archived** events —
+`done`/`dismissed` events are automatically archived out of the active queue `GET /api/events`
+returns.
+
+### `PATCH /api/events/:id/status`
+Manual status lifecycle: `new -> in_progress -> done/dismissed`.
+
+**Request body:** `{ "status": "new"|"in_progress"|"done"|"dismissed" }`
+
+**Response 200:** the updated event row. **400** for an unrecognized status. **404** for an
+unknown event id.
+
+### `POST /api/events/:id/propose`
+Graduates an event into a real proposal — reuses `POST /api/proposals`'s own `proposeChange`
+mechanism unmodified, so a graduated event's proposal behaves identically to any other proposal
+(same audit trail, same harness dispatch). The seam a future Pantheon L2 ticket-adapter would
+consume for automatic dispatch in paired mode — deliberately not built here; this route is the
+manual, standalone-mode path.
+
+**Request body:** `{ "description": string, "requestedBy": string }`
+
+**Response 200:** `{ event: <updated event row, now carrying proposal_id>, proposal: <the created
+proposal row> }`. **400** if the event has no diff (nothing to propose), or if `description`/
+`requestedBy` is missing. **404** for an unknown event id.
 
 ## Artifact Links
 
