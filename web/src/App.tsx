@@ -1164,9 +1164,13 @@ function OnboardingScreen({ onIngested }: { onIngested: () => void }) {
       <section className="onboarding__step">
         <h2>Install into harness</h2>
         <p>
-          Run <code>npm run agent:init</code> to install Consus's agent-facing skill into
-          <code>~/.claude/skills/</code> — any Claude Code session on this machine can then read
-          Consus's open-decision queue and submit verdicts directly. See{" "}
+          Run <code>npm run agent:init</code> to install Consus's agent-facing skill into both
+          Claude Code (<code>~/.claude/skills/</code>) and Codex CLI (<code>~/.codex/skills/</code>,
+          or <code>$CODEX_HOME/skills/</code> when set) — any Claude Code or Codex CLI session on
+          this machine can then read Consus's open-decision queue and submit verdicts directly. An
+          operator with only one harness installed sees that one updated and the other reported as
+          not detected, not an error; pass <code>--harness claude</code> or{" "}
+          <code>--harness codex</code> to install into just one. See{" "}
           <code>skills/consus/SKILL.md</code> for the full contract. Idempotent, safe to re-run
           any time (<code>npm run agent:status</code> checks without installing).
         </p>

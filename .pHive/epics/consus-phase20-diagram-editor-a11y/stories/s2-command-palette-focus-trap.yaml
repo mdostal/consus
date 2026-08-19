@@ -1,0 +1,98 @@
+id: s2-command-palette-focus-trap
+epic: consus-phase20-diagram-editor-a11y
+title: A genuine Tab-cycle focus trap + focus-return for CommandPalette
+status: pending
+complexity: low
+methodology: tdd
+depends_on: []
+parallel_allowed: true
+parallel_rationale: bounded-slice
+
+description: |
+  A real accessibility audit (fork) live-verified a real, reproducible bug: CommandPalette.tsx
+  (~line 100-101) sets `role="dialog" aria-modal="true"` but implements no actual focus
+  containment (no Tab-cycle handler, no inert/aria-hidden on background content) and no
+  focus-return-to-trigger on close. The audit's own live reproduction: opened the palette, pressed
+  Tab once, and focus landed on the HarnessConnectBanner's dismiss button — a completely unrelated
+  element elsewhere on the page — while the palette remained visibly open over its backdrop. This
+  directly contradicts the aria-modal semantic the component already claims to implement.
+
+  This story makes the claim true: while the palette is open, Tab (and Shift+Tab) cycle only
+  through the palette's own focusable elements (the search input, the result list items, any other
+  in-palette control) and never escape to the page behind it. On close (Escape, selecting an item,
+  or clicking the backdrop — whichever close paths already exist), focus returns to whatever
+  element had focus immediately before the palette opened (typically the ⌘K trigger button, but
+  must work correctly regardless of what actually had focus at open time — do not hardcode "the
+  trigger button" as the return target).
+
+acceptance_criteria:
+  - "Given the command palette is open, when the operator presses Tab repeatedly, then focus cycles only through the palette's own focusable elements and never lands on any element outside the palette (e.g. the harness banner's dismiss button, a nav tab) — a real, live-reproducible fix for the audit's own finding."
+  - "Given the command palette is open and focus is on the last focusable element inside it, when the operator presses Tab once more, then focus wraps back to the first focusable element inside the palette (a real cycle, not a dead end that lets focus fall through to the page)."
+  - "Given the command palette is open and focus is on the first focusable element inside it, when the operator presses Shift+Tab, then focus wraps to the last focusable element inside the palette (the reverse-direction case, not just forward)."
+  - "Given the palette was opened while some other element had focus (not necessarily the ⌘K trigger — e.g. opened while a diagram node's label input had focus), when the palette closes (via Escape, selecting an item, or the existing backdrop-click path), then focus returns to that exact original element, not a hardcoded assumption of 'the trigger button'."
+  - "Given the palette's existing keyboard behavior (arrow-key list navigation, Enter to select, typing to filter), when this story's changes land, then all of it continues to work completely unchanged — the focus trap must not interfere with in-palette keyboard interaction."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Add vitest + RTL specs covering: Tab cycling stays contained within the palette in both
+      directions (forward wraps last->first, backward wraps first->last); an element outside the
+      palette (render a real sibling button in the test harness, matching how the audit's own live
+      repro used the harness banner's dismiss button) never receives focus via Tab while the
+      palette is open; focus returns to the actual pre-open focused element on close via each real
+      close path (Escape, item selection, backdrop click — check CommandPalette.tsx for which close
+      paths actually exist before assuming); existing arrow-key/Enter/type-to-filter behavior is
+      unaffected by re-running (not modifying) the existing relevant specs.
+    agent: tester
+  - id: implement-focus-trap
+    description: >
+      Add real focus containment to CommandPalette.tsx: a keydown handler for Tab that, when the
+      palette is open, computes the palette's own focusable elements and wraps focus at both ends
+      instead of letting it escape to the DOM's natural tab order. Capture the actually-focused
+      element at open time (document.activeElement at the moment the palette opens) and restore
+      focus to it on every real close path that exists in the component today.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: make-tests-pass
+    description: >
+      Run the full test suite and fix as needed until every new test passes and the full existing
+      CommandPalette.test.tsx suite (arrow-nav, Enter-select, filter-by-typing, etc.) passes
+      completely unmodified.
+    agent: developer
+    depends_on: [implement-focus-trap]
+  - id: review
+    description: >
+      Review for: the fix is genuinely live-reproducible as fixed (walk through the exact
+      Tab-after-open scenario the audit found and confirm it no longer escapes); focus-return uses
+      the actual captured pre-open element, not a hardcoded assumption; both Tab-wrap directions are
+      real, not just the forward case; no existing palette keyboard behavior regressed.
+    agent: reviewer
+    depends_on: [make-tests-pass]
+  - id: integrate
+    description: Commit the command palette focus trap.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: web/src/features/command-palette/CommandPalette.tsx
+      purpose: "The file this story edits. role=\"dialog\" aria-modal=\"true\" is around line 100-101; the existing close logic and inputRef are already present (line ~30, ~107) — read the full file first for the real current close paths before assuming which ones exist."
+    - path: web/src/features/command-palette/CommandPalette.test.tsx
+      purpose: "Existing coverage for arrow-nav/Enter/filter behavior — must keep passing unmodified. New focus-trap tests should follow this file's existing conventions."
+    - path: .pHive/epics/consus-phase20-diagram-editor-a11y/docs/design-discussion.md
+      purpose: "The audit's own live-reproduction steps for this exact bug, and the risk note about focus traps being a common source of new bugs (over-trapping, breaking in-palette nav) — read before implementing."
+
+files_to_modify:
+  - file: web/src/features/command-palette/CommandPalette.tsx
+    change: "Add real Tab-cycle focus containment while open, and focus-return to the actual pre-open focused element on every real close path."
+  - file: web/src/features/command-palette/CommandPalette.test.tsx
+    change: "Add focus-trap and focus-return specs; existing specs stay unmodified."
+
+design_decisions:
+  - decision: "Focus returns to whatever element actually had focus before open (captured dynamically), not a hardcoded reference to the ⌘K trigger button."
+    rationale: "The palette can be opened via a global shortcut from anywhere in the app, not only by clicking a visible trigger — a hardcoded return target would be wrong in exactly the same class of case (an element elsewhere in the app having focus) that caused the original bug."
+
+risks:
+  - severity: medium
+    description: "Focus-trap implementations are a common source of new bugs — trapping too aggressively (e.g. preventing the ⌘K shortcut itself from working while the palette has focus) or breaking legitimate in-palette Tab usage if the palette ever has more than a flat list of focusable items."
+    mitigation: "Acceptance criteria explicitly require both directions of the wrap AND confirm existing in-palette keyboard behavior (arrow-nav, Enter, type-to-filter) is unaffected — not just that escaping is blocked."

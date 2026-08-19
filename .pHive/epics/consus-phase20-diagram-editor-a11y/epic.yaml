@@ -1,0 +1,24 @@
+name: consus-phase20-diagram-editor-a11y
+title: Keyboard-accessible diagram editing + a real command-palette focus trap + reduced-motion support
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: tdd
+
+stories:
+  - id: s1-keyboard-accessible-node-move-and-edge-delete
+    title: Real keyboard equivalents for dragging a node and deleting an edge in DiagramCanvas
+    complexity: medium
+    depends_on: []
+    parallel_allowed: true
+    parallel_rationale: bounded-slice
+  - id: s2-command-palette-focus-trap
+    title: A genuine Tab-cycle focus trap + focus-return for CommandPalette
+    complexity: low
+    depends_on: []
+    parallel_allowed: true
+    parallel_rationale: bounded-slice
+  - id: s3-reduced-motion-harness-cursor
+    title: prefers-reduced-motion support for the Harness skin's terminal cursor blink
+    complexity: low
+    depends_on: []
+    parallel_allowed: true
+    parallel_rationale: bounded-slice

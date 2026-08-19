@@ -54,6 +54,10 @@ build/
 !.pHive/epics/consus-phase18-diagram-editor-and-skin-system/**
 !.pHive/epics/consus-phase19-agent-harness-onboarding/
 !.pHive/epics/consus-phase19-agent-harness-onboarding/**
+!.pHive/epics/consus-phase20-diagram-editor-a11y/
+!.pHive/epics/consus-phase20-diagram-editor-a11y/**
+!.pHive/epics/consus-phase21-codex-cli-support/
+!.pHive/epics/consus-phase21-codex-cli-support/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/

@@ -1,6 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useGlobalShortcuts, type CommandPaletteAction } from "./useGlobalShortcuts";
 
+/** Every element kind the palette itself can legitimately contain — the
+ *  search input and the result-list item buttons today, but written
+ *  generically (not "just the two known cases") so it stays correct if the
+ *  panel ever grows another in-palette control. Used to compute the real
+ *  Tab-cycle order for the focus trap below (s2, consus-phase20). */
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
+
 /**
  * Universal ⌘K command palette (s4, consus-phase18, design-discussion.md
  * resolved decision #7) — present and functionally identical in every skin;
@@ -28,6 +42,43 @@ export function CommandPalette() {
   const [query, setQuery] = useState("");
   const [highlighted, setHighlighted] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  // Genuine focus containment + focus-return (s2, consus-phase20): a real
+  // accessibility audit live-verified that role="dialog" aria-modal="true"
+  // was a lie — opening the palette and pressing Tab once sent focus to the
+  // HarnessConnectBanner's dismiss button elsewhere on the page. Fixing
+  // this requires (a) knowing exactly what had focus right before the
+  // palette opened, and (b) trapping Tab/Shift+Tab inside it while open.
+  //
+  // The element that had focus before open is captured here, during the
+  // render phase, rather than in a useEffect: effects run after commit, by
+  // which point the search input's own `autoFocus` has already stolen
+  // focus, so an effect would only ever see the input itself. The render
+  // phase runs before any DOM mutation, so document.activeElement here is
+  // still whatever was focused an instant ago — this is React's documented
+  // "adjusting state while rendering" pattern (comparing against the
+  // previous render's isOpen), not an effect.
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const [lastRenderedIsOpen, setLastRenderedIsOpen] = useState(isOpen);
+  if (isOpen !== lastRenderedIsOpen) {
+    setLastRenderedIsOpen(isOpen);
+    if (isOpen) {
+      previouslyFocusedRef.current = document.activeElement as HTMLElement | null;
+    }
+  }
+
+  // Restore focus to that exact captured element on every real close path
+  // (Escape, selecting an item, backdrop click — all of which funnel
+  // through `close()` and thus this isOpen transition). Never a hardcoded
+  // assumption that it was the ⌘K trigger button: the palette can also be
+  // opened via the global keyboard shortcut from anywhere in the app.
+  useEffect(() => {
+    if (!isOpen && previouslyFocusedRef.current) {
+      previouslyFocusedRef.current.focus();
+      previouslyFocusedRef.current = null;
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -77,6 +128,40 @@ export function CommandPalette() {
     }
   };
 
+  // The actual Tab-cycle focus trap. Deliberately fully manual (compute the
+  // in-palette focusable list ourselves and move focus to the next/previous
+  // entry, wrapping at both ends) rather than only intercepting at the
+  // boundaries and otherwise letting the browser's native Tab order take
+  // over — the palette's contents are a flat, contiguous list today so
+  // boundary-only interception would happen to work in a real browser, but
+  // full manual control is what actually keeps Tab from ever depending on
+  // where the palette happens to sit in the rest of the page's DOM order.
+  const handleDialogKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const container = dialogRef.current;
+    if (!container) return;
+    const focusable = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+    if (focusable.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    event.preventDefault();
+    const active = document.activeElement as HTMLElement | null;
+    const currentIndex = active ? focusable.indexOf(active) : -1;
+    let nextIndex: number;
+    if (event.shiftKey) {
+      nextIndex = currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1;
+    } else {
+      nextIndex = currentIndex === -1 || currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1;
+    }
+    focusable[nextIndex]?.focus();
+  };
+
   return (
     <>
       <button
@@ -95,11 +180,13 @@ export function CommandPalette() {
 
       {isOpen ? (
         <div
+          ref={dialogRef}
           className="command-palette"
           data-testid="command-palette"
           role="dialog"
           aria-modal="true"
           aria-label="Command palette"
+          onKeyDown={handleDialogKeyDown}
         >
           <div className="command-palette__backdrop" data-testid="command-palette-backdrop" onClick={close} />
           <div className="command-palette__panel">

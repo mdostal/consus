@@ -1,0 +1,91 @@
+id: s3-reduced-motion-harness-cursor
+epic: consus-phase20-diagram-editor-a11y
+title: prefers-reduced-motion support for the Harness skin's terminal cursor blink
+status: pending
+complexity: low
+methodology: tdd
+depends_on: []
+parallel_allowed: true
+parallel_rationale: bounded-slice
+
+description: |
+  A real accessibility audit (fork) confirmed via a zero-result grep across app.css, tokens.css,
+  and every theme/skins/*.tsx file that `prefers-reduced-motion` is never checked anywhere in the
+  codebase. The one real, confirmed infinite animation this affects: the Harness skin's terminal
+  cursor blink (app.css, `animation: harness-cursor-blink 1s steps(1, jump-none) infinite`), which
+  runs unconditionally regardless of the operator's OS motion preference.
+
+  This story is deliberately narrow — it fixes the one confirmed case, not a speculative sweep.
+  The audit explicitly noted the only other `transition:` declarations in the codebase (0.12s
+  color/border fades) are too minor to be a real motion-sensitivity concern on their own; this
+  story does not touch those.
+
+acceptance_criteria:
+  - "Given the operating system's reduced-motion preference is off (the default), when the Harness skin is active, then the terminal cursor blinks exactly as it does today — no visual regression for operators who haven't opted into reduced motion."
+  - "Given the operating system's reduced-motion preference is on (`prefers-reduced-motion: reduce`), when the Harness skin is active, then the cursor does not blink — it renders as a static, visible cursor indicator instead of disappearing entirely (reduced motion means no animation, not no cursor)."
+  - "Given a source-level test reading app.css, when checked, then a `@media (prefers-reduced-motion: reduce)` block exists that overrides `harness-cursor-blink`'s animation for the Harness skin — following this repo's existing source-level CSS test convention (see tokens.css.test.ts / decisions-two-pane.css.test.ts from earlier phases) rather than a rendered-layout assertion jsdom can't verify anyway."
+
+steps:
+  - id: write-failing-tests
+    description: >
+      Add a source-level test (matching tokens.css.test.ts's / decisions-two-pane.css.test.ts's
+      existing convention for asserting CSS structure directly from the stylesheet source, since
+      jsdom cannot evaluate real CSS animation/media-query behavior) confirming app.css contains a
+      `@media (prefers-reduced-motion: reduce)` block that disables or overrides
+      harness-cursor-blink's `animation` property, while leaving the cursor element itself visible
+      (not `display: none` / `visibility: hidden`, which would remove the cursor indicator
+      entirely rather than just stop it blinking).
+    agent: tester
+  - id: implement-reduced-motion-guard
+    description: >
+      Add the `@media (prefers-reduced-motion: reduce)` block to app.css, scoped to the Harness
+      skin's cursor element, setting `animation: none` (or equivalent) so it renders as a static,
+      still-visible cursor instead of blinking. Do not touch the two unrelated 0.12s
+      color/border-fade transitions elsewhere in the codebase — explicitly out of scope per the
+      design discussion.
+    agent: developer
+    depends_on: [write-failing-tests]
+  - id: make-tests-pass
+    description: >
+      Run the full test suite and fix as needed until the new test passes and the full existing
+      suite passes unmodified.
+    agent: developer
+    depends_on: [implement-reduced-motion-guard]
+  - id: review
+    description: >
+      Review for: the media query genuinely targets prefers-reduced-motion (not a different,
+      similarly-named media feature); the cursor stays visible (static) under reduced motion rather
+      than vanishing; no other animation/transition in the codebase was touched beyond this one
+      confirmed case.
+    agent: reviewer
+    depends_on: [make-tests-pass]
+  - id: integrate
+    description: Commit the reduced-motion guard for the Harness cursor blink.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: web/src/app.css
+      purpose: "harness-cursor-blink's @keyframes and the element using it live here — read the surrounding selector to find the real current class name/selector before writing the media-query override, don't guess at it."
+    - path: web/src/theme/tokens.css.test.ts
+      purpose: "This repo's existing precedent for a source-level CSS structural test (reading the stylesheet file directly and asserting on its text content) — follow this convention for the new prefers-reduced-motion test rather than inventing a different test shape."
+    - path: .pHive/epics/consus-phase20-diagram-editor-a11y/docs/design-discussion.md
+      purpose: "Confirms this is the ONE real finding — the other two minor transitions in the codebase are explicitly out of scope, not an oversight."
+
+files_to_modify:
+  - file: web/src/app.css
+    change: "Add a @media (prefers-reduced-motion: reduce) block overriding harness-cursor-blink's animation to a static, still-visible cursor."
+  - file: web/src/app.css.test.ts
+    change: "New (or extend an existing CSS test file if one already covers app.css) — source-level assertion that the reduced-motion block exists and targets the right selector."
+
+design_decisions:
+  - decision: "Scope is narrowly the one confirmed animation (Harness cursor blink), not a speculative sweep for other motion issues."
+    rationale: "The audit that surfaced this explicitly checked and found no other real infinite-animation case — padding this story with unverified speculative fixes would be exactly the kind of manufactured work the audit was asked not to produce."
+  - decision: "Reduced motion means a static, still-visible cursor — not hiding the cursor element entirely."
+    rationale: "prefers-reduced-motion is about disabling animation, not about removing content/affordances. A vanished cursor would be a worse outcome for reduced-motion users than a static one, not a neutral one."
+
+risks:
+  - severity: low
+    description: "A CSS specificity mistake could cause the media-query override to not actually win against the base animation rule."
+    mitigation: "The story's own acceptance criteria include a source-level test asserting the override block's existence and correct target selector, which review must confirm actually overrides (not just coexists alongside) the base rule."
