@@ -1,0 +1,97 @@
+id: s1-git-ref-plumbing
+epic: consus-phase24-branch-level-surfacing
+title: Ref-aware doc reading (git show/git ls-tree/git diff), safe argument handling
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: []
+
+description: |
+  Add a new git-plumbing module (e.g. server/adapters/doc-scanner/git-ref.ts, or a sibling file —
+  implementer's call on exact location, but it must live alongside the existing disk-based
+  doc-scanner code it complements) providing three ref-aware primitives Consus doesn't have today
+  (confirmed via research: today's server/adapters/doc-scanner/index.ts is 100% fs.readdirSync/
+  readFileSync, zero git awareness):
+
+  1. `listFilesAtRef(repoPath, ref): string[]` — enumerate `.pHive/planning/**` and
+     `.pHive/epics/**` `.md`/`.html` files as they exist at `<ref>`, via `git ls-tree -r <ref>
+     --name-only` (filtered to the same DOC_EXTENSIONS/SCAN_ROOTS the disk-based scanner already
+     uses — reuse those constants, don't redefine them).
+  2. `readDocContentAtRef(repoPath, ref, filePath): string` — a file's content at `<ref>`, via
+     `git show <ref>:<path>`.
+  3. `diffDocAtRef(repoPath, ref, base, filePath): string | null` — `git diff <base>...<ref> --
+     <path>`, returning null if there's no difference (matches the existing convention elsewhere in
+     this codebase of `diff: string | null` on events — see server/routes/events.ts's `event.diff`
+     field for the precedent to match, both in shape and in how a null diff is handled downstream).
+
+  Every git invocation MUST use Node's `execFile`/`spawn` with an argument array (never
+  string-interpolated shell commands) — this is a hard security requirement: `ref`, `path`, and
+  `base` are all untrusted-ish inputs (a ref name could theoretically contain shell metacharacters)
+  and this codebase has zero precedent for shelling out today, so there's no existing pattern to
+  accidentally diverge from unsafely — get it right from the start.
+
+  A ref that doesn't resolve locally (not fetched/checked out) must produce a clear, typed error —
+  not a raw git stderr dump — that the calling route (built in s2/s3) can turn into a real 404/400,
+  not a 500. Per design-discussion.md's operator-confirmed decision: Consus never runs `git fetch`
+  itself — an unresolvable ref is a client error (the operator needs to fetch/checkout it
+  themselves), not a server failure to silently retry or auto-remediate.
+
+acceptance_criteria:
+  - "Given a real git repo (a temp fixture repo created and torn down by the test itself, not this machine's real Consus repo) with a branch containing .pHive/planning/foo.md that main doesn't have, when listFilesAtRef(repoPath, 'that-branch') is called, then foo.md's path is included; when called with 'main', then it is not."
+  - "Given a real git repo with a known file at a known ref, when readDocContentAtRef is called, then it returns exactly that file's content at that ref (byte-identical to `git show <ref>:<path>` run directly)."
+  - "Given a doc that differs between a branch and main, when diffDocAtRef(repoPath, branch, 'main', path) is called, then it returns a non-null unified diff string; given a doc that's identical on both, it returns null."
+  - "Given a ref name that does not resolve locally (not a real branch/commit in the fixture repo), when any of the three functions is called with it, then a typed, catchable error is thrown (not a raw uncaught git stderr string, not a process crash) — the error is distinguishable from a real content-not-found case so callers can map it correctly."
+  - "Given a ref name, path, or base value containing shell metacharacters (e.g. a string like '; rm -rf /' passed as a test input, even though it won't resolve as a real ref), when any of the three functions is called, then no shell interpretation occurs — verified by confirming the implementation uses execFile/spawn with an argument array, not a template-string shell command (a code-level check, not just a behavioral one, since a behavioral test alone can't fully rule out injection-shaped bugs)."
+  - "Given the disk-based doc-scanner's existing DOC_EXTENSIONS/SCAN_ROOTS constants, when this story's new module filters files, then it reuses those exact constants (imported, not redefined) so the two scanning paths can never silently drift out of sync on what counts as a doc."
+
+steps:
+  - id: research
+    description: >
+      Read server/adapters/doc-scanner/index.ts in full (DOC_EXTENSIONS, SCAN_ROOTS, walk(),
+      readDocContent — whichever function currently reads a file's content from disk) to find the
+      exact constants/conventions to reuse. Read server/routes/events.ts's handling of
+      `event.diff: string | null` to match that shape/convention. Confirm Node's execFile/spawn API
+      shape for capturing stdout as a string.
+    agent: researcher
+  - id: test-spec
+    description: >
+      Write failing tests using a real temporary git repo fixture (created via execFile git init +
+      commits in a temp dir, torn down after) covering every acceptance criterion above. Do not
+      mock git — these are genuine integration tests against a real, disposable repo.
+    agent: tester
+  - id: implement
+    description: >
+      Build listFilesAtRef, readDocContentAtRef, diffDocAtRef using execFile with argument arrays.
+      Define and throw a typed error class (e.g. UnresolvableRefError) for refs that don't resolve.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: >
+      Review specifically for shell-injection safety (grep the diff for any string concatenation
+      into a shell command — there must be none) and that the typed error is genuinely
+      distinguishable (not just a generic Error with a specific message string a caller has to
+      string-match). Run npm test and npm run build for real and confirm both pass.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit the git-ref plumbing module to the feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: server/adapters/doc-scanner/index.ts
+      purpose: "The disk-based scanner this story's ref-aware module complements — reuse its DOC_EXTENSIONS/SCAN_ROOTS constants exactly, don't redefine them."
+    - path: server/routes/events.ts
+      purpose: "Precedent for the diff: string | null shape and how a null diff is handled downstream by callers — match this convention in diffDocAtRef."
+
+design_decisions:
+  - decision: "Consus never runs git fetch itself — an unresolvable ref is a client error."
+    rationale: "Operator-confirmed (design-discussion.md open question 2): avoids Consus initiating its own network calls, keeps the git-plumbing additions strictly read-only against already-local refs."
+  - decision: "execFile/spawn with argument arrays only, never shell string interpolation."
+    rationale: "Hard security requirement — ref/path/base are untrusted-ish inputs and there's no existing shell-invocation precedent in this codebase to risk diverging from unsafely."
+
+risks:
+  - severity: medium
+    description: "Shelling out to git is a genuinely new pattern for this codebase (everything today is fs/SQLite) — a subtle argument-handling bug could be a real injection vector."
+    mitigation: "Acceptance criteria explicitly require a code-level (not just behavioral) check that execFile/spawn with an argument array is used; the review step greps the diff for shell string interpolation."
