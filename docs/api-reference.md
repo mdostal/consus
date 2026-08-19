@@ -1,7 +1,7 @@
 # Consus API Reference
 
-Every route Consus's server registers, kept current through `consus-phase18-diagram-editor-and-skin-system`
-(v0.9.0). A harness author should be able to use Consus from this doc alone, without reading
+Every route Consus's server registers, kept current through `consus-phase21-codex-cli-support`
+(v0.11.0). A harness author should be able to use Consus from this doc alone, without reading
 source. All routes are relative to the server's base URL (default `http://localhost:8722`,
 override via `PORT`/`HOST`).
 
@@ -79,14 +79,15 @@ mechanism — there is no background or on-read sync from any external system.
     "options": [{ "id": "A", "title": "...", "tradeoffs": "..." }],
     "recommended": "A"
   },
-  "decision_type": null,
-  "triage_bucket": null
+  "decision_type": "cba",
+  "triage_bucket": "open_question"
 }
 ```
-`decision_type`/`triage_bucket` are reserved for a heuristic classifier
-(`server/decision-contract/classifier.ts`) that exists and is unit-tested but is **not yet wired
-into any route** — expect `null` on every item returned today. See `.pHive/planning/backlog.md`'s
-"Decisions & CBAs" section.
+`decision_type`/`triage_bucket` are populated by a heuristic classifier
+(`server/decision-contract/classifier.ts`), wired into `GET /api/decisions` and
+`POST /api/decisions`: rows that predate classification are classified on read
+(opportunistic backfill, not a background job), and already-classified rows are
+returned as-is.
 
 ### `POST /api/decisions`
 Creates a new decision item — the counterpart to `GET /api/decisions` above. This is how an

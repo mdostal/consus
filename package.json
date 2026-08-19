@@ -4,6 +4,19 @@
   "private": true,
   "type": "module",
   "description": "Consus — a standalone knowledgebase, graph, and doc editor for any repo's decisions, docs, and architecture",
+  "license": "MIT",
+  "author": {
+    "name": "Mathew Dostal",
+    "email": "mathew.dostal@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mdostal/consus.git"
+  },
+  "homepage": "https://github.com/mdostal/consus#readme",
+  "bugs": {
+    "url": "https://github.com/mdostal/consus/issues"
+  },
   "scripts": {
     "dev:web": "vite",
     "dev:server": "tsx watch server/index.ts",

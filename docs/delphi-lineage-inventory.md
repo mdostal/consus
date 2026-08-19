@@ -24,7 +24,7 @@ the single source the roadmap (`roadmap.md`) and PRD backlog (REQ-16+) draw from
 |---|---|---|
 | 2026-07-08 | `mdostal/approval` | Approval Actions — the real policy/quorum **engine** |
 | 2026-07-08 | `mdostal/pantheon` (fork of Claud-ometer) | Dashboard shell; does not itself contain the `/delphi` route |
-| ~2026-07-08–10 | Claud-ometer, hive host only (`ssh dostal@100.75.161.82`) | The original `/delphi` surface — richest classifier + persistence logic |
+| ~2026-07-08–10 | Claud-ometer, hive host only (`ssh <internal-dev-host>`) | The original `/delphi` surface — richest classifier + persistence logic |
 | 2026-07-11 | `mdostal/delphi` | Standalone rebuild — cleaner `decision-request/v1`, Express+React, real feature set |
 | 2026-07-21 | `mdostal/human-review` | Empty scaffold — signals a **split** direction: UI-only plugin consuming `approval` as the engine |
 | 2026-07-25 | `mdostal/consus` (this repo) | v1 shipped; this inventory folds the above back in |
