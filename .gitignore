@@ -58,6 +58,8 @@ build/
 !.pHive/epics/consus-phase20-diagram-editor-a11y/**
 !.pHive/epics/consus-phase21-codex-cli-support/
 !.pHive/epics/consus-phase21-codex-cli-support/**
+!.pHive/epics/consus-phase23-decision-attachments/
+!.pHive/epics/consus-phase23-decision-attachments/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/
