@@ -181,6 +181,14 @@ export function runMigration(db: Database.Database): void {
   // some deployment — CREATE TABLE IF NOT EXISTS alone won't add these to a
   // pre-existing items table.
   addColumnIfMissing(db, "items", "source_body", "TEXT");
+  // s2-branch-scoped-decisions: records which branch a decision item was
+  // scanned from (ref-aware ingest, server/routes/projects.ts). Deliberately
+  // NOT a reuse of source_ref -- that column is already populated with the
+  // source doc's file path at two real call sites (server/events/detect.ts,
+  // server/routes/events.ts), not a git ref; repurposing it would silently
+  // corrupt existing decision-item upsert behavior. NULL means "scanned from
+  // the working-tree disk state" (today's only scan path, unchanged).
+  addColumnIfMissing(db, "items", "source_branch", "TEXT");
   addColumnIfMissing(db, "items", "decided_at", "TEXT");
   addColumnIfMissing(db, "items", "decision_payload", "TEXT");
   addColumnIfMissing(db, "items", "decision_type", "TEXT");

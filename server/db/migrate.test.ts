@@ -233,4 +233,61 @@ describe("runMigration", () => {
 
     db.close();
   });
+
+  // s2-branch-scoped-decisions: source_branch is a new, additive column on
+  // items (NOT a reuse of source_ref, which already means "source doc's file
+  // path" at two real call sites — see design-discussion.md §2). Must be
+  // idempotent against both a fresh database and an existing v0.11.0+
+  // database with pre-existing items rows, and every pre-existing item's
+  // source_branch must be NULL (never corrupted, never defaulted to a
+  // non-null placeholder).
+  it("adds a source_branch column to items, defaulting to NULL, idempotently on a fresh database", () => {
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
+    const db = new Database(dbPath);
+
+    runMigration(db);
+    expect(() => runMigration(db)).not.toThrow();
+
+    const columns = db
+      .prepare("PRAGMA table_info(items)")
+      .all()
+      .map((c) => (c as { name: string }).name);
+    expect(columns).toContain("source_branch");
+
+    db.prepare(
+      "INSERT INTO items (id, type, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run("item-fresh", "doc_ref", "Fresh item", "open", "2026-08-01T00:00:00Z", "2026-08-01T00:00:00Z");
+
+    const row = db.prepare("SELECT source_branch FROM items WHERE id = ?").get("item-fresh") as {
+      source_branch: string | null;
+    };
+    expect(row.source_branch).toBeNull();
+
+    db.close();
+  });
+
+  it("is idempotent against an existing v0.11.0+ database with pre-existing items rows — their source_branch stays NULL, not corrupted or defaulted", () => {
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
+    const db = new Database(dbPath);
+
+    // Simulate a pre-existing database (this story's migration hasn't run
+    // yet in spirit — the column is added below only via runMigration).
+    runMigration(db);
+    db.prepare(
+      "INSERT INTO items (id, type, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run("item-pre-existing-branch", "doc_ref", "Pre-existing item", "open", "2026-07-01T00:00:00Z", "2026-07-01T00:00:00Z");
+
+    // Re-run migration again (the idempotent-on-every-server-start path).
+    expect(() => runMigration(db)).not.toThrow();
+    expect(() => runMigration(db)).not.toThrow();
+
+    const row = db.prepare("SELECT source_branch, title FROM items WHERE id = ?").get("item-pre-existing-branch") as {
+      source_branch: string | null;
+      title: string;
+    };
+    expect(row.source_branch).toBeNull();
+    expect(row.title).toBe("Pre-existing item");
+
+    db.close();
+  });
 });
