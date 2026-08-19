@@ -149,6 +149,32 @@ export function runMigration(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_events_project ON events(project);
     CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
     CREATE INDEX IF NOT EXISTS idx_events_archived_at ON events(archived_at);
+
+    -- s1-attachment-storage-and-api: files (screenshots, PDFs, exported
+    -- docs) attached to a decision item, stored on local disk via
+    -- FilesystemStorage (server/storage/) under CONSUS_ATTACHMENTS_DIR /
+    -- .pHive/attachments -- never S3 (standalone/local-first, no current
+    -- cloud-deploy need). Ported from origin/feat/PAN-7819's
+    -- server/db/migrate.ts (attachments table), re-derived against this
+    -- build's current schema/house-style rather than cherry-picked:
+    -- uploaded_by (a hardcoded "authenticated_user" placeholder on the old
+    -- branch) is actor here and NOT NULL, matching the audit_log.actor /
+    -- decideItem convention every other Consus write path already uses for
+    -- "who did this" in a no-auth-layer, standalone tool. Soft-delete only
+    -- (deleted_at) -- no cleanup job removes the underlying file, matching
+    -- the old branch's own documented scope.
+    CREATE TABLE IF NOT EXISTS attachments (
+      id TEXT PRIMARY KEY,
+      item_id TEXT NOT NULL REFERENCES items(id),
+      file_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      actor TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      deleted_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_attachments_item_id ON attachments(item_id);
   `);
 
   // Guarded ALTER TABLE for columns added after a table already existed on

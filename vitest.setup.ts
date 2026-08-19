@@ -69,68 +69,76 @@ if (typeof globalThis.DOMMatrixReadOnly === "undefined") {
 // itself does. Falling back to each element's own inline style width/height
 // (DiagramCanvas always sets one explicitly, on nodes at least) keeps this
 // close to real rather than one magic constant everywhere.
-function readInlinePixelSize(el: Element, prop: "width" | "height", fallback: number): number {
-  const raw = (el as HTMLElement).style?.[prop];
-  const parsed = raw ? parseFloat(raw) : NaN;
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
-  configurable: true,
-  get(this: HTMLElement) {
-    return readInlinePixelSize(this, "width", this.classList.contains("react-flow__handle") ? 6 : 120);
-  },
-});
-Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
-  configurable: true,
-  get(this: HTMLElement) {
-    return readInlinePixelSize(this, "height", this.classList.contains("react-flow__handle") ? 6 : 40);
-  },
-});
-HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement): DOMRect {
-  const width = readInlinePixelSize(this, "width", this.classList.contains("react-flow__handle") ? 6 : 120);
-  const height = readInlinePixelSize(this, "height", this.classList.contains("react-flow__handle") ? 6 : 40);
-  return {
-    width,
-    height,
-    top: 0,
-    left: 0,
-    right: width,
-    bottom: height,
-    x: 0,
-    y: 0,
-    toJSON() {
-      return this;
-    },
-  } as DOMRect;
-};
-
-// jsdom has no Pointer Events implementation at all (no global
-// PointerEvent constructor, no setPointerCapture/releasePointerCapture) —
-// @xyflow/system's own node-drag implementation (XYDrag) is pointer-event
-// based and calls element.setPointerCapture() unconditionally when a drag
-// starts, so without these two, DiagramCanvas.test.tsx's drag-by-handle
-// test would fail to even begin a drag, for a jsdom-API-completeness
-// reason with nothing to do with DiagramCanvas's own drag-handle wiring.
-if (typeof globalThis.PointerEvent === "undefined") {
-  class PointerEventStub extends MouseEvent {
-    pointerId: number;
-    pointerType: string;
-    isPrimary: boolean;
-    constructor(type: string, params: PointerEventInit = {}) {
-      super(type, params);
-      this.pointerId = params.pointerId ?? 1;
-      this.pointerType = params.pointerType ?? "mouse";
-      this.isPrimary = params.isPrimary ?? true;
-    }
+//
+// All of this is jsdom/DOM-only setup, guarded so it's a no-op for
+// server/**/*.test.ts files that opt into `@vitest-environment node`
+// (s1-attachment-storage-and-api — real Node File/Blob are needed there;
+// jsdom's own File/Blob stubs are missing arrayBuffer()/stream(), and under
+// a node environment HTMLElement doesn't exist as a global at all).
+if (typeof HTMLElement !== "undefined") {
+  function readInlinePixelSize(el: Element, prop: "width" | "height", fallback: number): number {
+    const raw = (el as HTMLElement).style?.[prop];
+    const parsed = raw ? parseFloat(raw) : NaN;
+    return Number.isFinite(parsed) ? parsed : fallback;
   }
-  globalThis.PointerEvent = PointerEventStub as unknown as typeof PointerEvent;
-}
-if (!HTMLElement.prototype.setPointerCapture) {
-  HTMLElement.prototype.setPointerCapture = () => {};
-}
-if (!HTMLElement.prototype.releasePointerCapture) {
-  HTMLElement.prototype.releasePointerCapture = () => {};
-}
-if (!HTMLElement.prototype.hasPointerCapture) {
-  HTMLElement.prototype.hasPointerCapture = () => false;
+  Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return readInlinePixelSize(this, "width", this.classList.contains("react-flow__handle") ? 6 : 120);
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return readInlinePixelSize(this, "height", this.classList.contains("react-flow__handle") ? 6 : 40);
+    },
+  });
+  HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement): DOMRect {
+    const width = readInlinePixelSize(this, "width", this.classList.contains("react-flow__handle") ? 6 : 120);
+    const height = readInlinePixelSize(this, "height", this.classList.contains("react-flow__handle") ? 6 : 40);
+    return {
+      width,
+      height,
+      top: 0,
+      left: 0,
+      right: width,
+      bottom: height,
+      x: 0,
+      y: 0,
+      toJSON() {
+        return this;
+      },
+    } as DOMRect;
+  };
+
+  // jsdom has no Pointer Events implementation at all (no global
+  // PointerEvent constructor, no setPointerCapture/releasePointerCapture) —
+  // @xyflow/system's own node-drag implementation (XYDrag) is pointer-event
+  // based and calls element.setPointerCapture() unconditionally when a drag
+  // starts, so without these two, DiagramCanvas.test.tsx's drag-by-handle
+  // test would fail to even begin a drag, for a jsdom-API-completeness
+  // reason with nothing to do with DiagramCanvas's own drag-handle wiring.
+  if (typeof globalThis.PointerEvent === "undefined") {
+    class PointerEventStub extends MouseEvent {
+      pointerId: number;
+      pointerType: string;
+      isPrimary: boolean;
+      constructor(type: string, params: PointerEventInit = {}) {
+        super(type, params);
+        this.pointerId = params.pointerId ?? 1;
+        this.pointerType = params.pointerType ?? "mouse";
+        this.isPrimary = params.isPrimary ?? true;
+      }
+    }
+    globalThis.PointerEvent = PointerEventStub as unknown as typeof PointerEvent;
+  }
+  if (!HTMLElement.prototype.setPointerCapture) {
+    HTMLElement.prototype.setPointerCapture = () => {};
+  }
+  if (!HTMLElement.prototype.releasePointerCapture) {
+    HTMLElement.prototype.releasePointerCapture = () => {};
+  }
+  if (!HTMLElement.prototype.hasPointerCapture) {
+    HTMLElement.prototype.hasPointerCapture = () => false;
+  }
 }

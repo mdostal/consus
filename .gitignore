@@ -68,3 +68,7 @@ build/
 .pHive/session-effort.txt
 .consus-backup-cadex/
 dev.log
+
+# Consus runtime state — uploaded decision attachments (server/storage/),
+# CONSUS_ATTACHMENTS_DIR default (s1-attachment-storage-and-api)
+.pHive/attachments/
