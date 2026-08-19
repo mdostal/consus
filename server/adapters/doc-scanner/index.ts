@@ -18,8 +18,8 @@ export interface ScanOptions {
   repoPath: string;
 }
 
-const DOC_EXTENSIONS = new Set([".md", ".html"]);
-const SCAN_ROOTS = [join(".pHive", "planning"), join(".pHive", "epics")];
+export const DOC_EXTENSIONS = new Set([".md", ".html"]);
+export const SCAN_ROOTS = [join(".pHive", "planning"), join(".pHive", "epics")];
 
 function walk(dir: string): string[] {
   let out: string[] = [];
