@@ -2141,3 +2141,52 @@ body {
   color: var(--consus-accent);
   border-color: color-mix(in srgb, var(--consus-accent) 40%, transparent);
 }
+
+/* ============================================================= */
+/* Branch picker + branch-scoped decisions + doc diff             */
+/* (consus-phase24-branch-level-surfacing, s4)                    */
+/* ============================================================= */
+.branch-picker {
+  font-family: var(--consus-font-ui);
+}
+.branch-picker label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--consus-ink-muted);
+}
+.branch-picker select {
+  padding: 7px 10px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg-subtle);
+  color: var(--consus-ink);
+  font: inherit;
+}
+.project-branch-decisions {
+  margin: 18px 0;
+  padding: 16px 18px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(12px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg-subtle);
+}
+.doc-diff-check {
+  margin-bottom: 14px;
+  font-family: var(--consus-font-ui);
+}
+.doc-diff-check__diff {
+  overflow-x: auto;
+  background: color-mix(in srgb, var(--consus-ink) 6%, transparent);
+  padding: 12px 14px;
+  margin-top: 10px;
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
+  font-family: var(--consus-font-mono);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+}
+.doc-diff-check__no-changes {
+  margin-top: 10px;
+  color: var(--consus-ink-muted);
+  font-size: 13px;
+}

@@ -175,3 +175,36 @@ export function resolveDefaultBranch(repoPath: string): string | null {
     return null;
   }
 }
+
+/**
+ * Lists local + remote-tracking branch short names (s4 of
+ * consus-phase24-branch-level-surfacing) via `git for-each-ref
+ * --format=%(refname:short) refs/heads refs/remotes` — backs the branch
+ * picker's `GET /api/projects/:project/branches` route. Excludes the
+ * `<remote>/HEAD` symref (e.g. `origin/HEAD`) — that's a pointer at
+ * whichever branch the remote's default is, not a real branch of its own,
+ * and would otherwise show up as a confusing extra option.
+ *
+ * Deliberately swallows every error and returns `[]` rather than throwing
+ * — an unborn repo (no commits yet, so `refs/heads` is empty), a bare
+ * repo, or a `repoPath` that isn't a git working copy at all must all
+ * degrade to "the picker only shows the (default) option" (this story's
+ * AC5), never a 500 that breaks the picker UI.
+ */
+export function listBranches(repoPath: string): string[] {
+  try {
+    const output = execFileSync(
+      "git",
+      ["for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes"],
+      { cwd: repoPath, encoding: "utf-8" },
+    );
+
+    return output
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((name) => name.length > 0 && !name.endsWith("/HEAD"))
+      .sort();
+  } catch {
+    return [];
+  }
+}

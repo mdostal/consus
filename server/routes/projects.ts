@@ -1,7 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
 import { scanRepo } from "../adapters/doc-scanner/index.js";
-import { listFilesAtRef, readDocContentAtRef, UnresolvableRefError } from "../adapters/doc-scanner/git-ref.js";
+import {
+  listBranches,
+  listFilesAtRef,
+  readDocContentAtRef,
+  UnresolvableRefError,
+} from "../adapters/doc-scanner/git-ref.js";
 import { listProjects } from "../config/project-registry.js";
 import { detectEvents } from "../events/detect.js";
 import { parseDecisionPayload, serializeDecisionPayload } from "../decision-contract/parser.js";
@@ -97,6 +102,25 @@ function ingestDecisionsAtRef(
 export function registerProjectRoutes(app: FastifyInstance, { db, repos }: ProjectRoutesOptions): void {
   app.get("/api/projects", async () => {
     return { projects: listProjects(repos) };
+  });
+
+  /**
+   * s4 (consus-phase24-branch-level-surfacing): backs the web UI's branch
+   * picker — lists local + remote-tracking branches (git-ref.ts's
+   * listBranches, `git for-each-ref`) for a registered project, so the
+   * operator can pick one to re-scope the decisions list / check a doc's
+   * diff against. Never errors for a repo with no other branches yet
+   * (listBranches itself degrades to `[]`) — only an unregistered project
+   * 404s.
+   */
+  app.get<{ Params: { project: string } }>("/api/projects/:project/branches", async (request, reply) => {
+    const { project } = request.params;
+    const repoPath = repos[project];
+    if (!repoPath) {
+      return reply.code(404).send({ error: `unknown project: ${project}` });
+    }
+
+    return { branches: listBranches(repoPath) };
   });
 
   app.post<{ Params: { project: string }; Querystring: { ref?: string } }>(

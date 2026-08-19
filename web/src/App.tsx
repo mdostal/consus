@@ -4,6 +4,8 @@ import { AnswerControl } from "./features/decisions/answer-shapes/AnswerControl"
 import { CommentThread, type Comment } from "./features/comments/CommentThread";
 import { GlobalView, type KbEntrySummary } from "./features/projects/GlobalView";
 import { ProjectView } from "./features/projects/ProjectView";
+import { BranchPicker } from "./features/projects/BranchPicker";
+import { DocDiffCheck } from "./features/docs/DocDiffCheck";
 import { DiagramView, type DiagramEpic } from "./features/projects/DiagramView";
 import { ArchitectureDiagramView } from "./features/projects/ArchitectureDiagramView";
 import { DiagramPendingCount } from "./features/projects/DiagramChangeset";
@@ -16,7 +18,7 @@ import { EventsList, type EventRow, type EventStatus } from "./features/events/E
 import { EventProposeComposer } from "./features/events/EventProposeComposer";
 import type { DecisionPayload, Verdict } from "./features/decisions/answer-shapes/types";
 import { useSelectedDecisionId } from "./features/decisions/useSelectedDecisionId";
-import { DecisionListPane } from "./features/decisions/DecisionListPane";
+import { DecisionListPane, type DecisionListItem } from "./features/decisions/DecisionListPane";
 import { AttachmentsPanel } from "./features/decisions/attachments/AttachmentsPanel";
 import { useSkinPreference } from "./theme/useSkinPreference";
 import { ThemeSkinPicker } from "./theme/ThemeSkinPicker";
@@ -311,6 +313,86 @@ function DecisionsSection({
 }
 
 /* ---------------------------------------------------------------- */
+/* s4 (consus-phase24-branch-level-surfacing): branch-scoped decisions,   */
+/* mounted only when a branch other than "(default)" is picked.           */
+/* ---------------------------------------------------------------- */
+
+/**
+ * Branch-scoped decisions list for the currently-selected project/branch —
+ * a new, additive surface inside the per-project view, deliberately kept
+ * separate from DecisionsSection above (the "Decisions" tab's own
+ * DecisionListPane/DecisionView wiring) so that global view is byte-for-
+ * byte untouched by this story (see design-discussion.md's zero-regression
+ * invariant).
+ *
+ * "Scan-on-select": selecting a branch fires the ref-aware ingest (s2's
+ * `POST /api/projects/:project/ingest?ref=<branch>`) before loading its
+ * decisions, so the branch's decision-request docs actually get scanned
+ * into `items` without a separate manual operator step — one of the two
+ * valid options the story left as an implementer judgment call. An ingest
+ * failure surfaces as a visible warning but does not block the (possibly
+ * still-empty) decisions list load that follows.
+ */
+function ProjectBranchDecisions({ repo, branch }: { repo: string; branch: string }) {
+  const [items, setItems] = useState<DecisionListItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [ingestWarning, setIngestWarning] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setItems(null);
+    setError(null);
+    setIngestWarning(null);
+
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/projects/${encodeURIComponent(repo)}/ingest?ref=${encodeURIComponent(branch)}`,
+          { method: "POST" },
+        );
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}) as { error?: string });
+          if (!cancelled) setIngestWarning(body.error ?? `HTTP ${res.status}`);
+        }
+      } catch (e) {
+        if (!cancelled) setIngestWarning((e as Error).message);
+      }
+
+      try {
+        const res = await fetch(`/api/decisions?all=1&branch=${encodeURIComponent(branch)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const body = await res.json();
+        if (!cancelled) setItems(body);
+      } catch (e) {
+        if (!cancelled) setError((e as Error).message);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, branch]);
+
+  return (
+    <div className="project-branch-decisions">
+      <h3 className="dv__section-title">Decisions on {branch}</h3>
+      {ingestWarning ? (
+        <p className="dv__warn">Could not scan "{branch}" for decisions: {ingestWarning}</p>
+      ) : null}
+      {error ? <p className="dv__err">Could not load decisions for {branch}: {error}</p> : null}
+      {!items && !error ? <p className="state">Loading decisions on {branch}…</p> : null}
+      {items && items.length === 0 ? (
+        <div className="empty">
+          <strong>No decisions on this branch</strong>
+          Nothing with a decision-request block was found scanning "{branch}".
+        </div>
+      ) : null}
+      {items && items.length > 0 ? <DecisionListPane items={items} selectedId={null} onSelect={() => {}} /> : null}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- */
 /* Section: Projects (cross-project + per-project KB views)         */
 /* ---------------------------------------------------------------- */
 
@@ -322,6 +404,13 @@ function ProjectsSection() {
   const [refreshToken, setRefreshToken] = useState(0);
   const [ingesting, setIngesting] = useState(false);
   const [ingestError, setIngestError] = useState<string | null>(null);
+  // s4 (consus-phase24-branch-level-surfacing): null = "(default)" = no
+  // branch filter, today's exact unfiltered behavior. Reset to null on
+  // every project switch below — a branch name picked for one project has
+  // no meaning for another. Never read/written unless the operator opens
+  // this picker; nothing about the default (project === null / branch ===
+  // null) render path below changes because this state exists.
+  const [branch, setBranch] = useState<string | null>(null);
   // s2 (consus-phase18): the two diagram kinds (epic/story cascade,
   // architecture) each report their own pending-change count so this
   // section can show one accurate global "N pending changes" total
@@ -386,7 +475,10 @@ function ProjectsSection() {
           <div className="consus__nav" style={{ marginBottom: 18, marginLeft: 0 }}>
             <button
               className={`consus__nav-btn ${project === null ? "consus__nav-btn--active" : ""}`}
-              onClick={() => setProject(null)}
+              onClick={() => {
+                setProject(null);
+                setBranch(null);
+              }}
             >
               All projects
             </button>
@@ -394,7 +486,10 @@ function ProjectsSection() {
               <button
                 key={p}
                 className={`consus__nav-btn ${project === p ? "consus__nav-btn--active" : ""}`}
-                onClick={() => setProject(p)}
+                onClick={() => {
+                  setProject(p);
+                  setBranch(null);
+                }}
               >
                 {p}
               </button>
@@ -417,12 +512,14 @@ function ProjectsSection() {
                   {ingesting ? "Ingesting…" : "Ingest repo"}
                 </button>
                 {ingestError ? <p className="dv__err">{ingestError}</p> : null}
+                <BranchPicker project={project} value={branch} onChange={setBranch} />
               </div>
               <ProjectView
                 project={project}
                 entries={entries.filter((e) => (e.source_repo ?? "unassigned") === project)}
                 onSelect={() => {}}
               />
+              {branch ? <ProjectBranchDecisions repo={project} branch={branch} /> : null}
               <DiagramPendingCount count={cascadePendingChanges + architecturePendingChanges} />
               <ProjectDiagram repo={project} refreshToken={refreshToken} onPendingChangesChange={setCascadePendingChanges} />
               <ProjectArchitectureDiagram
@@ -430,7 +527,7 @@ function ProjectsSection() {
                 refreshToken={refreshToken}
                 onPendingChangesChange={setArchitecturePendingChanges}
               />
-              <ProjectDocs repo={project} refreshToken={refreshToken} />
+              <ProjectDocs repo={project} refreshToken={refreshToken} branch={branch} />
             </>
           )}
         </>
@@ -606,7 +703,19 @@ function ProjectArchitectureDiagram({
  * the per-project view too. Read-only here (no propose-change wiring);
  * the global Docs tab remains the full-featured surface for that.
  */
-function ProjectDocs({ repo, refreshToken }: { repo: string; refreshToken?: number }) {
+function ProjectDocs({
+  repo,
+  refreshToken,
+  branch,
+}: {
+  repo: string;
+  refreshToken?: number;
+  /** s4 (consus-phase24-branch-level-surfacing): when set (a branch other
+   *  than "(default)" is picked), the open-doc view gains a "view diff vs
+   *  default branch" action (DocDiffCheck). null (the default) leaves this
+   *  component's behavior byte-identical to before this story. */
+  branch?: string | null;
+}) {
   const [grouped, setGrouped] = useState<GroupedDocs | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openDoc, setOpenDoc] = useState<{ format: "md" | "html"; content: string; path: string } | null>(null);
@@ -641,6 +750,7 @@ function ProjectDocs({ repo, refreshToken }: { repo: string; refreshToken?: numb
         <button className="doc-back" onClick={() => setOpenDoc(null)}>
           ← Back to docs
         </button>
+        {branch ? <DocDiffCheck repo={repo} path={openDoc.path} branch={branch} /> : null}
         <DocRenderer format={openDoc.format} content={openDoc.content} />
       </div>
     );

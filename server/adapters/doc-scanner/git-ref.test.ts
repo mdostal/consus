@@ -8,6 +8,7 @@ import {
   readDocContentAtRef,
   diffDocAtRef,
   resolveDefaultBranch,
+  listBranches,
   UnresolvableRefError,
   GitDocNotFoundError,
 } from "./git-ref.js";
@@ -192,6 +193,47 @@ describe("git-ref plumbing", () => {
       git(repoDir, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/dev"]);
 
       expect(resolveDefaultBranch(repoDir)).toBe("dev");
+    });
+  });
+
+  describe("listBranches", () => {
+    it("lists local branches, including the one created in the fixture (s4 of consus-phase24-branch-level-surfacing)", () => {
+      const branches = listBranches(repoDir);
+      expect(branches).toContain("main");
+      expect(branches).toContain("feature/branch-doc");
+    });
+
+    it("includes remote-tracking branches when present", () => {
+      git(repoDir, ["update-ref", "refs/remotes/origin/main", "refs/heads/main"]);
+
+      const branches = listBranches(repoDir);
+      expect(branches).toContain("origin/main");
+    });
+
+    it("excludes the <remote>/HEAD symref — not a real branch of its own", () => {
+      git(repoDir, ["update-ref", "refs/remotes/origin/main", "refs/heads/main"]);
+      git(repoDir, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"]);
+
+      const branches = listBranches(repoDir);
+      expect(branches).not.toContain("origin/HEAD");
+      expect(branches).toContain("origin/main");
+    });
+
+    it("returns [] (no throw) for a repo with no commits/branches yet (AC5's 'zero non-default branches' degrades gracefully)", () => {
+      const emptyRepoDir = mkdtempSync(join(tmpdir(), "consus-git-ref-empty-"));
+      git(emptyRepoDir, ["init", "-b", "main"]);
+
+      expect(listBranches(emptyRepoDir)).toEqual([]);
+
+      rmSync(emptyRepoDir, { recursive: true, force: true });
+    });
+
+    it("returns [] (no throw) for a path that isn't a git working copy at all", () => {
+      const notARepoDir = mkdtempSync(join(tmpdir(), "consus-git-ref-notarepo-"));
+
+      expect(listBranches(notARepoDir)).toEqual([]);
+
+      rmSync(notARepoDir, { recursive: true, force: true });
     });
   });
 });
