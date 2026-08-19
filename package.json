@@ -1,6 +1,6 @@
 {
   "name": "consus",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
   "description": "Consus — a standalone knowledgebase, graph, and doc editor for any repo's decisions, docs, and architecture",

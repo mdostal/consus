@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-08-18
+
 ### Added
 
 - **`consus-phase21-codex-cli-support`:** `npm run agent:init`/`agent:status` now also install Consus's agent-facing skill to Codex CLI (`$CODEX_HOME/skills/consus/SKILL.md`, defaulting to `~/.codex/skills/consus/SKILL.md`), alongside the existing Claude Code support — a real, primary-source-confirmed mechanism (Codex's own bundled `skill-installer` skill documents this exact convention), not guessed at. A new `--harness claude`/`--harness codex` flag narrows a run to one harness; the other is genuinely never even read when narrowed, not just skipped for writing.
