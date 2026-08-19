@@ -1,0 +1,102 @@
+id: s4-branch-picker-ui
+epic: consus-phase24-branch-level-surfacing
+title: Branch picker in ProjectView, branch-scoped decisions list, inline diff view
+status: pending
+complexity: high
+methodology: tdd
+depends_on: [s2-branch-scoped-decisions, s3-doc-diff-endpoint]
+
+description: |
+  The UI half of "link that up and display that 100%" (operator's own words) — make branch-scoped
+  decisions and doc diffs actually visible and usable, not just API-reachable.
+
+  Read the real current structure first (do not assume from this story's description alone):
+  web/src/features/projects/ProjectView.tsx is small (26 lines as of this epic's planning) and does
+  NOT appear to directly own the decisions list — find where DecisionListPane/decisions actually
+  render today (likely App.tsx, per consus-phase23's own research finding that decisions are wired
+  through App.tsx's `DecisionView`, not through ProjectView or DecisionCard). Confirm the real
+  current wiring before deciding where a branch picker mounts — this is a judgment call for the
+  implementer, reviewer-checked, same pattern consus-phase23-s2 used successfully.
+
+  Build:
+  1. A branch picker (populated by listing local + remote-tracking branches — implementer's call on
+     the exact listing mechanism/route; may need a small new `GET /api/projects/:project/branches`
+     route backed by `git for-each-ref` or `git branch -a`, following this codebase's existing route
+     conventions). Selecting a branch other than "(default)" re-scopes the visible decisions list to
+     `GET /api/decisions?branch=<name>` (s2) instead of the unfiltered call. Selecting "(default)"
+     (or leaving it unset) restores today's exact unfiltered behavior — a no-branch-selected state
+     must be visually/behaviorally indistinguishable from this feature not existing at all, for an
+     operator who never touches the picker.
+  2. For a doc known to differ from the default branch (surfaced via s3's diff endpoint — the exact
+     trigger, e.g. an on-demand "check for changes" action vs. an eager per-doc check, is an
+     implementer judgment call informed by not wanting to fire a diff request per doc on every
+     render for every doc in a project), a "view diff vs. <default-branch>" action that renders the
+     diff inline using the SAME pattern EventProposeComposer.tsx already establishes — a plain
+     `<pre>` block (see EventProposeComposer.tsx:36, `data-testid="event-diff"`) — not a new
+     diff-rendering library or syntax-highlighted diff viewer. This codebase has exactly one
+     existing diff-rendering precedent; use it, don't invent a second one.
+
+acceptance_criteria:
+  - "Given an operator who never touches the branch picker, when they use Consus normally, then every screen behaves byte-identically to before this story shipped — no visible change, no extra network calls fired for branches they never selected."
+  - "Given a project with at least one non-default branch containing its own decision items (via the ref-aware ingest from s2, triggered however this story wires it — e.g. the picker itself could trigger a scan-on-select, or ingest could remain a separate operator action; implementer's call, tested either way), when the operator selects that branch in the picker, then the decisions list re-scopes to only that branch's items, and a way to switch back to the default view is present and works."
+  - "Given a doc that differs on the selected branch vs. the default branch, when the operator views that doc (or its associated indicator), then a 'view diff' action is available; clicking it renders the diff using the existing <pre>-based pattern (EventProposeComposer's own convention), not a new component style."
+  - "Given a doc that is identical on the selected branch vs. default, when the operator views it, then no 'view diff' action is shown (or it's shown but clearly indicates 'no changes' — implementer's call on exact UX, but it must not silently look identical to the has-a-diff case)."
+  - "Given the branch-listing route/mechanism is called against a repo with zero non-default branches, when it's called, then the picker gracefully shows only the default option (no error, no empty crash)."
+
+steps:
+  - id: research
+    description: >
+      Read App.tsx's real current decisions-rendering wiring (DecisionView, DecisionListPane,
+      whatever consus-phase23 left it as) and ProjectView.tsx in full. Read
+      web/src/features/events/EventProposeComposer.tsx for the exact diff-rendering pattern to
+      reuse. Read s2/s3's real final route shapes (they may differ slightly from this story's
+      description if the implementer made different judgment calls — read their actual code, not
+      just their story YAMLs).
+    agent: researcher
+  - id: test-spec
+    description: >
+      Write failing component tests covering every acceptance criterion above, especially the
+      "no visible change for an operator who never touches the picker" criterion (a real regression
+      test against existing decisions-list behavior, not just a new-feature test).
+    agent: tester
+  - id: implement
+    description: >
+      Build the branch picker, branch-scoped decisions list wiring, and inline diff view, matching
+      existing conventions (fetch/error/loading patterns, EventProposeComposer's diff-rendering
+      style). Add a small branches-listing route if needed, following existing route conventions.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: >
+      Review specifically for: zero behavior change for an operator who never touches the picker
+      (this is the single most important thing to verify — read the diff against every existing
+      decisions-list code path); the diff view genuinely reuses EventProposeComposer's pattern
+      rather than introducing a parallel one. Run npm test and npm run build for real and confirm
+      both pass. Do a real manual check: start the dev server, select a real branch, confirm the
+      decisions list re-scopes, view a doc diff.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit the branch-picker UI to the feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: web/src/App.tsx
+      purpose: "Where decisions actually render today (per consus-phase23's own finding) — read its real current DecisionView wiring before deciding where the branch picker mounts."
+    - path: web/src/features/events/EventProposeComposer.tsx
+      purpose: "The one existing diff-rendering precedent in this codebase (plain <pre> block) — reuse this pattern exactly, don't invent a new one."
+    - path: web/src/features/projects/ProjectView.tsx
+      purpose: "Small (26 lines) — read in full, don't assume it owns more than it does."
+
+design_decisions:
+  - decision: "Zero behavior change for an operator who never touches the branch picker."
+    rationale: "This is purely additive scope on top of a real, working, tested product — the single most important invariant for this story, matching this session's whole-session discipline of never regressing existing behavior while adding new capability."
+  - decision: "Diff rendering reuses EventProposeComposer's plain <pre> pattern, not a new library."
+    rationale: "One existing precedent already exists in this codebase; introducing a second, different diff-rendering approach for a conceptually similar need (showing a unified diff to an operator) would be an unforced inconsistency."
+
+risks:
+  - severity: medium
+    description: "Exact mount point and diff-trigger UX (eager vs. on-demand) are deliberately left as implementer judgment calls, since the real current App.tsx/ProjectView.tsx structure wasn't fully mapped during planning."
+    mitigation: "The research step requires reading the real current code first; the reviewer step is the checkpoint that catches a bad judgment call before it ships, same pattern that worked for consus-phase23-s2's DecisionCard-vs-DecisionView finding."

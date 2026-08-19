@@ -1,0 +1,97 @@
+id: s2-branch-scoped-decisions
+epic: consus-phase24-branch-level-surfacing
+title: source_branch column + ref-aware ingest + GET /api/decisions?branch= filtering
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: [s1-git-ref-plumbing]
+
+description: |
+  Let a decision item record which branch it was scanned from, and let the decisions queue be
+  filtered to just one branch — "the branch-level decisions so the branch can move forward,"
+  operator's own words.
+
+  Add `source_branch TEXT` as a new, additive column on `items` (idempotent `addColumnIfMissing`
+  in server/db/migrate.ts, matching the existing guarded-ALTER-TABLE convention already used for
+  every other post-hoc column). **Do NOT reuse `items.source_ref`** — s1's/this epic's own research
+  (design-discussion.md §2) found it's already populated with the source doc's file path at two
+  real call sites (server/events/detect.ts:265, server/routes/events.ts:154), not a git ref;
+  repurposing it would silently corrupt existing decision-item upsert behavior.
+
+  Add a ref-aware ingest path: `POST /api/projects/:project/ingest?ref=<branch>` (query param,
+  sibling to the existing unparameterized route — implementer's call on whether this is a query
+  param on the same route handler or a distinct one, but the existing unparameterized route's
+  current behavior — scanning the working-tree disk state, no branch column set — must be
+  byte-for-byte unchanged when `?ref=` is absent). When `?ref=` is present, it uses s1's
+  `listFilesAtRef`/`readDocContentAtRef` instead of the disk-based scanner functions, and any
+  decision item created/updated from that scan gets `source_branch` set to the ref name. Reuse
+  the exact same decision-parsing/classification logic (`parseDecisionPayload`, `classifyItem`) —
+  this story changes *where content comes from*, not how it's interpreted once read.
+
+  Add `GET /api/decisions?branch=<name>` filtering: when present, only items with that exact
+  `source_branch` are returned (same open/decided semantics as the existing `?all=1` param — they
+  compose, e.g. `?branch=feat/x&all=1`). When `branch` is absent, behavior is byte-identical to
+  today (implicitly: items with `source_branch IS NULL`, i.e. the main/default scan — confirm this
+  is actually true given how the existing unfiltered query is written, don't just assume it).
+
+acceptance_criteria:
+  - "Given the migration runs against a fresh database and against an existing v0.11.0+ database with pre-existing items rows (source_branch NULL for all of them), then in both cases it's idempotent and every pre-existing item's source_branch is NULL (not corrupted, not defaulted to some non-null placeholder)."
+  - "Given a project scanned via POST /api/projects/:project/ingest (no ?ref=), when a decision item is created, then its source_branch is NULL, identical to today's pre-this-story behavior."
+  - "Given POST /api/projects/:project/ingest?ref=some-branch, when a decision-request doc exists in that branch's .pHive/planning or .pHive/epics tree (via a real temp git fixture repo, same style as s1's tests) but not on the working tree/main, then a decision item is created with source_branch = 'some-branch', is NOT created as a duplicate/conflicting item if the same logical decision also exists (scanned separately) on main, and does not corrupt or touch any existing main-scoped item."
+  - "Given items exist with source_branch = 'feat/x', source_branch = 'feat/y', and source_branch IS NULL, when GET /api/decisions?branch=feat/x is called, then only the feat/x items are returned — feat/y and NULL-branch items are excluded."
+  - "Given the same set of items, when GET /api/decisions is called with no branch param, then behavior is byte-identical to this codebase's current (pre-this-story) behavior — confirmed by reading the current query in server/routes/decisions.ts and verifying the new branch-filter logic is additive (an extra WHERE clause only when the param is present), not a rewrite that could subtly change today's semantics."
+  - "Given a ?ref= value that doesn't resolve locally (per s1's UnresolvableRefError), when POST /api/projects/:project/ingest?ref=<bad-ref> is called, then a 400 (not 500) is returned with a clear error message, and no partial scan state is written (no items created/updated, no doc_index rows touched)."
+
+steps:
+  - id: research
+    description: >
+      Read server/routes/decisions.ts (GET /api/decisions's current query, exactly as documented
+      in docs/api-reference.md), server/routes/projects.ts (the existing ingest route/scanRepo
+      call), server/adapters/doc-scanner/index.ts (scanRepo's real signature), and s1's git-ref.ts
+      module (or wherever s1 landed it) for the primitives to call. Confirm exactly how the current
+      unfiltered GET /api/decisions query already excludes/includes rows, to correctly reason about
+      "byte-identical when branch param absent."
+    agent: researcher
+  - id: test-spec
+    description: >
+      Write failing tests covering every acceptance criterion above, reusing the temp-git-fixture
+      pattern from s1's tests for the ref-aware ingest cases.
+    agent: tester
+  - id: implement
+    description: >
+      Add the source_branch column (addColumnIfMissing), the ref-aware ingest path, and the
+      branch query-filter on GET /api/decisions. Map s1's UnresolvableRefError to a 400 response.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: >
+      Review specifically for: the unfiltered GET /api/decisions path is genuinely unchanged (diff
+      it against the pre-story version line by line if needed); a failed/erroring ref-aware ingest
+      never leaves partial state; source_branch is never confused with source_ref anywhere in the
+      diff. Run npm test and npm run build for real and confirm both pass.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit the branch-scoped decisions work to the feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: server/routes/decisions.ts
+      purpose: "GET /api/decisions's real current query — the branch filter must be additive to this, not a rewrite."
+    - path: server/routes/projects.ts
+      purpose: "The existing ingest route this story adds a ?ref= path alongside."
+    - path: server/db/migrate.ts
+      purpose: "Where source_branch is added via the existing addColumnIfMissing guarded-ALTER-TABLE convention."
+
+design_decisions:
+  - decision: "A new source_branch column, not a reuse of items.source_ref."
+    rationale: "source_ref is already populated with the source doc's file path at two real call sites (server/events/detect.ts, server/routes/events.ts) — reusing it for branch scoping would silently corrupt existing behavior. Found via this epic's own research, not assumed."
+  - decision: "Ref-aware ingest is additive (a query param), never changing the no-param path's behavior."
+    rationale: "The existing unparameterized ingest/decisions-list behavior is real, depended-upon, tested behavior — this epic adds a new capability without risking a regression to what already works."
+
+risks:
+  - severity: low
+    description: "A decision-request doc that exists both on main and on a feature branch (e.g. an unmodified copy) could in principle produce two separate items (one source_branch NULL, one source_branch=<branch>) for what's conceptually 'the same' decision."
+    mitigation: "Acceptance criteria explicitly test this doesn't corrupt or merge with the main-scoped item — they're allowed to be two distinct items (a branch's snapshot vs. main's), which is actually correct: a branch's decision may differ from main's by the time it's reviewed. Not a bug to fix in this story."

@@ -1,0 +1,79 @@
+id: s3-doc-diff-endpoint
+epic: consus-phase24-branch-level-surfacing
+title: GET /api/docs/diff — a doc's content on a branch vs. the default branch
+status: pending
+complexity: low
+methodology: tdd
+depends_on: [s1-git-ref-plumbing]
+
+description: |
+  The operator's second explicit ask: "if there are doc changes... ideally we can see what the
+  change in the doc that goes along with it is from the MAIN/MASTER so that we can say — ahh, this
+  PR should fix the architecture for us to be multi-tenant."
+
+  Add `GET /api/docs/diff?repo=<name>&path=<file>&ref=<branch>&base=<default-branch>` (default
+  `base` to whatever this repo's actual default branch is — check `.pHive/consus-projects.json`/
+  the repo's own git config for the real default; do not hardcode `main` if a project's real
+  default is `dev` or something else — Consus's own repo uses `dev` as the integration branch and
+  `main` as the release branch, which is exactly the kind of case a hardcoded default would get
+  wrong). Calls s1's `diffDocAtRef`. Response shape: `{ "diff": string | null }` — `null` when the
+  doc is identical on both refs (matches the `event.diff` convention this epic's design-discussion
+  cites as precedent).
+
+  404 when `path` doesn't exist at `ref` (or at `base`) at all — distinct from the `diff: null`
+  case (identical-but-both-exist). 400 when `ref` doesn't resolve locally (same
+  UnresolvableRefError-to-400 mapping s2 uses — reuse the same error-handling approach, don't
+  reinvent it).
+
+acceptance_criteria:
+  - "Given a doc that differs between a branch and the default branch (real temp git fixture, same style as s1/s2's tests), when GET /api/docs/diff?repo=...&path=...&ref=<branch> is called (base omitted), then the response's diff field is a non-null unified diff and base defaulted to the project's actual configured default branch, not a hardcoded 'main'."
+  - "Given a doc that is byte-identical on both refs, when the same route is called, then diff is null (200 response, not an error) — distinguishable from the 404 case below."
+  - "Given a path that doesn't exist at the given ref at all, when the route is called, then 404 is returned with a clear error."
+  - "Given a ref that doesn't resolve locally, when the route is called, then 400 is returned (not 500), using the same error-mapping pattern s2 established for the same underlying UnresolvableRefError."
+  - "Given an explicit ?base=<other-ref> is passed, when the route is called, then the diff is computed against that explicit base instead of the project's default — confirming the default-branch resolution is genuinely overridable, not hardcoded either way."
+
+steps:
+  - id: research
+    description: >
+      Read s1's diffDocAtRef signature and error type, s2's UnresolvableRefError-to-400 mapping
+      pattern (reuse it, don't reinvent), and how this codebase resolves "the project's repo path"
+      today (server/routes/docs.ts or similar, for the existing repo-lookup convention to match) to
+      figure out how to determine a project's real default branch (e.g. `git symbolic-ref
+      refs/remotes/origin/HEAD` or reading local git config — pick whichever is reliable and
+      explain the choice in a code comment if it's non-obvious).
+    agent: researcher
+  - id: test-spec
+    description: >
+      Write failing tests for every acceptance criterion above, using a temp git fixture repo with
+      a non-'main' default branch name at least once (to genuinely test the no-hardcoded-main
+      requirement, not just the happy-path-that-happens-to-be-named-main case).
+    agent: tester
+  - id: implement
+    description: Build the GET /api/docs/diff route per the spec above.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: >
+      Review specifically for: base truly isn't hardcoded to 'main' anywhere in the implementation;
+      404 vs. null-diff vs. 400 are genuinely distinct and correctly triggered. Run npm test and
+      npm run build for real and confirm both pass.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit the doc-diff endpoint to the feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: server/routes/docs.ts
+      purpose: "Existing docs routes — match this file's conventions for repo-path resolution and route registration."
+
+design_decisions:
+  - decision: "The default 'base' ref is resolved per-project, never hardcoded to 'main'."
+    rationale: "Consus's own repo uses dev as its integration branch and main as the release branch — a hardcoded 'main' default would silently be wrong for the exact repo this feature is being built in."
+
+risks:
+  - severity: low
+    description: "Determining a repo's 'real default branch' programmatically can be ambiguous (no origin/HEAD symref set, detached checkout, etc.)."
+    mitigation: "The ?base= override always works regardless — a resolution failure degrades to 'operator must pass base explicitly' rather than silently guessing wrong, and the acceptance criteria test both the auto-resolved and explicit-override paths."
