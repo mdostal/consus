@@ -22,7 +22,7 @@ LIFT, rebuild clean where it says REDO._
 - **Prior implementation:** the `/delphi` route inside the **Pantheon host app**, legacy repo name
   **`Claud-ometer`** (Next.js App Router). It is NOT on this laptop's `~/Code/Claud-ometer` (that
   checkout is on `main`, no delphi). It lives **on the hive**:
-  `ssh dostal@100.75.161.82` → `~/Documents/work/dostal/code/Claud-ometer`.
+  `ssh <internal-dev-host>` → `~/Documents/work/dostal/code/Claud-ometer`.
 - **Most complete branches:** `feat/pantheon-gigs-tab` and `feat/delphi-render-cbas` (9 delphi
   files each). Earlier milestones: `feature/pantheon-v1` (the original "Human Decision Surface"
   rebuild, commit `91e724e`), `feat/delphi-diagram-review`, `fix/delphi-surfacing`.

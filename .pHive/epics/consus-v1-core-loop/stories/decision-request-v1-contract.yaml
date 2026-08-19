@@ -18,7 +18,7 @@ description: |
   primary contract for new decision items, not a fallback.
 
   IMPORTANT: the real `decision-request.ts` source exists only on the hive host
-  (`ssh dostal@100.75.161.82` → `Claud-ometer/src/lib/consus/decision-request.ts`)
+  (`ssh <internal-dev-host>` → `Claud-ometer/src/lib/consus/decision-request.ts`)
   and was NOT fetched during planning. Before implementing, fetch and read that
   file — prior-art.md explicitly calls for porting it "nearly verbatim," not
   reinventing it from the summary in this story or in prior-art.md.
@@ -32,7 +32,7 @@ steps:
   - id: research
     description: |
       Fetch the real decision-request.ts from the hive host
-      (ssh dostal@100.75.161.82 -> Claud-ometer/src/lib/consus/decision-request.ts)
+      (ssh <internal-dev-host> -> Claud-ometer/src/lib/consus/decision-request.ts)
       and read it in full before writing tests. If SSH access is unavailable in
       this environment, escalate to the operator rather than guessing at the
       schema beyond what docs/prior-art.md documents.

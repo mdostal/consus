@@ -139,7 +139,7 @@ prior_art_reconciliation: >
   rendering primitive instead of three divergent ones. See product-brief.md
   "Prior Art Reconciliation" and architecture.md's reconciliation note for the
   full rationale. Recommended pre-implementation follow-up: fetch the real
-  decision-request.ts from the hive host (ssh dostal@100.75.161.82) before
+  decision-request.ts from the hive host (ssh <internal-dev-host>) before
   decision-request-v1-contract's implement step — flagged in that story's Risks.
 
 second_reconciliation_2026_07_25: >
