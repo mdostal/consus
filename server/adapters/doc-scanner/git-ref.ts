@@ -142,3 +142,36 @@ export function diffDocAtRef(repoPath: string, ref: string, base: string, filePa
 
   return output.length > 0 ? output : null;
 }
+
+/**
+ * Attempts to determine a repo's real default branch (s3 of
+ * consus-phase24-branch-level-surfacing) by reading its local
+ * `refs/remotes/origin/HEAD` symbolic ref — the same ref `git clone` (or
+ * `git remote set-head origin -a`) sets up, so this is a purely local read
+ * of a ref file already on disk, not a network call (consistent with this
+ * module's "Consus never runs git fetch itself" constraint, see the header
+ * comment above). Returns the bare branch name (e.g. "dev", not
+ * "origin/dev"), or `null` if the symref isn't set locally (a repo with no
+ * configured remote, a bare/detached checkout, etc.).
+ *
+ * Deliberately does NOT fall back to a hardcoded guess like "main" when the
+ * symref is missing — this repo's own default integration branch is "dev",
+ * exactly the case a hardcoded "main" fallback would silently get wrong.
+ * Callers (s3's GET /api/docs/diff) are expected to degrade a `null` result
+ * to "the operator must pass ?base= explicitly" rather than guess.
+ */
+export function resolveDefaultBranch(repoPath: string): string | null {
+  try {
+    const output = execFileSync("git", ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], {
+      cwd: repoPath,
+      encoding: "utf-8",
+    }).trim();
+
+    // Output is like "origin/dev" — strip the remote-name prefix to get the
+    // bare branch name callers actually want to pass as a ref.
+    const slashIdx = output.indexOf("/");
+    return slashIdx === -1 ? output : output.slice(slashIdx + 1);
+  } catch {
+    return null;
+  }
+}

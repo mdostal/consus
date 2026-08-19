@@ -3,7 +3,14 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { listFilesAtRef, readDocContentAtRef, diffDocAtRef, UnresolvableRefError, GitDocNotFoundError } from "./git-ref.js";
+import {
+  listFilesAtRef,
+  readDocContentAtRef,
+  diffDocAtRef,
+  resolveDefaultBranch,
+  UnresolvableRefError,
+  GitDocNotFoundError,
+} from "./git-ref.js";
 
 /** Thin wrapper so fixture setup reads like a sequence of git commands,
  *  mirroring the pattern already established in ./index.test.ts's sibling
@@ -166,6 +173,25 @@ describe("git-ref plumbing", () => {
         UnresolvableRefError,
       );
       expect(existsSync(markerFile)).toBe(false);
+    });
+  });
+
+  describe("resolveDefaultBranch", () => {
+    it("returns null (never a hardcoded guess) when refs/remotes/origin/HEAD isn't set locally", () => {
+      // The beforeEach fixture repo has no origin remote configured at all.
+      expect(resolveDefaultBranch(repoDir)).toBeNull();
+    });
+
+    it("reads the bare branch name off a locally-configured refs/remotes/origin/HEAD symref, even when it is not named 'main'", () => {
+      // Simulate what `git clone` sets up automatically, without needing a
+      // real network remote: point refs/remotes/origin/dev at the same
+      // commit as local "main", then make refs/remotes/origin/HEAD a
+      // symbolic ref to it — exactly the local, no-network read
+      // resolveDefaultBranch performs.
+      git(repoDir, ["update-ref", "refs/remotes/origin/dev", "refs/heads/main"]);
+      git(repoDir, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/dev"]);
+
+      expect(resolveDefaultBranch(repoDir)).toBe("dev");
     });
   });
 });

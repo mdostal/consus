@@ -368,3 +368,166 @@ describe("GET /api/docs/search", () => {
     expect(contentBody.results).toEqual([]);
   });
 });
+
+describe("GET /api/docs/diff", () => {
+  let repoDir: string;
+  let db: Database.Database;
+  let app: FastifyInstance;
+  const sharedPath = join(".pHive", "planning", "shared.md");
+  const unchangedPath = join(".pHive", "planning", "unchanged.md");
+
+  beforeEach(async () => {
+    // Deliberately no branch named "main" exists anywhere in this fixture —
+    // this repo's *real* default branch is "dev" (mirroring Consus's own
+    // repo, whose integration branch is "dev" not "main"), simulated by
+    // faking a local refs/remotes/origin/HEAD symref the same way `git
+    // clone` would set one up, without needing an actual network remote.
+    // If the route implementation ever hardcodes "main" as the default
+    // base, every "base omitted" test below would 400 (unresolvable ref)
+    // instead of 200, since "main" never exists in this fixture.
+    repoDir = mkdtempSync(join(tmpdir(), "consus-diffrepo-"));
+    execFileSync("git", ["init", "-q", "-b", "dev"], { cwd: repoDir });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: repoDir });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: repoDir });
+
+    mkdirSync(join(repoDir, ".pHive", "planning"), { recursive: true });
+    writeFileSync(join(repoDir, sharedPath), "# shared v1 (dev)\n");
+    writeFileSync(join(repoDir, unchangedPath), "# unchanged\n");
+    execFileSync("git", ["add", "."], { cwd: repoDir });
+    execFileSync("git", ["commit", "-q", "-m", "dev init"], { cwd: repoDir });
+
+    execFileSync("git", ["update-ref", "refs/remotes/origin/dev", "refs/heads/dev"], { cwd: repoDir });
+    execFileSync("git", ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/dev"], { cwd: repoDir });
+
+    // other-base branches from dev, and feature/x branches from other-base
+    // (a linear dev -> other-base -> feature/x chain) so the two candidate
+    // bases (dev vs. other-base) have genuinely different merge-bases with
+    // feature/x, and therefore genuinely different `-` sides in a
+    // triple-dot diff (`base...ref` diffs against the merge-base commit,
+    // not literally "base's current tip" — a sibling-branch fixture would
+    // make both bases resolve to the same merge-base and defeat this test).
+    execFileSync("git", ["checkout", "-q", "-b", "other-base"], { cwd: repoDir });
+    writeFileSync(join(repoDir, sharedPath), "# shared v3 (other-base)\n");
+    execFileSync("git", ["add", "."], { cwd: repoDir });
+    execFileSync("git", ["commit", "-q", "-m", "other-base change"], { cwd: repoDir });
+
+    execFileSync("git", ["checkout", "-q", "-b", "feature/x"], { cwd: repoDir });
+    writeFileSync(join(repoDir, sharedPath), "# shared v2 (feature/x)\n");
+    execFileSync("git", ["add", "."], { cwd: repoDir });
+    execFileSync("git", ["commit", "-q", "-m", "feature change"], { cwd: repoDir });
+
+    execFileSync("git", ["checkout", "-q", "dev"], { cwd: repoDir });
+
+    db = new Database(":memory:");
+    runMigration(db);
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
+
+    app = Fastify();
+    registerDocRoutes(app, { db, repos: { consus: repoDir } });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+    rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it("defaults base to the project's real default branch (not a hardcoded 'main') and returns a non-null diff", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/docs/diff?repo=consus&path=${encodeURIComponent(sharedPath)}&ref=feature/x`,
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.diff).not.toBeNull();
+    expect(body.diff).toContain("shared v1 (dev)");
+    expect(body.diff).toContain("shared v2 (feature/x)");
+  });
+
+  it("returns diff: null (200, not an error) when the doc is byte-identical on both refs", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/docs/diff?repo=consus&path=${encodeURIComponent(unchangedPath)}&ref=feature/x`,
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.diff).toBeNull();
+  });
+
+  it("returns 404 with a clear error when path doesn't exist at the given ref at all", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/docs/diff?repo=consus&path=${encodeURIComponent(join(".pHive", "planning", "nope.md"))}&ref=feature/x`,
+    });
+    expect(res.statusCode).toBe(404);
+    const body = res.json();
+    expect(body.error).toBeTruthy();
+  });
+
+  it("returns 400 (not 500) when ref doesn't resolve locally", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/docs/diff?repo=consus&path=${encodeURIComponent(sharedPath)}&ref=no-such-branch`,
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error).toBeTruthy();
+  });
+
+  it("computes the diff against an explicit ?base= instead of the project's default when one is given", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/docs/diff?repo=consus&path=${encodeURIComponent(sharedPath)}&ref=feature/x&base=other-base`,
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.diff).not.toBeNull();
+    expect(body.diff).toContain("shared v3 (other-base)");
+    expect(body.diff).not.toContain("shared v1 (dev)");
+  });
+
+  it("returns 404 for an unknown repo", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/docs/diff?repo=nope&path=${encodeURIComponent(sharedPath)}&ref=feature/x`,
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("returns 400 telling the operator to pass base explicitly when the default branch can't be auto-resolved", async () => {
+    // A fresh repo with no origin/HEAD symref configured at all (no `git
+    // clone`, no manual symref setup) — resolveDefaultBranch degrades to
+    // null rather than guessing "main", and the route must degrade to a
+    // clear 400 rather than silently guessing too.
+    const noOriginRepo = mkdtempSync(join(tmpdir(), "consus-diffrepo-noorigin-"));
+    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: noOriginRepo });
+    execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: noOriginRepo });
+    execFileSync("git", ["config", "user.name", "Test"], { cwd: noOriginRepo });
+    mkdirSync(join(noOriginRepo, ".pHive", "planning"), { recursive: true });
+    writeFileSync(join(noOriginRepo, sharedPath), "# shared\n");
+    execFileSync("git", ["add", "."], { cwd: noOriginRepo });
+    execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: noOriginRepo });
+
+    const noOriginDb = new Database(":memory:");
+    runMigration(noOriginDb);
+    scanRepo(noOriginDb, { repoName: "no-origin", repoPath: noOriginRepo });
+    const noOriginApp = Fastify();
+    registerDocRoutes(noOriginApp, { db: noOriginDb, repos: { "no-origin": noOriginRepo } });
+    await noOriginApp.ready();
+
+    try {
+      const res = await noOriginApp.inject({
+        method: "GET",
+        url: `/api/docs/diff?repo=no-origin&path=${encodeURIComponent(sharedPath)}&ref=main`,
+      });
+      expect(res.statusCode).toBe(400);
+      const body = res.json();
+      expect(body.error).toBeTruthy();
+    } finally {
+      await noOriginApp.close();
+      noOriginDb.close();
+      rmSync(noOriginRepo, { recursive: true, force: true });
+    }
+  });
+});
