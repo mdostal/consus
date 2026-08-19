@@ -121,6 +121,88 @@ describe("runMigration", () => {
     db.close();
   });
 
+  it("creates the attachments table with actor required (never a hardcoded uploaded_by placeholder column)", () => {
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
+    const db = new Database(dbPath);
+
+    runMigration(db);
+
+    const names = tableNames(db);
+    expect(names).toContain("attachments");
+
+    const columns = db
+      .prepare("PRAGMA table_info(attachments)")
+      .all()
+      .map((c) => (c as { name: string }).name);
+
+    expect(columns.sort()).toEqual(
+      ["id", "item_id", "file_name", "mime_type", "size", "actor", "created_at", "deleted_at"].sort(),
+    );
+
+    const notNull = db
+      .prepare("PRAGMA table_info(attachments)")
+      .all()
+      .find((c) => (c as { name: string }).name === "actor") as { notnull: number };
+    expect(notNull.notnull).toBe(1);
+
+    db.close();
+  });
+
+  it("is idempotent for the attachments table — running twice does not error, duplicate, or alter existing rows", () => {
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
+    const db = new Database(dbPath);
+
+    runMigration(db);
+    db.prepare(
+      "INSERT INTO items (id, type, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run("item-1", "doc_ref", "Test item", "open", "2026-07-25T00:00:00Z", "2026-07-25T00:00:00Z");
+    db.prepare(
+      `INSERT INTO attachments (id, item_id, file_name, mime_type, size, actor, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run("att-1", "item-1", "a.txt", "text/plain", 3, "mathew", "2026-07-25T00:00:00Z");
+
+    expect(() => runMigration(db)).not.toThrow();
+
+    const count = db.prepare("SELECT COUNT(*) AS n FROM attachments").get() as { n: number };
+    expect(count.n).toBe(1);
+
+    const row = db.prepare("SELECT * FROM attachments WHERE id = ?").get("att-1");
+    expect(row).toBeDefined();
+
+    db.close();
+  });
+
+  it("attachments table migration is idempotent against a database that already has pre-existing items rows (simulated pre-v0.11.0+ upgrade), and existing rows in other tables are untouched", () => {
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
+    const db = new Database(dbPath);
+
+    // Simulate an existing v0.11.0 database that already has real data in it
+    // before this story's migration (which adds the attachments table) runs.
+    runMigration(db);
+    db.prepare(
+      "INSERT INTO items (id, type, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run("item-pre-existing", "doc_ref", "Pre-existing item", "open", "2026-07-01T00:00:00Z", "2026-07-01T00:00:00Z");
+    db.prepare(
+      "INSERT INTO comments (item_id, author, body, created_at) VALUES (?, ?, ?, ?)",
+    ).run("item-pre-existing", "mathew", "a comment", "2026-07-01T00:00:00Z");
+
+    expect(() => runMigration(db)).not.toThrow();
+    expect(() => runMigration(db)).not.toThrow();
+
+    const item = db.prepare("SELECT id, title FROM items WHERE id = ?").get("item-pre-existing") as {
+      id: string;
+      title: string;
+    };
+    expect(item.title).toBe("Pre-existing item");
+
+    const commentCount = db.prepare("SELECT COUNT(*) AS n FROM comments").get() as { n: number };
+    expect(commentCount.n).toBe(1);
+
+    expect(tableNames(db)).toContain("attachments");
+
+    db.close();
+  });
+
   it("is idempotent for the events table — running twice does not error, duplicate, or alter existing event rows", () => {
     dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
     const db = new Database(dbPath);
