@@ -6,6 +6,7 @@
 
 - **OSS release readiness:** LICENSE (MIT) + full `package.json` metadata (license/author/repository/homepage/bugs); CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md.
 - **`consus-phase23-decision-attachments`:** file attachments on decision items — attach a screenshot, PDF, or exported doc directly to a decision. `POST/GET /api/items/:id/attachments`, `GET/DELETE /api/attachments/:id`, local-disk storage under `.pHive/attachments/` (override via `CONSUS_ATTACHMENTS_DIR`). Drag-drop/file-picker upload, list with previews, delete gated behind a real confirmation step — all wired into the decision detail view. Ported and adapted from a complete, standalone-compatible capability found on a stale pre-strip branch (`feat/PAN-7819`) that was never merged before the Multica/Minerva coupling strip — re-derived against this build's current schema/conventions, not cherry-picked.
+- **`consus-phase24-branch-level-surfacing`:** branch-level decision surfacing and doc-diff-vs-main, git-local only (no GitHub API, no auto-fetch — zero new external coupling). A branch picker in the Projects tab scopes the decisions list to a feature branch's own open decisions (`GET /api/decisions?branch=`, `POST /api/projects/:project/ingest?ref=`); an inline "view diff" action shows what a doc actually changed relative to the project's real default branch (`GET /api/docs/diff`, default branch resolved from `origin/HEAD`, never hardcoded to `main`). New `server/adapters/doc-scanner/git-ref.ts` shells out to `git` via `execFileSync` with argument arrays only.
 
 ### Fixed
 
