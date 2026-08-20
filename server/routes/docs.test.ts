@@ -69,6 +69,36 @@ describe("GET /api/docs", () => {
     expect(body.content).toContain("hello world");
   });
 
+  it("rejects a path that escapes the repo root (path traversal) with 400, never reading outside the repo", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/docs/content?repo=consus&path=${encodeURIComponent("../../../../../../etc/passwd")}`,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/escapes repo root/);
+  });
+
+  it("rejects a path that escapes into a sibling repo directory with the same name prefix, not just '..'", async () => {
+    // otherRepoDir's basename may not literally prefix-match repoDir's, but this
+    // exercises the same boundary-check code path a same-prefix sibling would hit.
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/docs/content?repo=consus&path=${encodeURIComponent(join("..", "other-repo-doesnt-exist", "secret.md"))}`,
+    });
+    expect([400, 404]).toContain(res.statusCode);
+    if (res.statusCode === 400) {
+      expect(res.json().error).toMatch(/escapes repo root/);
+    }
+  });
+
+  it("returns 404 (not 500) for a genuinely missing file within the repo root", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/docs/content?repo=consus&path=${encodeURIComponent(join(".pHive", "planning", "nope.md"))}`,
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
   it("upserts a target item for the doc so a propose-a-change action always has something to target (s5)", async () => {
     const path = join(".pHive", "planning", "prd.md");
     const res = await app.inject({

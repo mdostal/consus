@@ -20,12 +20,42 @@ interface AttachmentRow {
   deleted_at: string | null;
 }
 
-// Extension-based allowlist only, not real content-sniffing (no MIME
-// confusion protection — a malicious file renamed with an allowed extension
-// isn't caught). Matches the old branch's own acknowledged v1 scope
+// Extension-based allowlist only, not real content-sniffing on the file's
+// *bytes* (a malicious file renamed with an allowed extension isn't
+// caught). Matches the old branch's own acknowledged v1 scope
 // (design-discussion.md §5) — a known, accepted limitation, not a claim of
 // full validation.
-const ALLOWED_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".pdf", ".txt", ".md", ".csv", ".json", ".zip"];
+//
+// SECURITY (grill finding, post-consus-phase23): the served Content-Type
+// must NEVER be the client-supplied multipart mimetype — a client can set
+// that field to anything (e.g. "text/html") regardless of the actual file
+// extension/bytes, and GET /api/attachments/:id previously replayed it
+// verbatim with Content-Disposition: inline, letting a same-origin-hosted
+// upload execute as a stored-XSS payload when the raw URL is visited
+// directly. The Content-Type stored and served is now always derived
+// server-side from the (already-allowlisted) extension, never trusted from
+// the request. ALLOWED_EXTENSIONS is derived from this map's keys so the
+// two can never drift apart.
+const EXTENSION_MIME_TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".pdf": "application/pdf",
+  ".txt": "text/plain",
+  ".md": "text/plain",
+  ".csv": "text/plain",
+  ".json": "application/json",
+  ".zip": "application/zip",
+};
+const ALLOWED_EXTENSIONS = Object.keys(EXTENSION_MIME_TYPES);
+
+// Only types with no plausible browser-side active-content interpretation
+// are ever served inline; everything else is forced to download
+// (Content-Disposition: attachment), even though its Content-Type is
+// already a safe, server-derived value — defense in depth.
+const INLINE_SAFE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "application/pdf"]);
+
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 function getFieldValue(fields: MultipartFile["fields"], name: string): string | undefined {
@@ -89,7 +119,10 @@ export function registerAttachmentRoutes(app: FastifyInstance, { db, storageAdap
       return reply.code(400).send({ error: "actor is required" });
     }
 
-    const mimeType = data.mimetype;
+    // Server-derived from the (already-allowlisted) extension — never the
+    // client-supplied data.mimetype. See the EXTENSION_MIME_TYPES comment
+    // above for why.
+    const mimeType = EXTENSION_MIME_TYPES[ext];
     const file = new File([buffer], data.filename, { type: mimeType });
 
     const storageId = await storageAdapter.upload(file, {
@@ -140,8 +173,10 @@ export function registerAttachmentRoutes(app: FastifyInstance, { db, storageAdap
     try {
       const blob = await storageAdapter.download(attachmentId);
 
+      const disposition = INLINE_SAFE_TYPES.has(attachment.mime_type) ? "inline" : "attachment";
       reply.header("Content-Type", attachment.mime_type);
-      reply.header("Content-Disposition", `inline; filename="${encodeURIComponent(attachment.file_name)}"`);
+      reply.header("X-Content-Type-Options", "nosniff");
+      reply.header("Content-Disposition", `${disposition}; filename="${encodeURIComponent(attachment.file_name)}"`);
 
       return reply.send(blob.stream());
     } catch (err) {
@@ -159,6 +194,16 @@ export function registerAttachmentRoutes(app: FastifyInstance, { db, storageAdap
     if (!attachment) {
       return reply.code(404).send({ error: "Attachment not found" });
     }
+
+    // Grill finding (post-consus-phase23): the underlying file was never
+    // actually removed from storage — only deleted_at was set, leaving
+    // every "deleted" attachment's bytes on disk indefinitely even though
+    // FilesystemStorage.delete() was already fully implemented and tested
+    // in isolation. Now genuinely freed: the DB row stays as a tombstone
+    // (deleted_at set, excluded from list/download) but the file itself is
+    // removed. FilesystemStorage.delete() is itself idempotent (a no-op on
+    // an already-missing file), matching this route's own idempotent intent.
+    await storageAdapter.delete(attachmentId);
 
     const now = new Date().toISOString();
     db.prepare("UPDATE attachments SET deleted_at = ? WHERE id = ?").run(now, attachmentId);
