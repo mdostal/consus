@@ -105,6 +105,29 @@ describe("Attachment routes", () => {
       expect(readdirSync(tmpDir).length).toBe(1);
     });
 
+    it("never trusts the client-supplied multipart mimetype — stores/serves the extension-derived type instead (grill finding: stored-XSS via a spoofed Content-Type)", async () => {
+      // A .png filename (passes the extension allowlist) but a spoofed
+      // type claiming text/html — pre-fix, this would have been stored
+      // verbatim and replayed as the served Content-Type with
+      // Content-Disposition: inline, letting the response execute as HTML
+      // if the raw attachment URL were opened directly.
+      const { headers, payload } = await buildMultipart(
+        { actor: "mathew" },
+        { field: "file", filename: "cute-cat.png", content: "<script>document.title='pwned'</script>", type: "text/html" },
+      );
+
+      const res = await app.inject({ method: "POST", url: "/api/items/item-1/attachments", headers, payload });
+
+      expect(res.statusCode).toBe(201);
+      expect(res.json().mime_type).toBe("image/png");
+
+      const row = db.prepare("SELECT mime_type FROM attachments WHERE id = ?").get(res.json().id) as {
+        mime_type: string;
+      };
+      expect(row.mime_type).toBe("image/png");
+      expect(row.mime_type).not.toBe("text/html");
+    });
+
     it("returns 404 and writes no file / no row when the item does not exist", async () => {
       const { headers, payload } = await buildMultipart(
         { actor: "mathew" },
@@ -229,6 +252,33 @@ describe("Attachment routes", () => {
       expect(res.body).toBe("hello attachment");
     });
 
+    it("sets X-Content-Type-Options: nosniff and forces Content-Disposition: attachment for a non-inline-safe type, even though the served Content-Type is already a safe, server-derived value (defense in depth)", async () => {
+      const { headers, payload } = await buildMultipart(
+        { actor: "mathew" },
+        { field: "file", filename: "notes.txt", content: "hello", type: "text/plain" },
+      );
+      const uploadRes = await app.inject({ method: "POST", url: "/api/items/item-1/attachments", headers, payload });
+      const { id } = uploadRes.json();
+
+      const res = await app.inject({ method: "GET", url: `/api/attachments/${id}` });
+
+      expect(res.headers["x-content-type-options"]).toBe("nosniff");
+      expect(res.headers["content-disposition"]).toMatch(/^attachment;/);
+    });
+
+    it("serves an inline-safe type (image) with Content-Disposition: inline", async () => {
+      const { headers, payload } = await buildMultipart(
+        { actor: "mathew" },
+        { field: "file", filename: "shot.png", content: "fake png bytes", type: "image/png" },
+      );
+      const uploadRes = await app.inject({ method: "POST", url: "/api/items/item-1/attachments", headers, payload });
+      const { id } = uploadRes.json();
+
+      const res = await app.inject({ method: "GET", url: `/api/attachments/${id}` });
+
+      expect(res.headers["content-disposition"]).toMatch(/^inline;/);
+    });
+
     it("returns 404 for an attachment id that never existed", async () => {
       const res = await app.inject({ method: "GET", url: "/api/attachments/does-not-exist" });
       expect(res.statusCode).toBe(404);
@@ -271,6 +321,22 @@ describe("Attachment routes", () => {
 
       const listRes = await app.inject({ method: "GET", url: "/api/items/item-1/attachments" });
       expect(listRes.json().map((a: { id: string }) => a.id)).not.toContain(id);
+    });
+
+    it("actually removes the file from storage, not just the DB row (grill finding: FilesystemStorage.delete() was implemented and tested but never called)", async () => {
+      const { headers, payload } = await buildMultipart(
+        { actor: "mathew" },
+        { field: "file", filename: "real-delete.txt", content: "delete my bytes too", type: "text/plain" },
+      );
+      const uploadRes = await app.inject({ method: "POST", url: "/api/items/item-1/attachments", headers, payload });
+      const { id } = uploadRes.json();
+
+      expect(readdirSync(tmpDir)).toContain(id);
+
+      const deleteRes = await app.inject({ method: "DELETE", url: `/api/attachments/${id}` });
+      expect(deleteRes.statusCode).toBe(204);
+
+      expect(readdirSync(tmpDir)).not.toContain(id);
     });
 
     it("returns 404 when deleting an attachment id that never existed", async () => {

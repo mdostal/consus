@@ -1,6 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
-import { queryDocIndex, readDocContent, type DocIndexRow } from "../adapters/doc-scanner/index.js";
+import {
+  queryDocIndex,
+  readDocContent,
+  DocPathEscapesRepoError,
+  type DocIndexRow,
+} from "../adapters/doc-scanner/index.js";
 import { extractDocCandidates, readGitDoc, resolveInRepos } from "../adapters/gitdocs/index.js";
 import {
   diffDocAtRef,
@@ -77,7 +82,18 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutes
           return reply.code(400).send({ error: `failed to read ${path} at ref ${ref}: ${message}` });
         }
       } else {
-        ({ content, format } = readDocContent(repoPath, path));
+        try {
+          ({ content, format } = readDocContent(repoPath, path));
+        } catch (err) {
+          if (err instanceof DocPathEscapesRepoError) {
+            return reply.code(400).send({ error: err.message });
+          }
+          const code = (err as { code?: string }).code;
+          if (code === "ENOENT") {
+            return reply.code(404).send({ error: `no such file: ${path}` });
+          }
+          throw err;
+        }
       }
 
       // Ensure a target item exists before the caller can propose a change to
