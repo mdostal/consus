@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-19
+
 ### Added
 
 - **OSS release readiness:** LICENSE (MIT) + full `package.json` metadata (license/author/repository/homepage/bugs); CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md.
@@ -11,6 +13,7 @@
 ### Fixed
 
 - Scrubbed a personal Tailscale IP + SSH username committed across 7 planning/docs files; deleted an orphaned, un-stripped duplicate `docs/VISION.md` still describing live pre-strip coupling; fixed stale v0.9.0 version markers and a factually wrong `docs/api-reference.md` claim that `decision_type`/`triage_bucket` weren't wired into any route.
+- **Security (found via a post-ship adversarial review of the two features above):** a pre-existing path-traversal gap in `GET /api/docs/content` (no boundary check on the requested path — could read arbitrary files outside the repo) is now closed; the client-supplied attachment `Content-Type` was stored and replayed verbatim, letting a spoofed multipart type on an otherwise-allowlisted file execute as stored XSS when its raw download URL was opened directly — the served type is now always derived server-side from the file's extension, non-image types are forced to download rather than render inline, and `X-Content-Type-Options: nosniff` is set on every attachment response; deleting an attachment now actually frees its file from disk (the storage layer's own delete function existed and was tested, but was never called from the route).
 
 ## [0.11.0] - 2026-08-18
 
