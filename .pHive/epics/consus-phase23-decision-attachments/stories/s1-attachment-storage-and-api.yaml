@@ -1,0 +1,124 @@
+id: s1-attachment-storage-and-api
+epic: consus-phase23-decision-attachments
+title: Storage adapter, attachments table, and REST API (server-side)
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: []
+
+description: |
+  Port the file-attachment storage layer and REST API found on the (now-deleted) stale branch
+  origin/feat/PAN-7819 into current standalone Consus (dev branch, v0.11.0+). This is a real port
+  with real adaptation, not a copy-paste — see this epic's design-discussion.md §3 for the full
+  list of required changes, all derived from actually reading the old branch's code
+  (`git show origin/feat/PAN-7819:<path>` — the branch may already be deleted by the time this
+  story executes; if so, use `git show <PAN-7819-commit-sha>:<path>` against the epic's own
+  design-discussion.md, which quotes the real file contents verbatim in relevant sections, or ask
+  the operator for the branch's last commit sha before it was deleted).
+
+  Add: a `StorageAdapter` interface + `FilesystemStorage` implementation (server/storage/), an
+  `attachments` table (idempotent CREATE TABLE IF NOT EXISTS in server/db/migrate.ts, matching the
+  existing house style exactly — see the `proposals`/`events` tables and the `kb_entries.collection`
+  port-precedent comment for the convention to follow), and REST routes: `POST
+  /api/items/:id/attachments` (multipart upload via a newly-added @fastify/multipart dependency,
+  file-type allowlist, 10MB limit, `actor` required as a form field — NOT a hardcoded placeholder),
+  `GET /api/items/:id/attachments` (list — a new route not present on the old branch, see design
+  discussion §6 open question 1), `GET /api/attachments/:id` (download), `DELETE
+  /api/attachments/:id` (soft-delete via `deleted_at`).
+
+  Do NOT port server/storage/s3.ts — out of scope per design-discussion §2. The
+  `createStorageAdapter()` factory shape may be kept (for future extensibility) but only needs to
+  construct FilesystemStorage today.
+
+  Storage location: default `.pHive/attachments/`, overridable via `CONSUS_ATTACHMENTS_DIR`
+  (mirroring `CONSUS_DB_PATH`'s existing default-plus-override pattern in server/index.ts).
+
+acceptance_criteria:
+  - "Given a valid item id and a file under 10MB with an allowed extension, when POST /api/items/:id/attachments is called with a required `actor` form field, then the file is stored on local disk under .pHive/attachments/ (or CONSUS_ATTACHMENTS_DIR if set), a row is inserted into the attachments table with the real `actor` value (never a hardcoded placeholder), and 201 is returned with the attachment's id/item_id/file_name/mime_type/size/created_at."
+  - "Given an item id that doesn't exist in the items table, when POST /api/items/:id/attachments is called, then 404 is returned and no file is written to disk and no row is inserted."
+  - "Given a file with a disallowed extension, when POST /api/items/:id/attachments is called, then 400 is returned and no file is written to disk and no row is inserted."
+  - "Given a file over 10MB, when POST /api/items/:id/attachments is called, then 413 is returned."
+  - "Given an item with N non-deleted attachments, when GET /api/items/:id/attachments is called, then all N are returned (never including soft-deleted rows), in a stable order (e.g. created_at ASC)."
+  - "Given a valid, non-deleted attachment id, when GET /api/attachments/:id is called, then the file's bytes are streamed back with the correct Content-Type and a Content-Disposition header naming the original filename."
+  - "Given an attachment id that was soft-deleted (or never existed), when GET /api/attachments/:id is called, then 404 is returned."
+  - "Given a valid attachment id, when DELETE /api/attachments/:id is called, then deleted_at is set (soft delete — the underlying file is not required to be removed from disk in this story, matching the old branch's own documented scope) and 204 is returned; a subsequent GET on that id returns 404 and it no longer appears in the item's attachment list."
+  - "Given the attachments table migration runs against a fresh database and against an existing v0.11.0 database with pre-existing items/rows, then in both cases the migration is idempotent (safe to run twice, never errors, never duplicates the table) and existing rows in other tables are untouched."
+  - "Given the server starts without CONSUS_ATTACHMENTS_DIR set, when an attachment is uploaded, then it's written under .pHive/attachments/ relative to the configured working directory, consistent with CONSUS_DB_PATH's existing default convention."
+
+steps:
+  - id: research
+    description: >
+      Read origin/feat/PAN-7819's actual attachment-related files in full (server/storage/adapter.ts,
+      filesystem.ts, index.ts; server/routes/attachments.ts; server/routes/attachments.test.ts) via
+      `git show origin/feat/PAN-7819:<path>` if the branch still exists, or from this epic's
+      design-discussion.md §2-3 (which quotes the real content) if it's been deleted. Read
+      server/db/migrate.ts in full for the exact idempotent-migration house style, server/index.ts
+      for route-registration and CONSUS_*-env-var conventions, and server/routes/decisions.ts
+      (registerDecisionRoutes) for this codebase's current route-file shape/conventions to match
+      (typed FastifyInstance route options, error-response shapes, etc). Confirm the Node version
+      this repo targets (check package.json/tsconfig/CI workflow node-version) to verify File/Blob
+      as Node globals actually work under this build (see design-discussion.md §5 risk).
+    agent: researcher
+  - id: test-spec
+    description: >
+      Write failing vitest tests for server/routes/attachments.ts covering every acceptance
+      criterion above (upload success/404/400/413, list, download success/404, delete + subsequent
+      404, migration idempotency). Follow this codebase's existing route-test conventions (see
+      server/routes/decisions.test.ts or similar for the in-memory/temp-db test harness pattern
+      already used). Do not read/write the implementation yet.
+    agent: tester
+  - id: implement
+    description: >
+      Add @fastify/multipart as a real dependency. Implement server/storage/adapter.ts (interface),
+      server/storage/filesystem.ts (FilesystemStorage), server/storage/index.ts
+      (createStorageAdapter, filesystem-only for now), the attachments table in
+      server/db/migrate.ts, and server/routes/attachments.ts (registerAttachmentRoutes), wired into
+      server/index.ts's existing registerXRoutes() call list. Fix every issue named in
+      design-discussion.md §3 relative to the old branch (route path under /api/items/, actor as a
+      required field not a placeholder, .pHive/attachments/ + CONSUS_ATTACHMENTS_DIR default,
+      GET /api/items/:id/attachments list route, no S3 code).
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: >
+      Review for: the migration is genuinely idempotent and matches the house style (not a
+      divergent one-off pattern); actor is genuinely never hardcoded; the route path and list-route
+      addition match design-discussion.md's resolved decisions; file-type/size validation happens
+      before any disk write (no partial writes on a rejected upload); soft-delete behavior matches
+      the acceptance criteria exactly (404 after delete, excluded from list). Run npm test and
+      npm run build for real and confirm both pass.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit the storage adapter and attachment API to the feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: server/db/migrate.ts
+      purpose: "The idempotent migration file this story adds the attachments table to — follow its exact existing house style, including the port-precedent comment convention (see kb_entries.collection)."
+    - path: server/index.ts
+      purpose: "Where registerAttachmentRoutes gets wired in alongside every other registerXRoutes call; also the CONSUS_DB_PATH default-plus-env-override pattern this story's CONSUS_ATTACHMENTS_DIR should mirror exactly."
+    - path: server/routes/decisions.ts
+      purpose: "Reference for this codebase's current route-file conventions (typed Fastify route options, error-response shapes) — match this style, not the old branch's."
+    - path: package.json
+      purpose: "@fastify/multipart needs to be added here as a real dependency."
+
+design_decisions:
+  - decision: "Route path is /api/items/:id/attachments, not /api/tickets/:id/attachments."
+    rationale: "Every other Consus route addressing an item already uses /api/items/:id/... — the old branch's /tickets/ naming was a Multica-era artifact that doesn't match this codebase's actual conventions."
+  - decision: "actor is a required form field on upload, never a hardcoded placeholder string."
+    rationale: "Consus has no auth layer by design (standalone, local-first) — every other write path (e.g. POST /api/items/:id/decide) already solves 'who did this' by accepting an actor field from the caller, not by hardcoding one."
+  - decision: "S3Storage is not ported in this story."
+    rationale: "Consus is standalone/local-first; a cloud storage backend has no current use case. The factory shape is kept extensible for later, but only FilesystemStorage is built now — avoids building and testing code with no current caller."
+  - decision: "GET /api/items/:id/attachments is added as a new listing route, not folded into GET /api/decisions's response shape."
+    rationale: "Matches the existing sibling-collection-route pattern already established by comments (GET /api/items/:id/comments) — keeps the decisions response shape stable and each concern in its own route."
+
+risks:
+  - severity: medium
+    description: "File/Blob as Node globals — the old branch's code assumes these work as Node globals without confirming the actual Node version this build targets."
+    mitigation: "The research step explicitly requires confirming the real Node version/target before assuming this compiles and runs cleanly; if it doesn't, the implement step must adapt (e.g. Buffer-based signatures) rather than silently carrying over code that doesn't actually work under this build."
+  - severity: low
+    description: "Extension-based file-type validation only, not real content-sniffing (MIME confusion risk — a malicious file renamed with an allowed extension isn't caught)."
+    mitigation: "Documented as an accepted, known v1 limitation (matching the old branch's own acknowledged scope) rather than silently presented as full validation — a one-line code comment states this explicitly."

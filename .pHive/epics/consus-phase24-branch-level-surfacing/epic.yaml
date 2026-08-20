@@ -1,0 +1,22 @@
+name: consus-phase24-branch-level-surfacing
+title: Branch-level decision surfacing + doc diff vs. main (git-local, no GitHub API, no auto-fetch)
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: tdd
+
+stories:
+  - id: s1-git-ref-plumbing
+    title: Ref-aware doc reading (git show/git ls-tree/git diff), safe argument handling
+    complexity: medium
+    depends_on: []
+  - id: s2-branch-scoped-decisions
+    title: source_branch column + ref-aware ingest + GET /api/decisions?branch= filtering
+    complexity: medium
+    depends_on: [s1-git-ref-plumbing]
+  - id: s3-doc-diff-endpoint
+    title: GET /api/docs/diff — a doc's content on a branch vs. the default branch
+    complexity: low
+    depends_on: [s1-git-ref-plumbing]
+  - id: s4-branch-picker-ui
+    title: Branch picker in ProjectView, branch-scoped decisions list, inline diff view
+    complexity: high
+    depends_on: [s2-branch-scoped-decisions, s3-doc-diff-endpoint]

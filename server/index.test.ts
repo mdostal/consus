@@ -1,7 +1,17 @@
+/**
+ * @vitest-environment node
+ *
+ * The attachments-default-dir test below constructs a real File/FormData
+ * upload; this repo's default jsdom test environment ships a stub File
+ * lacking arrayBuffer() (see server/storage/filesystem.test.ts's docblock
+ * for the full explanation). None of this file's other tests depend on
+ * jsdom-specific globals, so forcing node for the whole file is safe.
+ */
 import { describe, it, expect, afterAll } from "vitest";
-import { existsSync, unlinkSync, mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, unlinkSync, mkdtempSync, writeFileSync, mkdirSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import Database from "better-sqlite3";
 import { buildServer } from "./index.js";
 
 describe("GET /health", () => {
@@ -91,6 +101,47 @@ describe("static web SPA serving (mdostal/consus#105)", () => {
     // No static plugin registered and no SPA-fallback notFoundHandler installed —
     // Fastify's own default 404 behavior applies, same as before this story.
     expect(response.statusCode).toBe(404);
+
+    await app.close();
+  });
+});
+
+describe("attachments storage default location (mirrors CONSUS_DB_PATH's default-plus-override convention)", () => {
+  const dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
+  const defaultAttachmentsDir = join(process.cwd(), ".pHive", "attachments");
+  const preExisted = existsSync(defaultAttachmentsDir);
+
+  afterAll(() => {
+    if (existsSync(dbPath)) unlinkSync(dbPath);
+    if (!preExisted && existsSync(defaultAttachmentsDir)) {
+      rmSync(defaultAttachmentsDir, { recursive: true, force: true });
+    }
+  });
+
+  it("writes an uploaded attachment under .pHive/attachments/ (relative to cwd) when CONSUS_ATTACHMENTS_DIR / attachmentsDir is not supplied", async () => {
+    const app = buildServer({ dbPath });
+    const db = new Database(dbPath);
+    const now = new Date().toISOString();
+    db.prepare(
+      "INSERT INTO items (id, type, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run("default-dir-item", "decision_request", "Item", "open", now, now);
+    db.close();
+
+    const form = new FormData();
+    form.append("actor", "mathew");
+    form.append("file", new File([Buffer.from("default dir content")], "a.txt", { type: "text/plain" }));
+    const formResponse = new Response(form);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/items/default-dir-item/attachments",
+      headers: { "content-type": formResponse.headers.get("content-type")! },
+      payload: Buffer.from(await formResponse.arrayBuffer()),
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(existsSync(defaultAttachmentsDir)).toBe(true);
+    expect(readdirSync(defaultAttachmentsDir).length).toBeGreaterThan(0);
 
     await app.close();
   });

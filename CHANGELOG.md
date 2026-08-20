@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-19
+
+### Added
+
+- **OSS release readiness:** LICENSE (MIT) + full `package.json` metadata (license/author/repository/homepage/bugs); CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md.
+- **`consus-phase23-decision-attachments`:** file attachments on decision items — attach a screenshot, PDF, or exported doc directly to a decision. `POST/GET /api/items/:id/attachments`, `GET/DELETE /api/attachments/:id`, local-disk storage under `.pHive/attachments/` (override via `CONSUS_ATTACHMENTS_DIR`). Drag-drop/file-picker upload, list with previews, delete gated behind a real confirmation step — all wired into the decision detail view. Ported and adapted from a complete, standalone-compatible capability found on a stale pre-strip branch (`feat/PAN-7819`) that was never merged before the Multica/Minerva coupling strip — re-derived against this build's current schema/conventions, not cherry-picked.
+- **`consus-phase24-branch-level-surfacing`:** branch-level decision surfacing and doc-diff-vs-main, git-local only (no GitHub API, no auto-fetch — zero new external coupling). A branch picker in the Projects tab scopes the decisions list to a feature branch's own open decisions (`GET /api/decisions?branch=`, `POST /api/projects/:project/ingest?ref=`); an inline "view diff" action shows what a doc actually changed relative to the project's real default branch (`GET /api/docs/diff`, default branch resolved from `origin/HEAD`, never hardcoded to `main`). New `server/adapters/doc-scanner/git-ref.ts` shells out to `git` via `execFileSync` with argument arrays only.
+
+### Fixed
+
+- Scrubbed a personal Tailscale IP + SSH username committed across 7 planning/docs files; deleted an orphaned, un-stripped duplicate `docs/VISION.md` still describing live pre-strip coupling; fixed stale v0.9.0 version markers and a factually wrong `docs/api-reference.md` claim that `decision_type`/`triage_bucket` weren't wired into any route.
+- **Security (found via a post-ship adversarial review of the two features above):** a pre-existing path-traversal gap in `GET /api/docs/content` (no boundary check on the requested path — could read arbitrary files outside the repo) is now closed; the client-supplied attachment `Content-Type` was stored and replayed verbatim, letting a spoofed multipart type on an otherwise-allowlisted file execute as stored XSS when its raw download URL was opened directly — the served type is now always derived server-side from the file's extension, non-image types are forced to download rather than render inline, and `X-Content-Type-Options: nosniff` is set on every attachment response; deleting an attachment now actually frees its file from disk (the storage layer's own delete function existed and was tested, but was never called from the route).
+
 ## [0.11.0] - 2026-08-18
 
 ### Added

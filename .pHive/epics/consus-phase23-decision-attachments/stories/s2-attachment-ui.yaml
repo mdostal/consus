@@ -1,0 +1,93 @@
+id: s2-attachment-ui
+epic: consus-phase23-decision-attachments
+title: Upload/list/delete UI wired into DecisionCard
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: [s1-attachment-storage-and-api]
+
+description: |
+  Port the attachment UI components found on the (now-deleted) stale branch origin/feat/PAN-7819
+  into current standalone Consus's decisions UI, using the REST API s1 built
+  (/api/items/:id/attachments list+upload, /api/attachments/:id download+delete). Read the old
+  branch's real component code first (web/src/components/AttachmentUpload.tsx, useFileUpload.ts,
+  AttachmentList.tsx, AttachmentItem.tsx via `git show origin/feat/PAN-7819:<path>`, or from this
+  epic's design-discussion.md if the branch has since been deleted) — this is a port with real
+  adaptation, not a copy-paste.
+
+  The old branch wired this UI into a DecisionDetailPanel that no longer exists in dev. Read
+  web/src/features/decisions/DecisionCard.tsx in full first — do not assume its current shape from
+  the old branch's assumptions — and wire drag-drop upload + attachment list + delete-with-confirm
+  into DecisionCard's expanded/detail state, matching this codebase's current component/CSS
+  conventions (see how comments or another existing DecisionCard sub-section is already wired, if
+  one exists, as the pattern to follow for API-call + loading/error-state handling).
+
+acceptance_criteria:
+  - "Given a decision item with zero attachments, when its DecisionCard is expanded, then an empty/no-attachments state is shown alongside a way to upload a file (drag-drop and/or a file picker button)."
+  - "Given a user drags a valid file onto the upload area (or picks one via the file picker), when the upload completes, then it POSTs to /api/items/:id/attachments with the current actor, shows upload progress, and the new attachment appears in the list without a full page reload."
+  - "Given an upload is rejected by the server (400 disallowed type, 413 too large, or a network error), when that happens, then a clear, specific error message is shown to the user (not a silent failure or a generic 'something went wrong') and no phantom attachment appears in the list."
+  - "Given a decision item with N existing attachments, when its DecisionCard is expanded, then all N are listed (file name, type icon, size), each with a way to download and a way to delete."
+  - "Given a user clicks delete on an attachment, when they do, then a confirmation step is required before the DELETE call fires (no accidental one-click delete), and after confirming, the item is removed from the list without a full page reload."
+  - "Given a user clicks an attachment's download action, when they do, then GET /api/attachments/:id is invoked and the browser downloads/opens the file with its original filename."
+  - "Given the attachment list or an upload is loading, when rendering, then a visible loading state is shown (not a blank/frozen UI) — consistent with existing loading-state conventions elsewhere in DecisionCard/the decisions feature."
+
+steps:
+  - id: research
+    description: >
+      Read origin/feat/PAN-7819's real AttachmentUpload.tsx, useFileUpload.ts, AttachmentList.tsx,
+      AttachmentItem.tsx (or this epic's design-discussion.md if the branch is gone). Read
+      web/src/features/decisions/DecisionCard.tsx and DecisionListPane.tsx in full to understand
+      today's actual component structure, state management, and CSS conventions
+      (decisions-two-pane.css) before deciding where/how the attachment UI mounts.
+    agent: researcher
+  - id: test-spec
+    description: >
+      Write failing component tests (Testing Library, matching this codebase's existing
+      DecisionCard test conventions) covering every acceptance criterion above: empty state, upload
+      success updates the list, upload failure shows a specific error and doesn't add a phantom
+      item, list renders N attachments, delete requires confirmation and removes on confirm,
+      download triggers the right request, loading states render.
+    agent: tester
+  - id: implement
+    description: >
+      Implement the ported+adapted AttachmentUpload, useFileUpload, AttachmentList, AttachmentItem
+      components under web/src/features/decisions/ (or a co-located attachments/ subfolder,
+      whichever matches this codebase's existing organization for feature-scoped components — check
+      how other DecisionCard sub-features are organized before deciding), wired into DecisionCard's
+      expanded state. Match this codebase's existing fetch/error-handling/loading-state patterns
+      rather than inventing new ones.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: >
+      Review for: no full-page-reload dependency anywhere in the upload/delete flow; delete
+      genuinely requires confirmation (not just a styled button that fires immediately); error
+      states are specific and visible, not swallowed; the component/CSS organization matches this
+      codebase's existing conventions rather than introducing a divergent pattern. Run npm test and
+      npm run build for real and confirm both pass. Do a real manual check: start the dev server,
+      upload a file to a real decision item, confirm it appears, download it, delete it, confirm
+      it's gone.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit the attachment UI, wired into DecisionCard, to the feature branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: web/src/features/decisions/DecisionCard.tsx
+      purpose: "The actual current component this story wires the attachment UI into — read its real current shape first, do not assume the old branch's DecisionDetailPanel structure still applies."
+    - path: web/src/features/decisions/decisions-two-pane.css
+      purpose: "Existing CSS conventions for the decisions feature — new attachment UI styling should match, not diverge."
+
+design_decisions:
+  - decision: "Delete requires an explicit confirmation step before the DELETE call fires."
+    rationale: "Matches the old branch's own UI intent (a delete confirmation modal) and standard destructive-action UX — a single misclick shouldn't remove a decision's supporting file."
+  - decision: "No new e2e test runner is introduced to run the old branch's Playwright specs."
+    rationale: "This repo has no Playwright harness today; standing one up is out of scope for this port. Vitest + Testing Library component coverage is the existing bar every other feature in this codebase meets, and this story matches it."
+
+risks:
+  - severity: low
+    description: "The exact mount point/visual layout within DecisionCard isn't fully prescribed here since DecisionCard's current real structure wasn't read before this story was written."
+    mitigation: "The research step requires reading DecisionCard.tsx's actual current code first; the implementer has latitude on exact placement as long as it's inside the card's expanded/detail state and matches existing conventions — a reviewer-checked judgment call, not an open question blocking the story."

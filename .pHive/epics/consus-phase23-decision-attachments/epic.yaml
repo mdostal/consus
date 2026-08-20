@@ -1,0 +1,14 @@
+name: consus-phase23-decision-attachments
+title: Port file attachments on decision items from stale branch feat/PAN-7819 into standalone Consus
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: tdd
+
+stories:
+  - id: s1-attachment-storage-and-api
+    title: Storage adapter, attachments table, and REST API (server-side)
+    complexity: medium
+    depends_on: []
+  - id: s2-attachment-ui
+    title: Upload/list/delete UI wired into DecisionCard
+    complexity: medium
+    depends_on: [s1-attachment-storage-and-api]

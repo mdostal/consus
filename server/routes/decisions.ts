@@ -18,6 +18,7 @@ interface ItemRow {
   decision_payload: string | null;
   decision_type: string | null;
   triage_bucket: string | null;
+  source_branch: string | null;
 }
 
 interface CreateDecisionBody {
@@ -60,16 +61,28 @@ function validateDecisionPayload(payload: unknown): string | null {
  *
  * `?all=1` additionally returns already-decided items (decided_at NOT NULL) so
  * the shell can present a "Decided" section that stays reviewable.
+ *
+ * `?branch=<name>` (s2-branch-scoped-decisions) additionally restricts the
+ * result to items whose source_branch exactly matches -- composes with
+ * `?all=1` (an extra `AND source_branch = ?` appended to whichever base SQL
+ * `all` already selected). When `branch` is absent, the base SQL strings
+ * below are byte-identical to before this param existed -- no implicit
+ * `source_branch IS NULL` filter is added, so today's unfiltered behavior
+ * (every item matching the decision_payload/decided_at condition, regardless
+ * of source_branch) is unchanged.
  */
 export function registerDecisionRoutes(app: FastifyInstance, { db }: DecisionRoutesOptions): void {
-  app.get<{ Querystring: { all?: string } }>("/api/decisions", async (request) => {
+  app.get<{ Querystring: { all?: string; branch?: string } }>("/api/decisions", async (request) => {
     const includeDecided = request.query?.all === "1" || request.query?.all === "true";
+    const branch = request.query?.branch;
 
-    const sql = includeDecided
-      ? "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket FROM items WHERE decision_payload IS NOT NULL ORDER BY (decided_at IS NULL) DESC, updated_at DESC, created_at ASC"
-      : "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket FROM items WHERE decision_payload IS NOT NULL AND decided_at IS NULL ORDER BY created_at ASC";
+    const baseSql = includeDecided
+      ? "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch FROM items WHERE decision_payload IS NOT NULL ORDER BY (decided_at IS NULL) DESC, updated_at DESC, created_at ASC"
+      : "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch FROM items WHERE decision_payload IS NOT NULL AND decided_at IS NULL ORDER BY created_at ASC";
 
-    const rows = db.prepare(sql).all() as ItemRow[];
+    const rows = branch
+      ? (db.prepare(baseSql.replace(" ORDER BY", " AND source_branch = ? ORDER BY")).all(branch) as ItemRow[])
+      : (db.prepare(baseSql).all() as ItemRow[]);
 
     return rows.map((row) => {
       // s1-wire-classifier-into-decisions-route: opportunistic backfill for

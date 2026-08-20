@@ -15,7 +15,7 @@ a fixed boundary, not an open question (see below).
 
 ---
 
-## ① Current — where it is now (v0.9.0)
+## ① Current — where it is now (v0.11.0)
 
 Consus runs as a **Fastify server on `:8722`**, bound to `127.0.0.1` by default, backed by a local
 **SQLite** file (`.pHive/consus.sqlite`), started with `npm run dev` (server + Vite web) or

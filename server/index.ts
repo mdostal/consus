@@ -15,8 +15,10 @@ import { registerProposalRoutes } from "./routes/proposals.js";
 import { registerDiagramRoutes } from "./routes/diagrams.js";
 import { registerAuditTrailRoutes } from "./routes/audit-trail.js";
 import { registerEventRoutes } from "./routes/events.js";
+import { registerAttachmentRoutes } from "./routes/attachments.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
 import { StdioHarnessTransport, NOOP_HARNESS_TRANSPORT, type HarnessTransport } from "./harness/transport.js";
+import { createStorageAdapter } from "./storage/index.js";
 
 /** The built web SPA (`vite.config.ts`'s `build.outDir: "../dist-web"`)
  *  always sits as a sibling of this module's own compiled location
@@ -39,6 +41,12 @@ export interface BuildServerOptions {
    *  dist-web/ happening to be present on disk at test time. Production
    *  callers (the isMain block below) never pass this. */
   webRoot?: string;
+  /** Local-disk directory attachments are stored under (server/storage/).
+   *  Mirrors dbPath's default-plus-env-override convention — the isMain
+   *  block below resolves CONSUS_ATTACHMENTS_DIR before calling buildServer,
+   *  and this default keeps every other buildServer() caller (tests, etc.)
+   *  working unchanged without needing to pass it explicitly. */
+  attachmentsDir?: string;
 }
 
 export function buildServer({
@@ -46,10 +54,13 @@ export function buildServer({
   repos = {},
   transport = NOOP_HARNESS_TRANSPORT,
   webRoot = WEB_ROOT,
+  attachmentsDir = ".pHive/attachments",
 }: BuildServerOptions): FastifyInstance {
   const app = Fastify({ logger: false });
   const db = openDb(dbPath);
   runMigration(db);
+
+  const storageAdapter = createStorageAdapter({ baseDir: attachmentsDir });
 
   registerDocRoutes(app, { db, repos });
   registerProjectRoutes(app, { db, repos });
@@ -61,6 +72,7 @@ export function buildServer({
   registerDiagramRoutes(app, { db, repos });
   registerAuditTrailRoutes(app, { db });
   registerEventRoutes(app, { db, repos, transport });
+  registerAttachmentRoutes(app, { db, storageAdapter });
 
   // Serves the built web SPA (mdostal/consus#105 — previously GET / was a
   // bare 404, so none of the app's own UI was ever reachable through this
@@ -113,6 +125,7 @@ if (isMain) {
   const host = process.env.HOST ?? "127.0.0.1";
   const dbPath = process.env.CONSUS_DB_PATH ?? ".pHive/consus.sqlite";
   const projectsConfigPath = process.env.CONSUS_PROJECTS_CONFIG ?? ".pHive/consus-projects.json";
+  const attachmentsDir = process.env.CONSUS_ATTACHMENTS_DIR ?? ".pHive/attachments";
   const repos = loadProjectRegistry(projectsConfigPath, process.cwd());
 
   // Harness dispatch (the propose-a-change mechanism) is opt-in and
@@ -125,7 +138,7 @@ if (isMain) {
         )
       : NOOP_HARNESS_TRANSPORT;
 
-  const app = buildServer({ dbPath, repos, transport });
+  const app = buildServer({ dbPath, repos, transport, attachmentsDir });
   app.listen({ port, host }).then(() => {
     // eslint-disable-next-line no-console
     console.log(`Consus server listening on :${port} (db: ${dbPath})`);

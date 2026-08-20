@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 
 export interface DocIndexRow {
   id: number;
@@ -18,8 +18,8 @@ export interface ScanOptions {
   repoPath: string;
 }
 
-const DOC_EXTENSIONS = new Set([".md", ".html"]);
-const SCAN_ROOTS = [join(".pHive", "planning"), join(".pHive", "epics")];
+export const DOC_EXTENSIONS = new Set([".md", ".html"]);
+export const SCAN_ROOTS = [join(".pHive", "planning"), join(".pHive", "epics")];
 
 function walk(dir: string): string[] {
   let out: string[] = [];
@@ -95,8 +95,35 @@ export function queryDocIndex(db: Database.Database, repoName: string): DocIndex
     .all(repoName) as DocIndexRow[];
 }
 
+/**
+ * Thrown when `relFilePath` resolves outside `repoPath` — a path-traversal
+ * attempt (e.g. `../../../../etc/passwd`) rather than a genuine doc path.
+ */
+export class DocPathEscapesRepoError extends Error {
+  constructor(relFilePath: string) {
+    super(`path escapes repo root: ${relFilePath}`);
+    this.name = "DocPathEscapesRepoError";
+  }
+}
+
 export function readDocContent(repoPath: string, relFilePath: string): { content: string; format: "md" | "html" } {
-  const absPath = join(repoPath, relFilePath);
+  const absPath = resolve(repoPath, relFilePath);
+
+  // SECURITY: the boundary check must happen before any filesystem call,
+  // and a plain startsWith(repoPath) is NOT sufficient — it would let
+  // repoPath "/repos/foo" incorrectly accept a path resolving into the
+  // sibling "/repos/foobar/secret.md", since "/repos/foobar".startsWith(
+  // "/repos/foo") is true. Requiring the path.sep suffix (or an exact
+  // match) closes that gap. Mirrors the identical, already-established
+  // pattern in ../gitdocs/index.ts's resolveInRepos — this function is the
+  // one place both that caller and every route (GET /api/docs/content,
+  // GET /api/docs/search) ultimately read working-tree doc content through,
+  // so the check belongs here, not duplicated per-caller.
+  const withinRepoRoot = absPath === repoPath || absPath.startsWith(repoPath + sep);
+  if (!withinRepoRoot) {
+    throw new DocPathEscapesRepoError(relFilePath);
+  }
+
   const content = readFileSync(absPath, "utf-8");
   const format = relFilePath.endsWith(".html") ? "html" : "md";
   return { content, format };

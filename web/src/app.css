@@ -582,6 +582,155 @@ body {
 }
 
 /* ============================================================= */
+/* Attachments (consus-phase23 s2) — drag-drop upload + list,     */
+/* mounted into DecisionView's "Attachments" section. Matches the */
+/* comment-thread block above's BEM class + --consus-* token      */
+/* conventions rather than the old branch's inline styles.        */
+/* ============================================================= */
+.attachments__upload-wrap {
+  margin-bottom: 14px;
+}
+.attachments__dropzone {
+  border: 2px dashed var(--consus-line);
+  border-radius: calc(12px * var(--consus-radius-scale, 1));
+  padding: 20px;
+  text-align: center;
+  cursor: pointer;
+  background: var(--consus-bg-subtle);
+  transition: border-color 0.12s, background 0.12s;
+}
+.attachments__dropzone:hover,
+.attachments__dropzone:focus-visible {
+  border-color: color-mix(in srgb, var(--consus-accent) 55%, transparent);
+  outline: none;
+}
+.attachments__dropzone--active {
+  border-color: var(--consus-accent);
+  background: color-mix(in srgb, var(--consus-accent) 8%, transparent);
+}
+.attachments__dropzone-hint {
+  margin: 0;
+  font-family: var(--consus-font-ui);
+  font-size: 13px;
+  color: var(--consus-ink-muted);
+}
+.attachments__file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.attachments__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.attachments__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg);
+}
+.attachments__type-pill {
+  flex: none;
+  font-family: var(--consus-font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 4px 8px;
+  border-radius: calc(6px * var(--consus-radius-scale, 1));
+  background: color-mix(in srgb, var(--consus-accent) 14%, transparent);
+  color: var(--consus-accent);
+}
+.attachments__item-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.attachments__item-name {
+  font-family: var(--consus-font-ui);
+  font-size: 13.5px;
+  color: var(--consus-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.attachments__item-size {
+  font-family: var(--consus-font-ui);
+  font-size: 11.5px;
+  color: var(--consus-ink-muted);
+}
+.attachments__item-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.attachments__download {
+  font-family: var(--consus-font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--consus-accent);
+}
+.attachments__delete {
+  font-family: var(--consus-font-ui);
+  font-size: 12.5px;
+  background: none;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  padding: 5px 10px;
+  cursor: pointer;
+  color: var(--consus-ink-muted);
+}
+.attachments__delete:hover {
+  color: var(--consus-bad);
+  border-color: color-mix(in srgb, var(--consus-bad) 45%, transparent);
+}
+.attachments__confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.attachments__delete-confirm {
+  font-family: var(--consus-font-ui);
+  font-size: 12.5px;
+  background: var(--consus-bad);
+  color: var(--consus-bg);
+  border: 0;
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  padding: 5px 10px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.attachments__delete-confirm:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.attachments__delete-cancel {
+  font-family: var(--consus-font-ui);
+  font-size: 12.5px;
+  background: none;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  padding: 5px 10px;
+  cursor: pointer;
+  color: var(--consus-ink-muted);
+}
+
+/* ============================================================= */
 /* KB browser / backlog (REQ-08 / REQ-09)                        */
 /* ============================================================= */
 .decision-card {
@@ -1991,4 +2140,53 @@ body {
 .harness-connect-banner__reopen:hover {
   color: var(--consus-accent);
   border-color: color-mix(in srgb, var(--consus-accent) 40%, transparent);
+}
+
+/* ============================================================= */
+/* Branch picker + branch-scoped decisions + doc diff             */
+/* (consus-phase24-branch-level-surfacing, s4)                    */
+/* ============================================================= */
+.branch-picker {
+  font-family: var(--consus-font-ui);
+}
+.branch-picker label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--consus-ink-muted);
+}
+.branch-picker select {
+  padding: 7px 10px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg-subtle);
+  color: var(--consus-ink);
+  font: inherit;
+}
+.project-branch-decisions {
+  margin: 18px 0;
+  padding: 16px 18px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(12px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg-subtle);
+}
+.doc-diff-check {
+  margin-bottom: 14px;
+  font-family: var(--consus-font-ui);
+}
+.doc-diff-check__diff {
+  overflow-x: auto;
+  background: color-mix(in srgb, var(--consus-ink) 6%, transparent);
+  padding: 12px 14px;
+  margin-top: 10px;
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
+  font-family: var(--consus-font-mono);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+}
+.doc-diff-check__no-changes {
+  margin-top: 10px;
+  color: var(--consus-ink-muted);
+  font-size: 13px;
 }

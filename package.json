@@ -1,9 +1,22 @@
 {
   "name": "consus",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "private": true,
   "type": "module",
   "description": "Consus — a standalone knowledgebase, graph, and doc editor for any repo's decisions, docs, and architecture",
+  "license": "MIT",
+  "author": {
+    "name": "Mathew Dostal",
+    "email": "mathew.dostal@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mdostal/consus.git"
+  },
+  "homepage": "https://github.com/mdostal/consus#readme",
+  "bugs": {
+    "url": "https://github.com/mdostal/consus/issues"
+  },
   "scripts": {
     "dev:web": "vite",
     "dev:server": "tsx watch server/index.ts",
@@ -18,6 +31,7 @@
     "agent:status": "node scripts/agent-init.mjs status"
   },
   "dependencies": {
+    "@fastify/multipart": "^10.1.1",
     "@fastify/static": "^10.1.3",
     "@xyflow/react": "^12.11.3",
     "better-sqlite3": "^11.3.0",

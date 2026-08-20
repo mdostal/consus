@@ -78,5 +78,5 @@ policy + votem quorum routing, and a concrete decision-card rendering baseline �
 P0 per prior-art.md's own framing ("lift the *product*... rebuild the *plumbing*"). Nothing had
 been built yet when this was found, so the fold-in was free — no rework, only re-planning.
 Recommended follow-up before implementation: fetch the real `decision-request.ts` source from the
-hive host (`ssh dostal@100.75.161.82` → `Claud-ometer/src/lib/consus/decision-request.ts`) rather
+hive host (`ssh <internal-dev-host>` → `Claud-ometer/src/lib/consus/decision-request.ts`) rather
 than rebuilding purely from prior-art.md's summary.

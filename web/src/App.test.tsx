@@ -2,6 +2,69 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within, act } from "@testing-library/react";
 import { App } from "./App";
 
+/** s4 (consus-phase24-branch-level-surfacing): a configurable fetch mock for
+ *  the branch-picker + branch-scoped-decisions + doc-diff wiring, kept
+ *  separate from mockFetchImpl above since these tests need to assert on
+ *  the *exact* set of calls fired (regression AC1), not just stub bodies. */
+function branchFetchMock(
+  opts: {
+    branches?: string[];
+    branchDecisions?: unknown[];
+    docDiff?: { diff: string | null } | "error";
+    ingestOk?: boolean;
+  } = {},
+) {
+  const branches = opts.branches ?? ["feature/x"];
+  const branchDecisions = opts.branchDecisions ?? [];
+  const calls: string[] = [];
+
+  const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.toString();
+    const method = init?.method ?? "GET";
+    calls.push(`${method} ${url}`);
+
+    if (method === "POST" && url.startsWith("/api/projects/consus/ingest?ref=")) {
+      if (opts.ingestOk === false) {
+        return Promise.resolve({ ok: false, status: 500, json: async () => ({ error: "ingest failed" }) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ project: "consus", ref: "feature/x", docsScanned: 1, decisionsFound: branchDecisions.length }),
+      });
+    }
+    if (method === "POST" && url.startsWith("/api/projects/consus/ingest")) {
+      return Promise.resolve({ ok: true, json: async () => ({ project: "consus", docsScanned: 1, eventsCreated: 0 }) });
+    }
+    if (url.startsWith("/api/projects/consus/branches")) {
+      return Promise.resolve({ ok: true, json: async () => ({ branches }) });
+    }
+    if (url.startsWith("/api/projects")) return Promise.resolve({ ok: true, json: async () => ({ projects: ["consus"] }) });
+    if (url.includes("/api/decisions?all=1&branch=")) {
+      return Promise.resolve({ ok: true, json: async () => branchDecisions });
+    }
+    if (url.startsWith("/api/decisions")) return Promise.resolve({ ok: true, json: async () => [] });
+    if (url.startsWith("/api/kb-entries")) return Promise.resolve({ ok: true, json: async () => [KB_ENTRY] });
+    if (url.startsWith("/api/diagrams")) return Promise.resolve({ ok: true, json: async () => DIAGRAM_RESPONSE });
+    if (url.startsWith("/api/items/")) return Promise.resolve({ ok: true, json: async () => [] });
+    if (url.startsWith("/api/docs/diff")) {
+      if (opts.docDiff === "error") {
+        return Promise.resolve({ ok: false, status: 400, json: async () => ({ error: "bad ref" }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => (opts.docDiff ?? { diff: "- old line\n+ new line" }) });
+    }
+    if (url.startsWith("/api/docs/content")) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ format: "md", content: "# doc", itemId: "doc:consus:architecture.md" }),
+      });
+    }
+    if (url.startsWith("/api/docs")) return Promise.resolve({ ok: true, json: async () => DOCS_WITH_ENTRY });
+    return Promise.resolve({ ok: true, json: async () => [] });
+  });
+
+  return { fetchMock, calls };
+}
+
 const KB_ENTRY = { id: "kb-1", title: "Architecture note", source_repo: "consus", created_at: "2026-08-01T00:00:00Z" };
 
 const DIAGRAM_RESPONSE = { itemId: "diagram:consus", epics: [] };
@@ -165,6 +228,167 @@ describe("App — per-project view folds in docs + an Ingest repo action (phase6
     await openConsusProject();
 
     expect(await screen.findByText("architecture.md")).toBeInTheDocument();
+  });
+});
+
+describe("App — branch picker, branch-scoped decisions, doc diff (consus-phase24 s4)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("AC1 regression: an operator who never touches the picker sees byte-identical Projects-tab behavior — no branch-scoped/diff/ref-ingest calls fire", async () => {
+    const { fetchMock, calls } = branchFetchMock();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await openConsusProject();
+
+    // Existing per-project surfaces render exactly as before this story.
+    expect(await screen.findByText("Architecture note")).toBeInTheDocument();
+    expect(await screen.findByText("architecture.md")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /ingest repo/i })).toBeInTheDocument();
+
+    // The picker itself is present (additive UI) and populated...
+    expect(await screen.findByRole("combobox", { name: "Select branch" })).toBeInTheDocument();
+
+    // ...but nothing about "(default)" being selected fires a branch-scoped
+    // decisions fetch, a ref-aware ingest, or a doc-diff check.
+    expect(calls.some((c) => c.includes("branch="))).toBe(false);
+    expect(calls.some((c) => c.includes("ingest?ref="))).toBe(false);
+    expect(calls.some((c) => c.startsWith("GET /api/docs/diff"))).toBe(false);
+  });
+
+  it("the global Decisions tab keeps fetching the exact same unfiltered /api/decisions?all=1 — untouched by this story", async () => {
+    const { fetchMock, calls } = branchFetchMock();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    expect(await screen.findByRole("heading", { name: "Decisions" })).toBeInTheDocument();
+
+    expect(calls).toContain("GET /api/decisions?all=1");
+  });
+
+  it("AC2: selecting a branch scans it (ref-aware ingest) and re-scopes the decisions list to that branch's items only", async () => {
+    const { fetchMock } = branchFetchMock({
+      branches: ["feature/x"],
+      branchDecisions: [{ id: "d1", title: "Branch-only decision", status: "active", decided_at: null }],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await openConsusProject();
+
+    const select = await screen.findByRole("combobox", { name: "Select branch" });
+    await waitFor(() => expect(within(select).getByRole("option", { name: "feature/x" })).toBeInTheDocument());
+    fireEvent.change(select, { target: { value: "feature/x" } });
+
+    expect(await screen.findByText("Branch-only decision")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/projects/consus/ingest?ref=feature%2Fx"),
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("AC2: switching back to '(default)' is the way back — it removes the branch-scoped decisions panel", async () => {
+    const { fetchMock } = branchFetchMock({
+      branches: ["feature/x"],
+      branchDecisions: [{ id: "d1", title: "Branch-only decision", status: "active", decided_at: null }],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await openConsusProject();
+
+    const select = await screen.findByRole("combobox", { name: "Select branch" });
+    await waitFor(() => expect(within(select).getByRole("option", { name: "feature/x" })).toBeInTheDocument());
+    fireEvent.change(select, { target: { value: "feature/x" } });
+    expect(await screen.findByText("Branch-only decision")).toBeInTheDocument();
+
+    fireEvent.change(select, { target: { value: "" } });
+    await waitFor(() => expect(screen.queryByText("Branch-only decision")).not.toBeInTheDocument());
+  });
+
+  it("AC5: a project with zero non-default branches gracefully shows only '(default)' in the picker — no error, no crash", async () => {
+    const { fetchMock } = branchFetchMock({ branches: [] });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await openConsusProject();
+
+    const select = (await screen.findByRole("combobox", { name: "Select branch" })) as HTMLSelectElement;
+    await waitFor(() => expect(select.options).toHaveLength(1));
+    expect(select.options[0].textContent).toBe("(default)");
+  });
+
+  it("AC3: a doc that differs on the selected branch offers a 'view diff' action that renders the diff inline via a plain <pre>", async () => {
+    const { fetchMock } = branchFetchMock({ branches: ["feature/x"], docDiff: { diff: "- old line\n+ new line" } });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await openConsusProject();
+
+    const select = await screen.findByRole("combobox", { name: "Select branch" });
+    await waitFor(() => expect(within(select).getByRole("option", { name: "feature/x" })).toBeInTheDocument());
+    fireEvent.change(select, { target: { value: "feature/x" } });
+
+    fireEvent.click(await screen.findByText("architecture.md"));
+    fireEvent.click(await screen.findByRole("button", { name: "View diff vs default branch" }));
+
+    const pre = await screen.findByTestId("doc-diff");
+    expect(pre.tagName).toBe("PRE");
+    expect(pre.textContent).toBe("- old line\n+ new line");
+  });
+
+  it("AC4: a doc identical on the selected branch shows a clear 'no changes' indication, not a silent no-op", async () => {
+    const { fetchMock } = branchFetchMock({ branches: ["feature/x"], docDiff: { diff: null } });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await openConsusProject();
+
+    const select = await screen.findByRole("combobox", { name: "Select branch" });
+    await waitFor(() => expect(within(select).getByRole("option", { name: "feature/x" })).toBeInTheDocument());
+    fireEvent.change(select, { target: { value: "feature/x" } });
+
+    fireEvent.click(await screen.findByText("architecture.md"));
+    fireEvent.click(await screen.findByRole("button", { name: "View diff vs default branch" }));
+
+    expect(await screen.findByTestId("doc-diff-none")).toBeInTheDocument();
+    expect(screen.queryByTestId("doc-diff")).not.toBeInTheDocument();
+  });
+
+  it("no 'view diff' action appears while '(default)' is selected — there is no branch to diff against", async () => {
+    const { fetchMock } = branchFetchMock({ branches: ["feature/x"] });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await openConsusProject();
+
+    fireEvent.click(await screen.findByText("architecture.md"));
+    expect(screen.queryByRole("button", { name: "View diff vs default branch" })).not.toBeInTheDocument();
+  });
+
+  it("switching the selected project resets the branch back to '(default)' — a branch picked for one project has no meaning for another", async () => {
+    const { fetchMock } = branchFetchMock({
+      branches: ["feature/x"],
+      branchDecisions: [{ id: "d1", title: "Branch-only decision", status: "active", decided_at: null }],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await openConsusProject();
+
+    const select = await screen.findByRole("combobox", { name: "Select branch" });
+    await waitFor(() => expect(within(select).getByRole("option", { name: "feature/x" })).toBeInTheDocument());
+    fireEvent.change(select, { target: { value: "feature/x" } });
+    expect(await screen.findByText("Branch-only decision")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "All projects" }));
+    fireEvent.click(screen.getByRole("button", { name: "consus" }));
+
+    const selectAfter = (await screen.findByRole("combobox", { name: "Select branch" })) as HTMLSelectElement;
+    expect(selectAfter.value).toBe("");
+    expect(screen.queryByText("Branch-only decision")).not.toBeInTheDocument();
   });
 });
 
