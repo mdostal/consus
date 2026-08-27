@@ -1,0 +1,27 @@
+name: consus-phase25-project-registration-ux
+title: Project registration UX — repo path display, styled add-project button, discovery + directory browser
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: tdd
+version_bump: minor
+
+stories:
+  - id: s1-project-path-api-and-display
+    title: GET /api/projects returns repo paths; ProjectsSection shows a labeled path field
+    complexity: low
+    depends_on: []
+  - id: s2-fs-list-endpoint
+    title: GET /api/fs/list — generic, loopback-only directory-listing building block
+    complexity: medium
+    depends_on: []
+  - id: s3-project-discover-endpoint
+    title: GET /api/projects/discover — sibling + CONSUS_DISCOVERY_ROOTS candidate repos
+    complexity: low
+    depends_on: [s2-fs-list-endpoint]
+  - id: s4-add-project-button-styling
+    title: Style AddProjectForm's submit button to match the app's accent-button convention
+    complexity: low
+    depends_on: []
+  - id: s5-directory-browser-ui
+    title: Interactive DirectoryBrowser + discovered-candidates wiring into AddProjectForm
+    complexity: high
+    depends_on: [s2-fs-list-endpoint, s3-project-discover-endpoint, s4-add-project-button-styling]

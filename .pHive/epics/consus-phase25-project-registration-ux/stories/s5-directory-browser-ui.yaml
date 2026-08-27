@@ -1,0 +1,110 @@
+id: s5-directory-browser-ui
+epic: consus-phase25-project-registration-ux
+title: Interactive DirectoryBrowser + discovered-candidates wiring into AddProjectForm
+status: pending
+complexity: high
+methodology: tdd
+depends_on: [s2-fs-list-endpoint, s3-project-discover-endpoint, s4-add-project-button-styling]
+
+description: |
+  The operator's direct, explicit ask: "we need to be able to easily find the other repos and
+  browse — i don't know where the ... shit lives off of memory" — and, when offered a one-level-deep
+  auto-discovery compromise, explicitly rejected it as insufficient: "how the ... am i to memorize
+  all of the paths on the computer." This story is the actual answer: an interactive filesystem
+  browser, not just auto-suggested siblings.
+
+  Build a new `DirectoryBrowser` component (web/src/features/projects/DirectoryBrowser.tsx) that:
+  - Opens from a new "Browse…" action in AddProjectForm, alongside the existing free-text path
+    input (both remain available — this is additive, never a hard requirement to use the browser).
+  - On open, calls `GET /api/fs/list` with no `path` (server defaults to the OS home directory).
+  - Renders the current directory's subdirectories as a list — reuse this app's established
+    fetch/loading/error state shape (see BranchPicker.tsx or ProjectDiagram for the pattern: `data
+    | null`, `error | null`, useEffect-driven fetch). Each entry shows its name; entries where
+    `isRepo` is true get a visual hint (e.g. a small badge/icon — implementer's call on exact
+    treatment, consistent with existing badge patterns like DocSearch's `doc-search__badge`).
+  - Clicking a subdirectory navigates into it (re-calls GET /api/fs/list with that subdirectory as
+    the new `path`) and appends to a breadcrumb trail; clicking an earlier breadcrumb segment
+    navigates back up.
+  - A "Select this directory" action is always available for the current directory (regardless of
+    its `isRepo` flag — browsing to a not-yet-git-init'd directory, or one the isRepo heuristic
+    misses, must still be selectable) and populates AddProjectForm's path field with the current
+    absolute path, then closes the browser.
+
+  Also wire `GET /api/projects/discover`'s (s3) candidates into AddProjectForm as an auto-suggest
+  `<select>` (matching BranchPicker's established convention exactly: label-wraps-select, populated
+  via useEffect + useState) shown above/alongside the "Browse…" action and the manual text input —
+  three ways to fill the path field, all converging on the same underlying state.
+
+  This story depends on s4 (button styling) landing first so the new "Browse…" action and any new
+  buttons in this story are built against the already-correct button convention, not a
+  soon-to-be-restyled one.
+
+acceptance_criteria:
+  - "Given the add-project form, when the operator clicks 'Browse…', then a directory browser opens showing the OS home directory's immediate subdirectories."
+  - "Given the browser is open, when the operator clicks a subdirectory, then the browser navigates into it and shows that subdirectory's own immediate subdirectories, with a breadcrumb trail reflecting the path taken."
+  - "Given the operator is several levels deep in the browser, when they click an earlier breadcrumb segment, then the browser navigates back to that level."
+  - "Given any directory shown in the browser (repo-flagged or not), when the operator clicks 'Select this directory', then the browser closes and AddProjectForm's path field is populated with that directory's absolute path."
+  - "Given GET /api/projects/discover returns at least one candidate, when the add-project form renders, then those candidates are shown in a select dropdown; choosing one populates the path field without opening the browser."
+  - "Given the operator prefers to type a path directly, when they do so, then the manual text input still works exactly as it did before this story — none of the three path-filling methods is a hard requirement."
+  - "Given a directory the browser cannot list (e.g. a permission error from GET /api/fs/list), when the operator is browsing it, then the browser shows a clear error state (matching this app's existing dv__err convention) rather than crashing or silently showing nothing."
+
+steps:
+  - id: research
+    description: >
+      Read s2 and s3's real final route shapes (GET /api/fs/list and GET /api/projects/discover) —
+      they may differ slightly from their story YAMLs if the implementer made different judgment
+      calls; read the real code. Read BranchPicker.tsx in full for the exact fetch/loading/error
+      pattern and label-wraps-select convention to reuse for the discovered-candidates select. Read
+      DocSearch.tsx for the badge pattern to consider for the isRepo visual hint. Confirm s4's button
+      styling has landed and read its final CSS to build the "Browse…" and "Select this directory"
+      actions against it.
+    agent: researcher
+  - id: test-spec
+    description: >
+      Write failing component tests for DirectoryBrowser.tsx covering: initial home-dir listing,
+      navigation into a subdirectory, breadcrumb navigation back up, "Select this directory" firing
+      with the correct path regardless of isRepo, and the error state on a failed listing. Write
+      failing tests for AddProjectForm's new discovered-candidates select (select-a-candidate
+      populates the path field) and the "Browse…" action opening the browser.
+    agent: tester
+  - id: implement
+    description: >
+      Build DirectoryBrowser.tsx and wire it into AddProjectForm.tsx alongside the discovered-
+      candidates select, matching this app's established fetch/loading/error and label-wraps-select
+      conventions exactly. Add corresponding CSS using existing --consus-* tokens (no new per-skin
+      structural fork needed — this is a data browser, not a skin-differentiated diagram artifact).
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: >
+      Confirm all three path-filling methods (manual entry, discovered-candidates select, browser)
+      converge on the same form state without conflicting. Confirm the browser's error state actually
+      renders on a real failure (not just happy-path tested). Run npm test and npm run build for real.
+      Do a real manual check: start the dev server, open the browser, navigate a few levels, select a
+      directory, register a project through it end to end.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit to the epic branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: web/src/features/projects/BranchPicker.tsx
+      purpose: "The exact fetch/loading/error and label-wraps-select convention to reuse for the discovered-candidates select (lines 44-63)."
+    - path: web/src/features/projects/AddProjectForm.tsx
+      purpose: "Where the 'Browse…' action and discovered-candidates select mount, alongside the existing manual text input."
+    - path: web/src/features/docs/DocSearch.tsx
+      purpose: "Badge pattern (doc-search__badge, lines 69-74) — a reference for the isRepo visual hint, if that pattern fits."
+
+design_decisions:
+  - decision: "Select-this-directory works regardless of isRepo."
+    rationale: "design-discussion.md §3.3(c): an operator browsing to a not-yet-git-init'd directory, or one the isRepo heuristic misses, is still a legitimate choice — the heuristic is a visual hint, not a hard gate."
+  - decision: "All three path-filling methods (manual, discovered-select, browser) are additive, never exclusive."
+    rationale: "design-discussion.md §3.3: 'never a hard requirement' — a repo outside any discoverable root is still registerable by typing it directly, matching this app's existing tolerant-degradation posture (e.g. BranchPicker gracefully handling zero branches)."
+
+risks:
+  - severity: medium
+    description: "Highest-complexity story in this epic — a genuinely new interactive component with server round-trips per navigation step."
+    mitigation: "Depends on s2/s3/s4 all landing first so this story builds on already-tested, already-styled primitives rather than everything at once. Reuses established fetch/loading/error and select conventions rather than inventing new patterns."

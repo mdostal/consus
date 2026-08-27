@@ -1,0 +1,96 @@
+id: s4-add-project-button-styling
+epic: consus-phase25-project-registration-ux
+title: Style AddProjectForm's submit button to match the app's accent-button convention
+status: pending
+complexity: low
+methodology: tdd
+depends_on: []
+
+description: |
+  AddProjectForm.tsx and its CSS (app.css:930-963) already consume --consus-* design tokens
+  correctly for the field wrapper and text inputs — confirmed by direct inspection, this is not a
+  full-form redesign. The one actually-broken piece: the submit `<button type="submit">`
+  (AddProjectForm.tsx:53-55) has zero CSS rule targeting it anywhere in app.css (confirmed via
+  grep) — it renders as a bare default browser button. This is the operator's literal screenshot
+  complaint ("the button added didnt map to the rest of the application").
+
+  Add a `.add-project-form button` rule matching `.diagram-view__header button`'s existing
+  convention (app.css:1325-1335): accent-filled (`background: var(--consus-accent)`,
+  `color: var(--consus-bg)`), `border: 0`, `font-weight: 600`, token-driven `border-radius`. Scope
+  the selector to `.add-project-form` only so it doesn't leak into unrelated forms elsewhere in the
+  app. Verify visually across all 3 skins (Drafting Table, Case Board, Harness) × light/dark — the
+  whole point of this app's --consus-* token system is that a token-only fix is automatically
+  correct across every skin/theme combination with zero skin-specific code, per this app's own
+  design-system doc comment (tokens.css:20-21: "No hardcoded light-only or dark-only styling
+  anywhere downstream").
+
+acceptance_criteria:
+  - "Given the Projects tab in any skin (Drafting Table, Case Board, or Harness) and either theme (light or dark), when the add-project form renders, then its submit button is visually accent-filled and legible — not a bare default browser button."
+  - "Given the disabled state (name or path empty, or a submission in flight), when the button is disabled, then it visually reads as disabled (existing opacity/cursor convention for disabled buttons elsewhere in this app, if one exists — implementer's call, checked at review) rather than looking identical to the enabled state."
+  - "Given any other form or button elsewhere in the app, when this story ships, then its styling is unchanged — the new CSS rule is scoped to `.add-project-form button` only."
+
+steps:
+  - id: research
+    description: >
+      Read app.css:1325-1335 (.diagram-view__header button) for the exact convention to mirror. Grep
+      app.css to confirm no existing rule already targets .add-project-form button (confirm the gap
+      this story is closing). Check whether a disabled-button convention already exists elsewhere in
+      this app's CSS to reuse for the disabled state.
+    agent: researcher
+  - id: test-spec
+    description: >
+      This is a pure-CSS visual fix — no new component logic to unit-test. Add or confirm a test (in
+      AddProjectForm.test.tsx, already covers the disabled/enabled button states functionally) that
+      the button's disabled attribute toggles correctly; visual verification happens at review via a
+      real running app, not an automated visual-regression test (none exists in this codebase).
+    agent: tester
+  - id: implement
+    description: >
+      Add the `.add-project-form button` CSS rule in app.css, matching .diagram-view__header button's
+      token usage. Add a disabled-state rule if a convention exists elsewhere to reuse.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: >
+      Run the dev server, switch through all 3 skins and both themes, and visually confirm the button
+      now looks intentional and consistent with the rest of the app (the operator's original
+      complaint). Confirm no other form/button in the app changed appearance. Run npm test and npm run
+      build for real.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit to the epic branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: web/src/app.css
+      purpose: "Lines 1325-1335 (.diagram-view__header button) is the exact convention to mirror; lines 930-963 (.add-project-form*) is where the new button rule is added, adjacent to the existing form styles."
+    - path: web/src/features/projects/AddProjectForm.tsx
+      purpose: "Lines 53-55 — the unstyled submit button this story fixes."
+
+code_examples:
+  - title: "Existing accent-button convention to mirror (app.css:1325-1335)"
+    file: web/src/app.css
+    snippet: |
+      .diagram-view__header button {
+        font-family: var(--consus-font-ui);
+        background: var(--consus-accent);
+        color: var(--consus-bg);
+        border: 0;
+        padding: 7px 14px;
+        border-radius: calc(9px * var(--consus-radius-scale, 1));
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 13px;
+      }
+
+design_decisions:
+  - decision: "Fix the button only, not a form redesign."
+    rationale: "Design-discussion §2's research finding: the rest of the form already tokenizes correctly. Redesigning the whole form would be unforced scope beyond the actual root cause of the operator's complaint."
+
+risks:
+  - severity: low
+    description: "None significant — pure additive, scoped CSS change with no logic implications."
+    mitigation: "n/a"

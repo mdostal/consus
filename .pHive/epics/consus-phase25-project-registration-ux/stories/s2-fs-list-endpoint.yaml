@@ -1,0 +1,102 @@
+id: s2-fs-list-endpoint
+epic: consus-phase25-project-registration-ux
+title: GET /api/fs/list — generic, loopback-only directory-listing building block
+status: pending
+complexity: medium
+methodology: tdd
+depends_on: []
+
+description: |
+  Zero filesystem-discovery code exists anywhere in this codebase today (confirmed via grep across
+  server/ and web/src/ for readdir/scandir/opendir/glob — every hit walks a repo path Consus already
+  knows about, never discovers unknown paths). This story adds the one generic building block both
+  s3 (discovery) and s5 (interactive browser) need.
+
+  Add `GET /api/fs/list?path=<dir>` to a new `server/routes/fs.ts`, registered in server/index.ts
+  alongside the other registerXRoutes calls (follow the exact existing convention — see
+  registerProjectRoutes's registration in server/index.ts for the pattern). Lists `path`'s immediate
+  subdirectories only (one level — a caller wanting deeper listings calls again with a subdirectory
+  as the new `path`). Each entry: `{ name: string, path: string, isRepo: boolean }` — `isRepo` true
+  when the subdirectory directly contains a `.git` or `.pHive` entry.
+
+  If `path` is omitted, default to the OS home directory (`os.homedir()`). Reject/normalize `path`
+  so the resolved absolute directory cannot escape outside what's reasonable (reject non-existent
+  paths, reject a path that isn't a directory, reject any `path` value containing `..` segments
+  before resolution — same defensive posture as this codebase's existing `resolve()` + `existsSync`
+  + `statSync` pattern in server/routes/projects.ts's POST /api/projects handler). Skip individual
+  subdirectories that throw on stat (permission-denied, broken symlink) rather than failing the
+  whole listing — return them omitted, not as an error.
+
+  This route reads filesystem structure beyond any project the operator has explicitly registered —
+  a materially different exposure category than the rest of this app's routes (which only ever touch
+  registered-repo paths). Document it in docs/api-reference.md as intended for the default
+  HOST=127.0.0.1 binding and explicitly unsuitable for a HOST=0.0.0.0 containerized deploy.
+
+acceptance_criteria:
+  - "Given a valid absolute directory path, when GET /api/fs/list?path=<dir> is called, then the response lists only that directory's immediate subdirectories (not files, not recursive), each with name/path/isRepo."
+  - "Given a subdirectory that contains a .git or .pHive entry, when it's listed, then isRepo is true; given one that contains neither, isRepo is false."
+  - "Given no path query param, when GET /api/fs/list is called, then it defaults to the OS home directory."
+  - "Given a path that does not exist, is not a directory, or contains `..` segments, when GET /api/fs/list is called, then the route responds 400 with a clear error, not a crash or a directory listing outside the intended tree."
+  - "Given a subdirectory the process cannot stat (permission denied), when the parent is listed, then that one entry is silently omitted and the rest of the listing still succeeds."
+  - "Given docs/api-reference.md, when this story ships, then GET /api/fs/list is documented including the explicit loopback-only callout."
+
+steps:
+  - id: research
+    description: >
+      Read server/routes/projects.ts's POST /api/projects handler for the exact existing
+      resolve()/existsSync/statSync validation pattern to mirror. Read server/index.ts for the exact
+      registerXRoutes registration convention to follow for the new fs.ts route module.
+    agent: researcher
+  - id: test-spec
+    description: >
+      Write failing tests in server/routes/fs.test.ts (new file, mirror server/routes/projects.test.ts's
+      structure: Fastify app + mkdtempSync fixtures) covering: normal listing, isRepo detection for
+      .git and .pHive, default-to-home-dir behavior, rejection of nonexistent/non-directory/traversal
+      paths, and graceful omission of an unstattable subdirectory.
+    agent: tester
+  - id: implement
+    description: >
+      Implement server/routes/fs.ts's GET /api/fs/list handler and register it in server/index.ts.
+      Add the docs/api-reference.md section with the loopback-only callout.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: >
+      Specifically verify the traversal-rejection and unreadable-subdirectory-omission behavior with
+      real test cases, not just the happy path. Run npm test and npm run build for real. Confirm the
+      loopback-only documentation is present and clear.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit to the epic branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: server/routes/projects.ts
+      purpose: "Lines 144-147 (POST /api/projects) — the exact resolve()/existsSync/statSync validation pattern this route's path handling should mirror."
+    - path: server/index.ts
+      purpose: "registerXRoutes registration convention (lines 65-75) — the new fs.ts route registers the same way."
+    - path: docs/api-reference.md
+      purpose: "New section needed for GET /api/fs/list, including the loopback-only callout (grill finding P1 in design-discussion.md)."
+
+code_examples:
+  - title: "Existing path validation pattern to mirror (server/routes/projects.ts POST /api/projects)"
+    file: server/routes/projects.ts
+    snippet: |
+      const repoPath = resolve(path);
+      if (!existsSync(repoPath) || !statSync(repoPath).isDirectory()) {
+        return reply.code(400).send({ error: `path does not exist or is not a directory: ${repoPath}` });
+      }
+
+design_decisions:
+  - decision: "One level per call, not recursive — caller re-calls with a subdirectory to go deeper."
+    rationale: "Keeps the endpoint simple and cheap regardless of tree depth/size; s5's DirectoryBrowser is the client-side navigator that chains calls, matching how a real file picker works (list, click in, list again)."
+  - decision: "isRepo is a hint (.git or .pHive present), never a hard filter on this endpoint."
+    rationale: "This is the generic listing primitive; s3's /discover endpoint applies the isRepo-and-not-registered filter on top. s5's browser lets the operator navigate anywhere and select any directory, repo-flagged or not."
+
+risks:
+  - severity: medium
+    description: "New filesystem-scanning server capability, unlike anything else in this codebase (grill finding P1) — path traversal or over-broad exposure if validation is incomplete."
+    mitigation: "Mirror the existing resolve()/existsSync/statSync pattern exactly; explicit test coverage for traversal rejection; documented as loopback-only."

@@ -66,6 +66,8 @@ build/
 !.pHive/epics/consus-phase23-decision-attachments/**
 !.pHive/epics/consus-phase24-branch-level-surfacing/
 !.pHive/epics/consus-phase24-branch-level-surfacing/**
+!.pHive/epics/consus-phase25-project-registration-ux/
+!.pHive/epics/consus-phase25-project-registration-ux/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/
