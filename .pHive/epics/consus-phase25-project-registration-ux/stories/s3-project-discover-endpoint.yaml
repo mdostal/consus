@@ -1,0 +1,85 @@
+id: s3-project-discover-endpoint
+epic: consus-phase25-project-registration-ux
+title: GET /api/projects/discover — sibling + CONSUS_DISCOVERY_ROOTS candidate repos
+status: pending
+complexity: low
+methodology: tdd
+depends_on: [s2-fs-list-endpoint]
+
+description: |
+  Zero-configuration repo discovery, built on s2's generic listing logic. `GET /api/projects/discover`
+  resolves candidate root directories from two sources — (a) the parent directory of every already-
+  registered project's path (e.g. once `consus` is registered at `/Users/x/work/pantheon/consus`,
+  siblings under `/Users/x/work/pantheon/` become free candidates), and (b) an optional
+  `CONSUS_DISCOVERY_ROOTS` env var (comma-separated absolute paths — follow the exact same
+  env-var-parsing convention as `CONSUS_HARNESS_ARGS` in server/index.ts, which already splits a
+  comma-separated env var). For each resolved root, list its immediate subdirectories (reuse s2's
+  listing logic directly — do not duplicate the readdir/isRepo logic), filter to `isRepo === true`
+  and not already a registered project path, and return the deduplicated result as
+  `{ candidates: { name: string, path: string }[] }`.
+
+  Document the route in docs/api-reference.md including the same loopback-only callout s2's route
+  carries (this route is built directly on s2's exposure category).
+
+acceptance_criteria:
+  - "Given at least one registered project, when GET /api/projects/discover is called, then sibling directories of that project's path that contain .git or .pHive are included as candidates (unless already registered)."
+  - "Given CONSUS_DISCOVERY_ROOTS is set to one or more comma-separated absolute paths, when GET /api/projects/discover is called, then each root's immediate subdirectories that look like repos are included as candidates, regardless of what's already registered."
+  - "Given a directory that is already a registered project's path, when it would otherwise qualify as a candidate, then it is excluded from the results — no operator sees a 'discover' option for something already registered."
+  - "Given the same directory is reachable via both sibling-discovery and an explicit CONSUS_DISCOVERY_ROOTS entry, when GET /api/projects/discover is called, then it appears exactly once in the results (deduplicated by path)."
+  - "Given no registered projects and no CONSUS_DISCOVERY_ROOTS set (a state that cannot actually occur today, since the registry always has at least the default `consus: cwd` entry, but must not crash if it somehow did), when GET /api/projects/discover is called, then it returns an empty candidates array, not an error."
+
+steps:
+  - id: research
+    description: >
+      Read server/index.ts for the exact CONSUS_HARNESS_ARGS comma-split parsing convention to mirror
+      for CONSUS_DISCOVERY_ROOTS. Read s2's final real GET /api/fs/list implementation (its actual
+      shape may differ slightly from its story description if the implementer made different judgment
+      calls — read the real code, not just s2's YAML) to call its listing logic directly rather than
+      re-implementing readdir/isRepo detection.
+    agent: researcher
+  - id: test-spec
+    description: >
+      Write failing tests in server/routes/projects.test.ts (new describe block) or a new
+      server/routes/projects.discover.test.ts covering: sibling discovery, CONSUS_DISCOVERY_ROOTS
+      discovery, exclusion of already-registered paths, deduplication, and the empty-registry
+      non-crash case.
+    agent: tester
+  - id: implement
+    description: >
+      Implement the GET /api/projects/discover handler, reusing s2's listing logic (import the
+      function directly, don't duplicate it). Document in docs/api-reference.md.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: >
+      Confirm the route genuinely reuses s2's listing logic rather than reimplementing readdir/isRepo
+      detection a second time (this is the actual point of building s2 as a shared primitive). Run npm
+      test and npm run build for real.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit to the epic branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: server/index.ts
+      purpose: "Line ~137: CONSUS_HARNESS_ARGS comma-split parsing convention — mirror this exact pattern for CONSUS_DISCOVERY_ROOTS."
+    - path: server/routes/projects.ts
+      purpose: "The `repos: Record<string,string>` map — the source of already-registered paths to derive sibling roots from and exclude from candidates."
+  references:
+    - path: .pHive/epics/consus-phase25-project-registration-ux/docs/design-discussion.md
+      relevant_excerpt: |
+        Both (a) and (b) are served by a single generic building block: GET /api/fs/list...
+        GET /api/projects/discover is a thin convenience wrapper: resolves the (a)/(b) candidate
+        roots, calls the same listing logic per root, filters to isRepo && not already registered.
+
+design_decisions:
+  - decision: "Reuses s2's listing logic directly rather than duplicating readdir/isRepo detection."
+    rationale: "Single source of truth for 'what counts as a repo-like directory' — avoids the two routes drifting on their isRepo heuristic over time."
+
+risks:
+  - severity: low
+    description: "A misconfigured CONSUS_DISCOVERY_ROOTS (e.g. accidentally set to a very large or slow-to-enumerate directory) could make this route slow."
+    mitigation: "One level deep only (inherited from s2), and env var is an explicit opt-in the operator controls."

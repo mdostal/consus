@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Register a new project from the API/UI** (`POST /api/projects`, an `AddProjectForm` in the
+  Projects tab): names a project, points it at a repo path on disk, persists it to
+  `.pHive/consus-projects.json`, and runs an immediate scan.
+- **`consus-phase25-project-registration-ux`:** three real gaps found by live-testing the above —
+  selecting a project surfaced no way to see where it actually lives on disk, the add-project
+  button was completely unstyled (zero CSS rule targeted it), and there was no way to find a repo
+  to register beyond typing its exact absolute path from memory. Fixed via a fully planned +
+  executed epic (`/plan` → adversarial `/grill` → `/execute`, 5 dependency-tracked stories):
+  `GET /api/projects` now returns each project's `paths`, shown as a labeled `Project path` field
+  when selected; the add-project submit button now matches the app's existing accent-fill
+  convention (`.diagram-view__header button`) across all 3 skins; a new
+  `GET /api/fs/list?path=` (generic, loopback-only, one-level directory listing) backs both a
+  zero-config `GET /api/projects/discover` (auto-surfaces sibling repos of already-registered
+  projects, plus an optional `CONSUS_DISCOVERY_ROOTS` env var) and a new interactive
+  `DirectoryBrowser` component — navigate from the home directory, breadcrumb back up, select any
+  directory regardless of whether it's repo-flagged. All three path-filling methods (manual entry,
+  discovered-candidates select, browser) are additive; none is a hard requirement.
+
 ## [0.12.0] - 2026-08-19
 
 ### Added

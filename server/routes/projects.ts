@@ -1,5 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
+import { existsSync, statSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { scanRepo } from "../adapters/doc-scanner/index.js";
 import {
   listBranches,
@@ -7,15 +9,33 @@ import {
   readDocContentAtRef,
   UnresolvableRefError,
 } from "../adapters/doc-scanner/git-ref.js";
-import { listProjects } from "../config/project-registry.js";
+import { listProjects, saveProjectRegistry } from "../config/project-registry.js";
+import { listSubdirectories } from "./fs.js";
 import { detectEvents } from "../events/detect.js";
 import { parseDecisionPayload, serializeDecisionPayload } from "../decision-contract/parser.js";
 import { classifyItem } from "../decision-contract/classifier.js";
+
+/** Project names double as URL path segments (`:project`) and as parts of
+ *  item ids (`decision:<repo>:...`, `diagram:<repo>`) elsewhere in this
+ *  codebase — restricted to a safe slug so a registered name can never
+ *  collide with those conventions or need escaping. */
+const VALID_PROJECT_NAME = /^[a-zA-Z0-9_-]+$/;
 
 export interface ProjectRoutesOptions {
   db: Database.Database;
   /** repo name -> absolute path on disk, needed to resolve :project to a scan target */
   repos: Record<string, string>;
+  /** Where the registry is persisted so a newly-added project survives a
+   *  server restart. Defaults to the same path `loadProjectRegistry` reads
+   *  from `CONSUS_PROJECTS_CONFIG` at startup (server/index.ts). */
+  projectsConfigPath?: string;
+  /** s3 (consus-phase25-project-registration-ux): extra candidate root
+   *  directories for `GET /api/projects/discover`, sourced from
+   *  `CONSUS_DISCOVERY_ROOTS` (comma-separated absolute paths) — mirrors
+   *  `CONSUS_HARNESS_ARGS`'s comma-split convention (server/index.ts).
+   *  Additive to the parent-directory-of-every-registered-project roots
+   *  discover always resolves; empty by default. */
+  discoveryRoots?: string[];
 }
 
 /** `file_path -> content_hash` snapshot of a repo's doc_index rows, read
@@ -99,9 +119,104 @@ function ingestDecisionsAtRef(
  * scan trigger (single-project ingest, scan-all, any future ad-hoc trigger)
  * must produce events identically.
  */
-export function registerProjectRoutes(app: FastifyInstance, { db, repos }: ProjectRoutesOptions): void {
+export function registerProjectRoutes(
+  app: FastifyInstance,
+  {
+    db,
+    repos,
+    projectsConfigPath = ".pHive/consus-projects.json",
+    discoveryRoots = [],
+  }: ProjectRoutesOptions,
+): void {
+  /**
+   * s1 (consus-phase25-project-registration-ux): `paths` is additive
+   * alongside `projects` — sourced from the same in-memory `repos` map
+   * this route already has in scope, so ProjectsSection can show a
+   * selected project's absolute repo path without a second round-trip.
+   * A shallow copy, not a reference to `repos` itself, so a caller can't
+   * mutate the live registry through the response body.
+   */
   app.get("/api/projects", async () => {
-    return { projects: listProjects(repos) };
+    return { projects: listProjects(repos), paths: { ...repos } };
+  });
+
+  /**
+   * s3 (consus-phase25-project-registration-ux): zero-configuration repo
+   * discovery, built directly on s2's `listSubdirectories` (server/routes/
+   * fs.ts) — this route resolves *which* directories to list, s2's function
+   * still does the actual readdir/isRepo work, so the two routes can never
+   * drift on what counts as "looks like a repo."
+   *
+   * Candidate roots come from two sources: (a) the parent directory of every
+   * already-registered project's path (siblings of a registered repo are
+   * free candidates), and (b) `discoveryRoots` (CONSUS_DISCOVERY_ROOTS,
+   * threaded through server/index.ts the same way CONSUS_HARNESS_ARGS is).
+   * A root that doesn't exist or isn't a directory is silently skipped
+   * rather than failing the whole request — a stale/misconfigured
+   * CONSUS_DISCOVERY_ROOTS entry shouldn't 500 this route.
+   */
+  app.get("/api/projects/discover", async () => {
+    const registeredPaths = new Set(Object.values(repos).map((repoPath) => resolve(repoPath)));
+
+    const roots = new Set<string>();
+    for (const repoPath of Object.values(repos)) {
+      roots.add(dirname(resolve(repoPath)));
+    }
+    for (const root of discoveryRoots) {
+      roots.add(resolve(root));
+    }
+
+    const candidatesByPath = new Map<string, { name: string; path: string }>();
+    for (const root of roots) {
+      if (!existsSync(root) || !statSync(root).isDirectory()) continue;
+
+      for (const entry of listSubdirectories(root)) {
+        if (!entry.isRepo) continue;
+        if (registeredPaths.has(entry.path)) continue;
+        candidatesByPath.set(entry.path, { name: entry.name, path: entry.path });
+      }
+    }
+
+    const candidates = [...candidatesByPath.values()].sort((a, b) => a.path.localeCompare(b.path));
+    return { candidates };
+  });
+
+  /**
+   * Registers a new project — the missing counterpart to hand-editing
+   * `.pHive/consus-projects.json`: names it, points it at a repo path on
+   * disk, persists that to the config file so it survives a restart, and
+   * immediately runs the same scan `POST /api/projects/:project/ingest`
+   * does so the operator sees docs right away instead of an empty project.
+   */
+  app.post<{ Body: { name?: string; path?: string } }>("/api/projects", async (request, reply) => {
+    const { name, path } = request.body ?? {};
+
+    if (!name || !VALID_PROJECT_NAME.test(name)) {
+      return reply
+        .code(400)
+        .send({ error: "name is required and may only contain letters, numbers, - and _" });
+    }
+    if (!path) {
+      return reply.code(400).send({ error: "path is required" });
+    }
+    if (repos[name]) {
+      return reply.code(409).send({ error: `project "${name}" is already registered` });
+    }
+
+    const repoPath = resolve(path);
+    if (!existsSync(repoPath) || !statSync(repoPath).isDirectory()) {
+      return reply.code(400).send({ error: `path does not exist or is not a directory: ${repoPath}` });
+    }
+
+    repos[name] = repoPath;
+    saveProjectRegistry(projectsConfigPath, repos);
+
+    const previousHashes = snapshotDocIndexHashes(db, name);
+    scanRepo(db, { repoName: name, repoPath });
+    const eventsCreated = detectEvents(db, { project: name, repoName: name, repoPath, previousHashes });
+    const row = db.prepare("SELECT COUNT(*) AS n FROM doc_index WHERE repo = ?").get(name) as { n: number };
+
+    return reply.code(201).send({ project: name, path: repoPath, docsScanned: row.n, eventsCreated });
   });
 
   /**
