@@ -927,6 +927,41 @@ body {
   border-color: color-mix(in srgb, var(--consus-accent) 55%, transparent);
 }
 
+/* Register a new project — name + repo path, scanned on submit */
+.add-project-form {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(14px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg-subtle);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  font-family: var(--consus-font-ui);
+  color: var(--consus-ink);
+}
+.add-project-form__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  flex: 1;
+  min-width: 200px;
+}
+.add-project-form__field input {
+  padding: 8px 12px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg);
+  color: var(--consus-ink);
+  font: inherit;
+}
+.add-project-form .dv__err {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 /* p14-6: doc search box + results, alongside the doc-browser tree above */
 .doc-search {
   font-family: var(--consus-font-ui);

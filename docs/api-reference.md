@@ -29,6 +29,18 @@ Lists the configured project names (from `CONSUS_PROJECTS_CONFIG`, default
 
 **Response 200:** `{ "projects": string[] }` — e.g. `{ "projects": ["consus"] }`.
 
+### `POST /api/projects`
+Registers a new project: names it, points it at a repo path on disk, persists that to
+`CONSUS_PROJECTS_CONFIG` so it survives a restart, and immediately runs the same scan
+`POST /api/projects/:project/ingest` does.
+
+**Body:** `{ "name": string, "path": string }` — `name` may only contain letters, numbers, `-` and
+`_` (it doubles as a URL segment and part of internal item ids); `path` is resolved to an absolute
+path and must exist on disk.
+
+**Response 201:** `{ "project": string, "path": string, "docsScanned": number, "eventsCreated": number }`.
+**400** for a missing/invalid `name` or `path` that doesn't exist. **409** if `name` is already registered.
+
 ### `POST /api/projects/scan-all`
 Sweeps every configured project in one action — the same scan `POST /api/projects/:project/ingest`
 runs, plus the same event-detection pass (`doc_changed`/`decision_needed`, see **Events** below),

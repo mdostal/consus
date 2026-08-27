@@ -5,6 +5,7 @@ import { CommentThread, type Comment } from "./features/comments/CommentThread";
 import { GlobalView, type KbEntrySummary } from "./features/projects/GlobalView";
 import { ProjectView } from "./features/projects/ProjectView";
 import { BranchPicker } from "./features/projects/BranchPicker";
+import { AddProjectForm } from "./features/projects/AddProjectForm";
 import { DocDiffCheck } from "./features/docs/DocDiffCheck";
 import { DiagramView, type DiagramEpic } from "./features/projects/DiagramView";
 import { ArchitectureDiagramView } from "./features/projects/ArchitectureDiagramView";
@@ -404,6 +405,8 @@ function ProjectsSection() {
   const [refreshToken, setRefreshToken] = useState(0);
   const [ingesting, setIngesting] = useState(false);
   const [ingestError, setIngestError] = useState<string | null>(null);
+  const [addingProject, setAddingProject] = useState(false);
+  const [addProjectError, setAddProjectError] = useState<string | null>(null);
   // s4 (consus-phase24-branch-level-surfacing): null = "(default)" = no
   // branch filter, today's exact unfiltered behavior. Reset to null on
   // every project switch below — a branch name picked for one project has
@@ -430,12 +433,41 @@ function ProjectsSection() {
     loadEntries();
   }, [loadEntries]);
 
-  useEffect(() => {
-    fetch("/api/projects")
+  const loadProjects = useCallback(() => {
+    return fetch("/api/projects")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((body) => setProjects(body.projects))
       .catch((e) => setError(e.message));
   }, []);
+
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
+
+  async function registerProject(name: string, path: string) {
+    setAddingProject(true);
+    setAddProjectError(null);
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, path }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      await loadProjects();
+      loadEntries();
+      setProject(name);
+      setBranch(null);
+      setRefreshToken((t) => t + 1);
+    } catch (e) {
+      setAddProjectError((e as Error).message);
+    } finally {
+      setAddingProject(false);
+    }
+  }
 
   async function ingestRepo(repoName: string) {
     setIngesting(true);
@@ -465,10 +497,13 @@ function ProjectsSection() {
         <p>Every registered project — scope to one to see its diagrams, docs, and KB entries, or see the shape of things across all.</p>
       </div>
 
+      <AddProjectForm onSubmit={registerProject} submitting={addingProject} error={addProjectError} />
+
       {projects.length === 0 ? (
         <div className="empty">
           <strong>No projects registered</strong>
-          Configure at least one project (see .pHive/consus-projects.json) so there's a repo to select and ingest.
+          Add a project above by name and repo path — it's scanned immediately and persisted to
+          .pHive/consus-projects.json.
         </div>
       ) : (
         <>

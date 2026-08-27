@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
@@ -113,6 +113,109 @@ describe("POST /api/projects/:project/ingest", () => {
     expect(body.eventsCreated).toBe(3); // 2 new docs (doc_changed) + 1 decision_needed
     const events = db.prepare("SELECT trigger_kind FROM events").all() as Array<{ trigger_kind: string }>;
     expect(events.map((e) => e.trigger_kind).sort()).toEqual(["decision_needed", "doc_changed", "doc_changed"]);
+  });
+});
+
+describe("POST /api/projects", () => {
+  let workDir: string;
+  let newRepoDir: string;
+  let configPath: string;
+  let repos: Record<string, string>;
+  let db: Database.Database;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    workDir = mkdtempSync(join(tmpdir(), "consus-register-"));
+    newRepoDir = join(workDir, "new-repo");
+    mkdirSync(join(newRepoDir, ".pHive", "planning"), { recursive: true });
+    writeFileSync(join(newRepoDir, ".pHive", "planning", "brief.md"), "# Brief\n\ncontent");
+
+    configPath = join(workDir, "consus-projects.json");
+    repos = { consus: "/tmp/consus" };
+
+    db = new Database(":memory:");
+    runMigration(db);
+
+    app = Fastify();
+    registerProjectRoutes(app, { db, repos, projectsConfigPath: configPath });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+    rmSync(workDir, { recursive: true, force: true });
+  });
+
+  it("registers a new project, scans it immediately, and persists the registry to disk", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { name: "new-repo", path: newRepoDir },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toEqual({
+      project: "new-repo",
+      path: newRepoDir,
+      docsScanned: 1,
+      eventsCreated: 1,
+    });
+
+    // live in-memory registry (repos) is mutated so the project is
+    // immediately usable by every other route without a restart
+    expect(repos["new-repo"]).toBe(newRepoDir);
+
+    expect(existsSync(configPath)).toBe(true);
+    expect(JSON.parse(readFileSync(configPath, "utf-8"))).toEqual({
+      consus: "/tmp/consus",
+      "new-repo": newRepoDir,
+    });
+
+    const listRes = await app.inject({ method: "GET", url: "/api/projects" });
+    expect(listRes.json().projects).toContain("new-repo");
+  });
+
+  it("rejects a name that's already registered", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { name: "consus", path: newRepoDir },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'project "consus" is already registered' });
+  });
+
+  it("rejects a path that doesn't exist on disk", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { name: "ghost", path: join(workDir, "does-not-exist") },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/does not exist/);
+    expect(repos.ghost).toBeUndefined();
+  });
+
+  it("rejects a name with characters outside the safe slug set", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { name: "not a valid/name", path: newRepoDir },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/letters, numbers/);
+  });
+
+  it("rejects a missing name or path", async () => {
+    const missingPath = await app.inject({ method: "POST", url: "/api/projects", payload: { name: "x" } });
+    expect(missingPath.statusCode).toBe(400);
+
+    const missingName = await app.inject({ method: "POST", url: "/api/projects", payload: { path: newRepoDir } });
+    expect(missingName.statusCode).toBe(400);
   });
 });
 

@@ -32,6 +32,10 @@ export interface BuildServerOptions {
   dbPath: string;
   /** repo name -> absolute path on disk, scanned for generated docs */
   repos?: Record<string, string>;
+  /** Where `repos` is persisted when a project is registered via
+   *  `POST /api/projects` (server/routes/projects.ts), so it survives a
+   *  restart. Mirrors `CONSUS_PROJECTS_CONFIG`'s default. */
+  projectsConfigPath?: string;
   /** Generic agent-harness dispatch for the propose-a-change mechanism
    *  (server/proposals/store.ts). No specific system by default. */
   transport?: HarnessTransport;
@@ -55,6 +59,7 @@ export function buildServer({
   transport = NOOP_HARNESS_TRANSPORT,
   webRoot = WEB_ROOT,
   attachmentsDir = ".pHive/attachments",
+  projectsConfigPath = ".pHive/consus-projects.json",
 }: BuildServerOptions): FastifyInstance {
   const app = Fastify({ logger: false });
   const db = openDb(dbPath);
@@ -63,7 +68,7 @@ export function buildServer({
   const storageAdapter = createStorageAdapter({ baseDir: attachmentsDir });
 
   registerDocRoutes(app, { db, repos });
-  registerProjectRoutes(app, { db, repos });
+  registerProjectRoutes(app, { db, repos, projectsConfigPath });
   registerKbRoutes(app, { db });
   registerArtifactLinkRoutes(app, { db });
   registerDecisionRoutes(app, { db });
@@ -138,7 +143,7 @@ if (isMain) {
         )
       : NOOP_HARNESS_TRANSPORT;
 
-  const app = buildServer({ dbPath, repos, transport, attachmentsDir });
+  const app = buildServer({ dbPath, repos, transport, attachmentsDir, projectsConfigPath });
   app.listen({ port, host }).then(() => {
     // eslint-disable-next-line no-console
     console.log(`Consus server listening on :${port} (db: ${dbPath})`);

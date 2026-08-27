@@ -11,6 +11,10 @@ build/
 *.sqlite-wal
 *.sqlite-shm
 
+# Local project registry — machine-specific absolute repo paths, populated
+# via POST /api/projects or hand-editing; each dev/deploy has its own.
+.pHive/consus-projects.json
+
 # Hive planning sidecars — generated on demand, not committed (transient retention)
 .pHive/epics/**/docs/*.html
 .pHive/epics/**/index.html
