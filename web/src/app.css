@@ -961,6 +961,21 @@ body {
   flex-basis: 100%;
   margin: 0;
 }
+.add-project-form button {
+  font-family: var(--consus-font-ui);
+  background: var(--consus-accent);
+  color: var(--consus-bg);
+  border: 0;
+  padding: 8px 16px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+}
+.add-project-form button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 /* p14-6: doc search box + results, alongside the doc-browser tree above */
 .doc-search {

@@ -20,6 +20,15 @@ describe("AddProjectForm", () => {
     expect(screen.getByRole("button", { name: "Add project" })).toBeDisabled();
   });
 
+  it("enables the submit button once both fields are filled", () => {
+    render(<AddProjectForm onSubmit={vi.fn()} submitting={false} />);
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "my-repo" } });
+    fireEvent.change(screen.getByLabelText("Repo path"), { target: { value: "/repos/my-repo" } });
+
+    expect(screen.getByRole("button", { name: "Add project" })).toBeEnabled();
+  });
+
   it("shows a submitting state and disables inputs while a request is in flight", () => {
     render(<AddProjectForm onSubmit={vi.fn()} submitting />);
 
