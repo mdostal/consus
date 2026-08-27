@@ -11,6 +11,10 @@ build/
 *.sqlite-wal
 *.sqlite-shm
 
+# Local project registry — machine-specific absolute repo paths, populated
+# via POST /api/projects or hand-editing; each dev/deploy has its own.
+.pHive/consus-projects.json
+
 # Hive planning sidecars — generated on demand, not committed (transient retention)
 .pHive/epics/**/docs/*.html
 .pHive/epics/**/index.html
@@ -62,6 +66,8 @@ build/
 !.pHive/epics/consus-phase23-decision-attachments/**
 !.pHive/epics/consus-phase24-branch-level-surfacing/
 !.pHive/epics/consus-phase24-branch-level-surfacing/**
+!.pHive/epics/consus-phase25-project-registration-ux/
+!.pHive/epics/consus-phase25-project-registration-ux/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/

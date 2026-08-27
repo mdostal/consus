@@ -5,6 +5,7 @@ import { CommentThread, type Comment } from "./features/comments/CommentThread";
 import { GlobalView, type KbEntrySummary } from "./features/projects/GlobalView";
 import { ProjectView } from "./features/projects/ProjectView";
 import { BranchPicker } from "./features/projects/BranchPicker";
+import { AddProjectForm } from "./features/projects/AddProjectForm";
 import { DocDiffCheck } from "./features/docs/DocDiffCheck";
 import { DiagramView, type DiagramEpic } from "./features/projects/DiagramView";
 import { ArchitectureDiagramView } from "./features/projects/ArchitectureDiagramView";
@@ -399,11 +400,19 @@ function ProjectBranchDecisions({ repo, branch }: { repo: string; branch: string
 function ProjectsSection() {
   const [entries, setEntries] = useState<KbEntrySummary[] | null>(null);
   const [projects, setProjects] = useState<string[] | null>(null);
+  // s1 (consus-phase25-project-registration-ux): GET /api/projects's new
+  // `paths` map — name -> absolute repo path. Defaults to {} rather than
+  // null so a lookup before the first load resolves (never renders a
+  // stale/undefined path field), matching `paths[project]` being
+  // undefined for a project this map hasn't heard of yet.
+  const [paths, setPaths] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [project, setProject] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [ingesting, setIngesting] = useState(false);
   const [ingestError, setIngestError] = useState<string | null>(null);
+  const [addingProject, setAddingProject] = useState(false);
+  const [addProjectError, setAddProjectError] = useState<string | null>(null);
   // s4 (consus-phase24-branch-level-surfacing): null = "(default)" = no
   // branch filter, today's exact unfiltered behavior. Reset to null on
   // every project switch below — a branch name picked for one project has
@@ -430,12 +439,46 @@ function ProjectsSection() {
     loadEntries();
   }, [loadEntries]);
 
-  useEffect(() => {
-    fetch("/api/projects")
+  const loadProjects = useCallback(() => {
+    return fetch("/api/projects")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((body) => setProjects(body.projects))
+      .then((body) => {
+        setProjects(body.projects);
+        // paths is additive server-side (s1) — default to {} for any
+        // caller/mock that still returns the pre-s1 `{ projects }` shape.
+        setPaths(body.paths ?? {});
+      })
       .catch((e) => setError(e.message));
   }, []);
+
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
+
+  async function registerProject(name: string, path: string) {
+    setAddingProject(true);
+    setAddProjectError(null);
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, path }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      await loadProjects();
+      loadEntries();
+      setProject(name);
+      setBranch(null);
+      setRefreshToken((t) => t + 1);
+    } catch (e) {
+      setAddProjectError((e as Error).message);
+    } finally {
+      setAddingProject(false);
+    }
+  }
 
   async function ingestRepo(repoName: string) {
     setIngesting(true);
@@ -465,10 +508,13 @@ function ProjectsSection() {
         <p>Every registered project — scope to one to see its diagrams, docs, and KB entries, or see the shape of things across all.</p>
       </div>
 
+      <AddProjectForm onSubmit={registerProject} submitting={addingProject} error={addProjectError} />
+
       {projects.length === 0 ? (
         <div className="empty">
           <strong>No projects registered</strong>
-          Configure at least one project (see .pHive/consus-projects.json) so there's a repo to select and ingest.
+          Add a project above by name and repo path — it's scanned immediately and persisted to
+          .pHive/consus-projects.json.
         </div>
       ) : (
         <>
@@ -508,6 +554,7 @@ function ProjectsSection() {
           ) : (
             <>
               <div className="project-actions">
+                {paths[project] ? <ProjectPathField path={paths[project]} /> : null}
                 <button type="button" onClick={() => ingestRepo(project)} disabled={ingesting}>
                   {ingesting ? "Ingesting…" : "Ingest repo"}
                 </button>
@@ -532,6 +579,38 @@ function ProjectsSection() {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * s1 (consus-phase25-project-registration-ux): the selected project's
+ * registered repo path, shown as a labeled field rather than bare text —
+ * grill finding U1 flagged that a stray line of plain text next to a
+ * project name would read as un-intentional, the same gap already found
+ * in the add-project form. Follows DiagramMetadataStrip.tsx's Field
+ * helper convention: the label lives in its own <span>, and the value is
+ * folded into the *same* direct-text-node expression as the em dash
+ * (`` ` — ${path}` ``) rather than a bare adjacent text node, so this
+ * field's own wrapping <div> never exact-text-matches the path alone.
+ * Purely informational chrome — styled with existing --consus-* tokens
+ * only (app.css), no per-skin structural fork: DiagramMetadataStrip's
+ * three-way skin fork is reserved for content that genuinely differs per
+ * skin, which a repo path does not.
+ *
+ * Labeled "Project path" rather than "Repo path" — AddProjectForm.tsx
+ * already uses "Repo path" as its own field label for the add-project
+ * input, always rendered above this section regardless of selection;
+ * reusing that exact text here would make the two genuinely different
+ * fields (one an editable input for registering a new project, this one
+ * read-only metadata for the one already selected) indistinguishable to
+ * both a screen reader and an exact-text query.
+ */
+function ProjectPathField({ path }: { path: string }) {
+  return (
+    <div className="project-path-field" data-testid="project-path-field">
+      <span className="project-path-field__label">Project path</span>
+      {` — ${path}`}
     </div>
   );
 }

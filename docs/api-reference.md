@@ -27,7 +27,43 @@ Confirms the server and SQLite connection are up.
 Lists the configured project names (from `CONSUS_PROJECTS_CONFIG`, default
 `.pHive/consus-projects.json`; defaults to `{ consus: <cwd> }` when no config file exists).
 
-**Response 200:** `{ "projects": string[] }` — e.g. `{ "projects": ["consus"] }`.
+**Response 200:** `{ "projects": string[], "paths": Record<string, string> }` — `paths` maps every
+registered project name to its absolute repo path on disk (same map `CONSUS_PROJECTS_CONFIG`
+loads into), e.g.:
+```json
+{ "projects": ["consus"], "paths": { "consus": "/Users/example/repos/consus" } }
+```
+
+### `GET /api/projects/discover`
+> **Loopback-only.** Built directly on `GET /api/fs/list`'s exposure category (see its callout
+> below) — it reads filesystem structure beyond registered projects via the same
+> `listSubdirectories` primitive. Same guidance applies: fine on the default `HOST=127.0.0.1`
+> binding, not safe to expose on `HOST=0.0.0.0` without your own auth/network controls in front.
+
+Zero-configuration repo discovery. Resolves candidate root directories from two sources: (a) the
+parent directory of every already-registered project's path (e.g. once `consus` is registered at
+`/Users/x/work/pantheon/consus`, siblings under `/Users/x/work/pantheon/` become free candidates),
+and (b) `CONSUS_DISCOVERY_ROOTS` — an optional, comma-separated list of absolute paths (same
+comma-split convention as `CONSUS_HARNESS_ARGS`). For each resolved root, lists its immediate
+subdirectories (reusing `GET /api/fs/list`'s `listSubdirectories` directly — no duplicated
+readdir/isRepo logic), filters to entries where `isRepo` is `true` and the path isn't already
+registered, and returns the deduplicated result.
+
+**Response 200:** `{ "candidates": [{ "name": string, "path": string }] }`. Returns
+`{ "candidates": [] }` (never an error) when no roots resolve to anything — e.g. an empty registry
+and no `CONSUS_DISCOVERY_ROOTS`.
+
+### `POST /api/projects`
+Registers a new project: names it, points it at a repo path on disk, persists that to
+`CONSUS_PROJECTS_CONFIG` so it survives a restart, and immediately runs the same scan
+`POST /api/projects/:project/ingest` does.
+
+**Body:** `{ "name": string, "path": string }` — `name` may only contain letters, numbers, `-` and
+`_` (it doubles as a URL segment and part of internal item ids); `path` is resolved to an absolute
+path and must exist on disk.
+
+**Response 201:** `{ "project": string, "path": string, "docsScanned": number, "eventsCreated": number }`.
+**400** for a missing/invalid `name` or `path` that doesn't exist. **409** if `name` is already registered.
 
 ### `POST /api/projects/scan-all`
 Sweeps every configured project in one action — the same scan `POST /api/projects/:project/ingest`
@@ -50,6 +86,28 @@ poll — nothing scans automatically; this is the only way `doc_index` gets popu
 
 **Response 200:** `{ "project": string, "docsScanned": number, "eventsCreated": number }`.
 **404** if `:project` isn't a configured repo.
+
+### `GET /api/fs/list?path=<dir>`
+> **Loopback-only.** Unlike every other route in this reference, this one reads filesystem
+> structure beyond any project the operator has explicitly registered — it will list whatever
+> directories the server process can see, not just registered-repo paths. It's intended for the
+> default `HOST=127.0.0.1` binding (server/index.ts), where only processes on the same machine can
+> reach it. Do **not** expose this route on a `HOST=0.0.0.0` containerized deploy without adding
+> your own auth/network controls in front of it.
+
+Lists `path`'s immediate subdirectories only — one level, not recursive, not files. A caller
+wanting to go deeper calls again with a returned subdirectory `path`. Each entry reports whether it
+looks like a repo (`.git` or `.pHive` present directly inside it), as a hint only — this route never
+filters on it. `path` is resolved with the same `resolve()` + `existsSync` + `statSync` validation
+`POST /api/projects` uses; a raw value containing a `..` segment is rejected before resolution ever
+runs. A subdirectory entry that can't be stat'd (permission denied, broken symlink) is silently
+omitted rather than failing the whole listing.
+
+**Query:** `path` (optional) — absolute or relative directory path. Defaults to the OS home
+directory (`os.homedir()`) when omitted.
+
+**Response 200:** `{ "path": string, "entries": [{ "name": string, "path": string, "isRepo": boolean }] }`.
+**400** if `path` doesn't exist, isn't a directory, or contains a `..` segment.
 
 ## Decisions (the queue an agent harness reads)
 

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { loadProjectRegistry } from "./project-registry.js";
+import { loadProjectRegistry, saveProjectRegistry } from "./project-registry.js";
 
 describe("loadProjectRegistry", () => {
   let tmpDir: string;
@@ -53,5 +53,27 @@ describe("loadProjectRegistry", () => {
     const registry = { "proj-a": "/a", "proj-b": "/b" };
 
     expect(listProjects(registry)).toEqual(["proj-a", "proj-b"]);
+  });
+});
+
+describe("saveProjectRegistry", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "consus-registry-save-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("writes a registry that loadProjectRegistry reads back unchanged", () => {
+    const projARoot = join(tmpDir, "proj-a");
+    mkdirSync(projARoot, { recursive: true });
+    const configPath = join(tmpDir, "projects.json");
+
+    saveProjectRegistry(configPath, { "proj-a": projARoot });
+
+    expect(loadProjectRegistry(configPath, "/some/cwd")).toEqual({ "proj-a": projARoot });
   });
 });

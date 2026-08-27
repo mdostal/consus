@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 export type ProjectRegistry = Record<string, string>;
 
@@ -37,4 +37,11 @@ export function loadProjectRegistry(configPath: string, cwd: string): ProjectReg
 
 export function listProjects(registry: ProjectRegistry): string[] {
   return Object.keys(registry);
+}
+
+/** Persists the full registry back to `configPath` (pretty-printed JSON),
+ *  used by `POST /api/projects` so a newly-added project survives a server
+ *  restart the same way one hand-edited into the file would. */
+export function saveProjectRegistry(configPath: string, registry: ProjectRegistry): void {
+  writeFileSync(configPath, `${JSON.stringify(registry, null, 2)}\n`);
 }

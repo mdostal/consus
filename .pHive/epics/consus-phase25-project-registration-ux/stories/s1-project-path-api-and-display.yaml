@@ -1,0 +1,94 @@
+id: s1-project-path-api-and-display
+epic: consus-phase25-project-registration-ux
+title: GET /api/projects returns repo paths; ProjectsSection shows a labeled path field
+status: pending
+complexity: low
+methodology: tdd
+depends_on: []
+
+description: |
+  Today `GET /api/projects` returns bare `{ projects: string[] }` (server/routes/projects.ts:118-120)
+  — the client never learns a registered project's filesystem path. The only place a path is ever
+  returned to the client is transiently, in `POST /api/projects`'s own 201 response
+  (server/routes/projects.ts:157), and `App.tsx`'s `registerProject` doesn't even store it.
+
+  Add a `paths` map to `GET /api/projects`'s response, sourced from the same in-memory `repos`
+  object the route already has: `{ projects: string[], paths: Record<string,string> }`. Update
+  `ProjectsSection` in web/src/App.tsx (~line 399 onward) to render the selected project's path as
+  a labeled field — NOT bare unlabeled text. Follow this app's established label-wraps-value
+  pattern (see BranchPicker.tsx:44-63's `<label>Branch<select>...</select></label>` structure, or
+  DiagramMetadataStrip.tsx's `Field` helper at lines 67-74) so it reads as intentional metadata,
+  not a stray string. Style purely via existing `--consus-*` tokens — no per-skin structural fork
+  needed (this is informational chrome, not a diagram artifact; DiagramMetadataStrip's three-way
+  skin fork is reserved for content that genuinely differs per skin, which this does not).
+
+  Update `docs/api-reference.md`'s `GET /api/projects` section (currently states the response is
+  exactly `{ "projects": string[] }` — this doc's own header says a harness author should be able
+  to use Consus "from this doc alone") to document the new `paths` field as part of this story, not
+  a follow-up.
+
+acceptance_criteria:
+  - "Given a project is registered, when GET /api/projects is called, then the response includes a `paths` object mapping every registered project name to its absolute repo path, alongside the existing `projects` array (unchanged, still present, still in the same order)."
+  - "Given the Projects tab, when an operator selects a project, then that project's repo path is visibly displayed as a labeled field (a label plus the value, not bare text) near the project name/actions."
+  - "Given no project is selected (`All projects` view), when the Projects tab renders, then no path field is shown — this is per-project metadata, not global."
+  - "Given docs/api-reference.md, when this story ships, then its GET /api/projects section documents the `paths` field with an example matching the real response shape."
+
+steps:
+  - id: research
+    description: >
+      Read server/routes/projects.ts's GET /api/projects handler and server/config/project-registry.ts
+      to confirm the exact shape of the in-memory `repos` map. Read web/src/App.tsx's ProjectsSection
+      (~line 399+) to find exactly where project name/actions render today. Read BranchPicker.tsx and
+      DiagramMetadataStrip.tsx's Field helper for the label-wraps-value pattern to reuse.
+    agent: researcher
+  - id: test-spec
+    description: >
+      Write failing tests: server/routes/projects.test.ts covering the new `paths` field in
+      GET /api/projects's response (add to the existing "GET /api/projects" describe block); a web
+      test asserting the selected project's path renders as a labeled field once a project is
+      selected, and that no path field renders in the "All projects" (project === null) view.
+    agent: tester
+  - id: implement
+    description: >
+      Add `paths` to the GET /api/projects handler's returned object. Update ProjectsSection to fetch
+      and render the selected project's path via a small labeled-field component or inline markup
+      matching the established label-wraps-value convention, styled with existing --consus-* tokens
+      only. Update docs/api-reference.md's GET /api/projects section.
+    agent: developer
+    depends_on: [test-spec]
+  - id: review
+    description: >
+      Confirm the `projects` array is unchanged (no reordering, no removed fields — this is additive
+      only). Confirm the path field reads as an intentional labeled field, not bare text, across at
+      least one skin. Run npm test and npm run build for real. Confirm docs/api-reference.md matches
+      the real response shape exactly (not just prose approximation).
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit to the epic branch.
+    agent: developer
+    depends_on: [review]
+
+context:
+  key_files:
+    - path: server/routes/projects.ts
+      purpose: "GET /api/projects handler (lines 118-120) — add `paths` here, sourced from the `repos` param already in scope."
+    - path: server/config/project-registry.ts
+      purpose: "Defines ProjectRegistry = Record<string,string> — the exact shape `paths` should mirror."
+    - path: web/src/App.tsx
+      purpose: "ProjectsSection (~line 399+) — where the selected project's name/actions render; the path field mounts alongside them."
+    - path: web/src/features/projects/BranchPicker.tsx
+      purpose: "Reference for this app's label-wraps-value convention (lines 44-63)."
+    - path: docs/api-reference.md
+      purpose: "Line 26-30 documents GET /api/projects's current exact response shape — must be updated to match."
+
+design_decisions:
+  - decision: "Path shown as a labeled field, not bare text."
+    rationale: "Grill finding U1 (design-discussion.md): a stray line of plain text next to a project name would read as the same 'doesn't look like it belongs' gap the operator already flagged for the add-project form. A labeled field reads as intentional, matching every other metadata display in this app."
+  - decision: "docs/api-reference.md updated in this story, not deferred."
+    rationale: "Grill finding H2: the doc states its own goal is a harness author using Consus from the doc alone — a response-shape change without a doc update breaks that contract immediately."
+
+risks:
+  - severity: low
+    description: "Additive response field could theoretically break a strict-schema-validating external consumer."
+    mitigation: "No known consumer validates GET /api/projects against an exact schema (only ProjectsSection reads it, and it destructures `body.projects` only, per this epic's research). Documented explicitly in case a future harness does."
