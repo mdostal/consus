@@ -34,6 +34,25 @@ loads into), e.g.:
 { "projects": ["consus"], "paths": { "consus": "/Users/example/repos/consus" } }
 ```
 
+### `GET /api/projects/discover`
+> **Loopback-only.** Built directly on `GET /api/fs/list`'s exposure category (see its callout
+> below) — it reads filesystem structure beyond registered projects via the same
+> `listSubdirectories` primitive. Same guidance applies: fine on the default `HOST=127.0.0.1`
+> binding, not safe to expose on `HOST=0.0.0.0` without your own auth/network controls in front.
+
+Zero-configuration repo discovery. Resolves candidate root directories from two sources: (a) the
+parent directory of every already-registered project's path (e.g. once `consus` is registered at
+`/Users/x/work/pantheon/consus`, siblings under `/Users/x/work/pantheon/` become free candidates),
+and (b) `CONSUS_DISCOVERY_ROOTS` — an optional, comma-separated list of absolute paths (same
+comma-split convention as `CONSUS_HARNESS_ARGS`). For each resolved root, lists its immediate
+subdirectories (reusing `GET /api/fs/list`'s `listSubdirectories` directly — no duplicated
+readdir/isRepo logic), filters to entries where `isRepo` is `true` and the path isn't already
+registered, and returns the deduplicated result.
+
+**Response 200:** `{ "candidates": [{ "name": string, "path": string }] }`. Returns
+`{ "candidates": [] }` (never an error) when no roots resolve to anything — e.g. an empty registry
+and no `CONSUS_DISCOVERY_ROOTS`.
+
 ### `POST /api/projects`
 Registers a new project: names it, points it at a repo path on disk, persists that to
 `CONSUS_PROJECTS_CONFIG` so it survives a restart, and immediately runs the same scan

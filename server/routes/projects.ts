@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
 import { existsSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { scanRepo } from "../adapters/doc-scanner/index.js";
 import {
   listBranches,
@@ -10,6 +10,7 @@ import {
   UnresolvableRefError,
 } from "../adapters/doc-scanner/git-ref.js";
 import { listProjects, saveProjectRegistry } from "../config/project-registry.js";
+import { listSubdirectories } from "./fs.js";
 import { detectEvents } from "../events/detect.js";
 import { parseDecisionPayload, serializeDecisionPayload } from "../decision-contract/parser.js";
 import { classifyItem } from "../decision-contract/classifier.js";
@@ -28,6 +29,13 @@ export interface ProjectRoutesOptions {
    *  server restart. Defaults to the same path `loadProjectRegistry` reads
    *  from `CONSUS_PROJECTS_CONFIG` at startup (server/index.ts). */
   projectsConfigPath?: string;
+  /** s3 (consus-phase25-project-registration-ux): extra candidate root
+   *  directories for `GET /api/projects/discover`, sourced from
+   *  `CONSUS_DISCOVERY_ROOTS` (comma-separated absolute paths) — mirrors
+   *  `CONSUS_HARNESS_ARGS`'s comma-split convention (server/index.ts).
+   *  Additive to the parent-directory-of-every-registered-project roots
+   *  discover always resolves; empty by default. */
+  discoveryRoots?: string[];
 }
 
 /** `file_path -> content_hash` snapshot of a repo's doc_index rows, read
@@ -113,7 +121,12 @@ function ingestDecisionsAtRef(
  */
 export function registerProjectRoutes(
   app: FastifyInstance,
-  { db, repos, projectsConfigPath = ".pHive/consus-projects.json" }: ProjectRoutesOptions,
+  {
+    db,
+    repos,
+    projectsConfigPath = ".pHive/consus-projects.json",
+    discoveryRoots = [],
+  }: ProjectRoutesOptions,
 ): void {
   /**
    * s1 (consus-phase25-project-registration-ux): `paths` is additive
@@ -125,6 +138,47 @@ export function registerProjectRoutes(
    */
   app.get("/api/projects", async () => {
     return { projects: listProjects(repos), paths: { ...repos } };
+  });
+
+  /**
+   * s3 (consus-phase25-project-registration-ux): zero-configuration repo
+   * discovery, built directly on s2's `listSubdirectories` (server/routes/
+   * fs.ts) — this route resolves *which* directories to list, s2's function
+   * still does the actual readdir/isRepo work, so the two routes can never
+   * drift on what counts as "looks like a repo."
+   *
+   * Candidate roots come from two sources: (a) the parent directory of every
+   * already-registered project's path (siblings of a registered repo are
+   * free candidates), and (b) `discoveryRoots` (CONSUS_DISCOVERY_ROOTS,
+   * threaded through server/index.ts the same way CONSUS_HARNESS_ARGS is).
+   * A root that doesn't exist or isn't a directory is silently skipped
+   * rather than failing the whole request — a stale/misconfigured
+   * CONSUS_DISCOVERY_ROOTS entry shouldn't 500 this route.
+   */
+  app.get("/api/projects/discover", async () => {
+    const registeredPaths = new Set(Object.values(repos).map((repoPath) => resolve(repoPath)));
+
+    const roots = new Set<string>();
+    for (const repoPath of Object.values(repos)) {
+      roots.add(dirname(resolve(repoPath)));
+    }
+    for (const root of discoveryRoots) {
+      roots.add(resolve(root));
+    }
+
+    const candidatesByPath = new Map<string, { name: string; path: string }>();
+    for (const root of roots) {
+      if (!existsSync(root) || !statSync(root).isDirectory()) continue;
+
+      for (const entry of listSubdirectories(root)) {
+        if (!entry.isRepo) continue;
+        if (registeredPaths.has(entry.path)) continue;
+        candidatesByPath.set(entry.path, { name: entry.name, path: entry.path });
+      }
+    }
+
+    const candidates = [...candidatesByPath.values()].sort((a, b) => a.path.localeCompare(b.path));
+    return { candidates };
   });
 
   /**

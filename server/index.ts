@@ -52,6 +52,12 @@ export interface BuildServerOptions {
    *  and this default keeps every other buildServer() caller (tests, etc.)
    *  working unchanged without needing to pass it explicitly. */
   attachmentsDir?: string;
+  /** s3 (consus-phase25-project-registration-ux): extra candidate root
+   *  directories for `GET /api/projects/discover` (server/routes/
+   *  projects.ts), sourced from `CONSUS_DISCOVERY_ROOTS` — comma-separated
+   *  absolute paths, split the same way CONSUS_HARNESS_ARGS is below.
+   *  Empty by default. */
+  discoveryRoots?: string[];
 }
 
 export function buildServer({
@@ -61,6 +67,7 @@ export function buildServer({
   webRoot = WEB_ROOT,
   attachmentsDir = ".pHive/attachments",
   projectsConfigPath = ".pHive/consus-projects.json",
+  discoveryRoots = [],
 }: BuildServerOptions): FastifyInstance {
   const app = Fastify({ logger: false });
   const db = openDb(dbPath);
@@ -69,7 +76,7 @@ export function buildServer({
   const storageAdapter = createStorageAdapter({ baseDir: attachmentsDir });
 
   registerDocRoutes(app, { db, repos });
-  registerProjectRoutes(app, { db, repos, projectsConfigPath });
+  registerProjectRoutes(app, { db, repos, projectsConfigPath, discoveryRoots });
   registerFsRoutes(app, {});
   registerKbRoutes(app, { db });
   registerArtifactLinkRoutes(app, { db });
@@ -134,6 +141,12 @@ if (isMain) {
   const projectsConfigPath = process.env.CONSUS_PROJECTS_CONFIG ?? ".pHive/consus-projects.json";
   const attachmentsDir = process.env.CONSUS_ATTACHMENTS_DIR ?? ".pHive/attachments";
   const repos = loadProjectRegistry(projectsConfigPath, process.cwd());
+  // s3 (consus-phase25-project-registration-ux): comma-separated absolute
+  // paths, same split convention as CONSUS_HARNESS_ARGS below. Feeds
+  // GET /api/projects/discover's candidate-root resolution.
+  const discoveryRoots = process.env.CONSUS_DISCOVERY_ROOTS
+    ? process.env.CONSUS_DISCOVERY_ROOTS.split(",")
+    : [];
 
   // Harness dispatch (the propose-a-change mechanism) is opt-in and
   // system-agnostic — a plain configured command, nothing hardcoded.
@@ -145,7 +158,7 @@ if (isMain) {
         )
       : NOOP_HARNESS_TRANSPORT;
 
-  const app = buildServer({ dbPath, repos, transport, attachmentsDir, projectsConfigPath });
+  const app = buildServer({ dbPath, repos, transport, attachmentsDir, projectsConfigPath, discoveryRoots });
   app.listen({ port, host }).then(() => {
     // eslint-disable-next-line no-console
     console.log(`Consus server listening on :${port} (db: ${dbPath})`);
