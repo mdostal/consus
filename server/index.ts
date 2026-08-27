@@ -7,6 +7,7 @@ import { openDb } from "./db/connection.js";
 import { runMigration } from "./db/migrate.js";
 import { registerDocRoutes } from "./routes/docs.js";
 import { registerProjectRoutes } from "./routes/projects.js";
+import { registerFsRoutes } from "./routes/fs.js";
 import { registerKbRoutes } from "./routes/kb.js";
 import { registerArtifactLinkRoutes } from "./routes/artifact-links.js";
 import { registerDecisionRoutes } from "./routes/decisions.js";
@@ -69,6 +70,7 @@ export function buildServer({
 
   registerDocRoutes(app, { db, repos });
   registerProjectRoutes(app, { db, repos, projectsConfigPath });
+  registerFsRoutes(app, {});
   registerKbRoutes(app, { db });
   registerArtifactLinkRoutes(app, { db });
   registerDecisionRoutes(app, { db });

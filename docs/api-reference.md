@@ -63,6 +63,28 @@ poll — nothing scans automatically; this is the only way `doc_index` gets popu
 **Response 200:** `{ "project": string, "docsScanned": number, "eventsCreated": number }`.
 **404** if `:project` isn't a configured repo.
 
+### `GET /api/fs/list?path=<dir>`
+> **Loopback-only.** Unlike every other route in this reference, this one reads filesystem
+> structure beyond any project the operator has explicitly registered — it will list whatever
+> directories the server process can see, not just registered-repo paths. It's intended for the
+> default `HOST=127.0.0.1` binding (server/index.ts), where only processes on the same machine can
+> reach it. Do **not** expose this route on a `HOST=0.0.0.0` containerized deploy without adding
+> your own auth/network controls in front of it.
+
+Lists `path`'s immediate subdirectories only — one level, not recursive, not files. A caller
+wanting to go deeper calls again with a returned subdirectory `path`. Each entry reports whether it
+looks like a repo (`.git` or `.pHive` present directly inside it), as a hint only — this route never
+filters on it. `path` is resolved with the same `resolve()` + `existsSync` + `statSync` validation
+`POST /api/projects` uses; a raw value containing a `..` segment is rejected before resolution ever
+runs. A subdirectory entry that can't be stat'd (permission denied, broken symlink) is silently
+omitted rather than failing the whole listing.
+
+**Query:** `path` (optional) — absolute or relative directory path. Defaults to the OS home
+directory (`os.homedir()`) when omitted.
+
+**Response 200:** `{ "path": string, "entries": [{ "name": string, "path": string, "isRepo": boolean }] }`.
+**400** if `path` doesn't exist, isn't a directory, or contains a `..` segment.
+
 ## Decisions (the queue an agent harness reads)
 
 ### `GET /api/decisions`
