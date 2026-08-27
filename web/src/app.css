@@ -977,6 +977,140 @@ body {
   cursor: not-allowed;
 }
 
+/* s5 (consus-phase25-project-registration-ux): the discovered-repos select
+   and the "Browse…" action that opens DirectoryBrowser, both alongside the
+   original manual path input inside .add-project-form above. */
+.add-project-form select {
+  padding: 8px 12px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg);
+  color: var(--consus-ink);
+  font: inherit;
+}
+
+/* s5: the interactive filesystem browser opened from AddProjectForm's
+   "Browse…" action — an inline panel (this app has no heavy modal/backdrop
+   convention outside the command palette, and this data browser doesn't
+   warrant one) offering a breadcrumb trail, a subdirectory list with an
+   isRepo hint, and a "Select this directory" action available regardless
+   of that hint. */
+.directory-browser {
+  font-family: var(--consus-font-ui);
+  border: 1px solid var(--consus-line);
+  border-radius: calc(12px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg-subtle);
+  padding: 14px 16px;
+  margin-top: 12px;
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.directory-browser__breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  font-size: 12.5px;
+}
+.directory-browser__crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.directory-browser__crumb button {
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  color: var(--consus-accent);
+  cursor: pointer;
+  font: inherit;
+  border-radius: calc(6px * var(--consus-radius-scale, 1));
+}
+.directory-browser__crumb button:disabled {
+  color: var(--consus-ink);
+  font-weight: 600;
+  cursor: default;
+}
+.directory-browser__crumb button:not(:disabled):hover {
+  background: color-mix(in srgb, var(--consus-accent) 12%, transparent);
+}
+.directory-browser__crumb-sep {
+  color: var(--consus-ink-muted);
+}
+.directory-browser__loading,
+.directory-browser__empty {
+  color: var(--consus-ink-muted);
+  font-size: 13px;
+  margin: 0;
+}
+.directory-browser__entries {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.directory-browser__entries li button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  padding: 7px 12px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg);
+  color: var(--consus-ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.directory-browser__entries li button:hover {
+  border-color: color-mix(in srgb, var(--consus-accent) 55%, transparent);
+}
+.directory-browser__entry-name {
+  flex: 1;
+}
+.directory-browser__badge {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: calc(999px * var(--consus-radius-scale, 1));
+  background: color-mix(in srgb, var(--consus-accent) 12%, transparent);
+  color: var(--consus-accent);
+  white-space: nowrap;
+}
+.directory-browser__actions {
+  display: flex;
+  gap: 8px;
+}
+.directory-browser__actions button {
+  font-family: var(--consus-font-ui);
+  border: 0;
+  padding: 8px 16px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+}
+.directory-browser__actions button:first-child {
+  background: var(--consus-accent);
+  color: var(--consus-bg);
+}
+.directory-browser__actions button:first-child:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.directory-browser__actions button:last-child {
+  background: var(--consus-bg);
+  color: var(--consus-ink);
+  border: 1px solid var(--consus-line);
+}
+
 /* p14-6: doc search box + results, alongside the doc-browser tree above */
 .doc-search {
   font-family: var(--consus-font-ui);
