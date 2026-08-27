@@ -29,7 +29,25 @@ describe("GET /api/projects", () => {
     const res = await app.inject({ method: "GET", url: "/api/projects" });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ projects: ["consus", "other"] });
+    expect(res.json()).toEqual({
+      projects: ["consus", "other"],
+      paths: { consus: "/tmp/consus", other: "/tmp/other" },
+    });
+  });
+
+  // s1 (consus-phase25-project-registration-ux): the client never learns a
+  // registered project's filesystem path today — this adds a `paths` map,
+  // sourced from the same in-memory `repos` this route already has, so
+  // ProjectsSection can render it without a second round-trip. Additive
+  // only — `projects` above stays exactly as it was.
+  it("maps every registered project name to its absolute repo path via `paths`", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/projects" });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.paths).toEqual({ consus: "/tmp/consus", other: "/tmp/other" });
+    // paths is additive — the projects array is untouched by this story.
+    expect(body.projects).toEqual(["consus", "other"]);
   });
 });
 

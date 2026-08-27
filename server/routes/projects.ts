@@ -115,8 +115,16 @@ export function registerProjectRoutes(
   app: FastifyInstance,
   { db, repos, projectsConfigPath = ".pHive/consus-projects.json" }: ProjectRoutesOptions,
 ): void {
+  /**
+   * s1 (consus-phase25-project-registration-ux): `paths` is additive
+   * alongside `projects` — sourced from the same in-memory `repos` map
+   * this route already has in scope, so ProjectsSection can show a
+   * selected project's absolute repo path without a second round-trip.
+   * A shallow copy, not a reference to `repos` itself, so a caller can't
+   * mutate the live registry through the response body.
+   */
   app.get("/api/projects", async () => {
-    return { projects: listProjects(repos) };
+    return { projects: listProjects(repos), paths: { ...repos } };
   });
 
   /**

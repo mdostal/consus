@@ -229,6 +229,51 @@ describe("App — per-project view folds in docs + an Ingest repo action (phase6
 
     expect(await screen.findByText("architecture.md")).toBeInTheDocument();
   });
+
+  // s1 (consus-phase25-project-registration-ux): GET /api/projects now
+  // returns a `paths` map alongside `projects` — the selected project's
+  // repo path renders as a labeled field (not bare text) near its
+  // name/actions, and only once a project is actually selected.
+  it("shows the selected project's repo path as a labeled field", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockFetchImpl({
+        "/api/decisions": [],
+        "/api/kb-entries": [KB_ENTRY],
+        "/api/diagrams": DIAGRAM_RESPONSE,
+        "/api/items/": [],
+        "GET /api/docs?project=consus": DOCS_WITH_ENTRY,
+        "GET /api/projects": { projects: ["consus"], paths: { consus: "/tmp/consus-repo" } },
+      }),
+    );
+
+    render(<App />);
+    await openConsusProject();
+
+    expect(await screen.findByText("Project path")).toBeInTheDocument();
+    expect(screen.getByTestId("project-path-field")).toHaveTextContent("Project path — /tmp/consus-repo");
+  });
+
+  it("shows no path field in the All projects view — path is per-project metadata", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockFetchImpl({
+        "/api/decisions": [],
+        "/api/kb-entries": [KB_ENTRY],
+        "/api/diagrams": DIAGRAM_RESPONSE,
+        "/api/items/": [],
+        "GET /api/docs?project=consus": DOCS_WITH_ENTRY,
+        "GET /api/projects": { projects: ["consus"], paths: { consus: "/tmp/consus-repo" } },
+      }),
+    );
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Projects" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "consus" })).toBeInTheDocument());
+
+    expect(screen.queryByText("Project path")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("project-path-field")).not.toBeInTheDocument();
+  });
 });
 
 describe("App — branch picker, branch-scoped decisions, doc diff (consus-phase24 s4)", () => {

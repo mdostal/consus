@@ -2178,6 +2178,25 @@ body {
 }
 
 /* ============================================================= */
+/* Project path field (consus-phase25-project-registration-ux, s1) */
+/* — a labeled repo-path field next to a selected project's        */
+/* actions, matching diagram-metadata-strip__field's label-plus-   */
+/* value convention. Purely informational chrome: existing         */
+/* --consus-* tokens only, no per-skin structural fork.             */
+/* ============================================================= */
+.project-path-field {
+  font-family: var(--consus-font-ui);
+  font-size: 12px;
+  color: var(--consus-ink-muted);
+  overflow-wrap: anywhere;
+}
+.project-path-field__label {
+  font-weight: 700;
+  color: var(--consus-ink);
+  letter-spacing: 0.04em;
+}
+
+/* ============================================================= */
 /* Branch picker + branch-scoped decisions + doc diff             */
 /* (consus-phase24-branch-level-surfacing, s4)                    */
 /* ============================================================= */

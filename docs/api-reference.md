@@ -27,7 +27,12 @@ Confirms the server and SQLite connection are up.
 Lists the configured project names (from `CONSUS_PROJECTS_CONFIG`, default
 `.pHive/consus-projects.json`; defaults to `{ consus: <cwd> }` when no config file exists).
 
-**Response 200:** `{ "projects": string[] }` — e.g. `{ "projects": ["consus"] }`.
+**Response 200:** `{ "projects": string[], "paths": Record<string, string> }` — `paths` maps every
+registered project name to its absolute repo path on disk (same map `CONSUS_PROJECTS_CONFIG`
+loads into), e.g.:
+```json
+{ "projects": ["consus"], "paths": { "consus": "/Users/example/repos/consus" } }
+```
 
 ### `POST /api/projects`
 Registers a new project: names it, points it at a repo path on disk, persists that to
