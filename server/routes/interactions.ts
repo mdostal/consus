@@ -3,6 +3,11 @@ import type Database from "better-sqlite3";
 
 export interface InteractionRoutesOptions {
   db: Database.Database;
+  /** Pantheon core-api base URL. When set (or PANTHEON_API_URL env var is set), a real
+   *  verdict fires a fire-and-forget POST to /api/events/decisions on the host. */
+  pantheonApiUrl?: string;
+  /** Override the fetch implementation — used in tests to capture bridge calls. */
+  fetch?: typeof globalThis.fetch;
 }
 
 type Verdict =
@@ -34,7 +39,10 @@ function verdictSummary(v: Verdict): string {
  * verdict on a decision, and read/post the comment thread on any item. All
  * additive — uses the existing items / audit_log / comments tables only.
  */
-export function registerInteractionRoutes(app: FastifyInstance, { db }: InteractionRoutesOptions): void {
+export function registerInteractionRoutes(
+  app: FastifyInstance,
+  { db, pantheonApiUrl, fetch: fetchImpl }: InteractionRoutesOptions,
+): void {
   // Comment thread for any item.
   app.get<{ Params: { id: string } }>("/api/items/:id/comments", async (request) => {
     const { id } = request.params;
@@ -66,9 +74,9 @@ export function registerInteractionRoutes(app: FastifyInstance, { db }: Interact
       const { verdict, actor } = request.body ?? ({} as { verdict: Verdict; actor?: string });
       if (!verdict || !verdict.kind) return reply.code(400).send({ error: "verdict required" });
 
-      const item = db.prepare("SELECT id, status FROM items WHERE id = ?").get(id) as
-        | { id: string; status: string }
-        | undefined;
+      const item = db
+        .prepare("SELECT id, title, status, source_body, created_at AS createdAt FROM items WHERE id = ?")
+        .get(id) as { id: string; title: string; status: string; source_body: string | null; createdAt: string } | undefined;
       if (!item) return reply.code(404).send({ error: "decision not found" });
 
       const now = new Date().toISOString();
@@ -94,6 +102,28 @@ export function registerInteractionRoutes(app: FastifyInstance, { db }: Interact
         );
       });
       tx();
+
+      // Fire-and-forget bridge: non-rejection verdicts become board seeds in Multica via Pantheon.
+      // Verdict recording always succeeds regardless of bridge health (same resilience contract as
+      // core-api's emitDecisionCreated).
+      if (decidedAt !== null) {
+        const bridgeBase = pantheonApiUrl ?? process.env.PANTHEON_API_URL;
+        if (bridgeBase) {
+          const doFetch = fetchImpl ?? globalThis.fetch;
+          doFetch(`${bridgeBase}/api/events/decisions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              decisionId: id,
+              title: item.title,
+              ...(item.source_body ? { summary: item.source_body } : {}),
+              createdAt: now,
+            }),
+          }).catch((err: unknown) => {
+            console.error("[interactions] decision bridge call failed", err);
+          });
+        }
+      }
 
       return reply.code(200).send({ ok: true, status: nextStatus, decided_at: decidedAt });
     },
