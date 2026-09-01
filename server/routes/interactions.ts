@@ -14,7 +14,8 @@ type Verdict =
   | { kind: "accepted" }
   | { kind: "option_chosen"; optionId: string }
   | { kind: "mix"; optionIds: string[]; why: string }
-  | { kind: "rejected_iteration_requested"; commentary: string };
+  | { kind: "rejected_iteration_requested"; commentary: string }
+  | { kind: "features_selected"; selected: string[] };
 
 function verdictStatus(v: Verdict): "done" | "in_progress" {
   return v.kind === "rejected_iteration_requested" ? "in_progress" : "done";
@@ -30,6 +31,8 @@ function verdictSummary(v: Verdict): string {
       return `Mixed options ${v.optionIds.join(" + ")} — ${v.why}`;
     case "rejected_iteration_requested":
       return `Requested another round — ${v.commentary}`;
+    case "features_selected":
+      return `Selected features: ${v.selected.join(", ")}`;
   }
 }
 
