@@ -82,6 +82,22 @@ export function verdictStatus(verdict: Verdict): "done" | "in_progress" {
   return verdict.kind === "rejected_iteration_requested" ? "in_progress" : "done";
 }
 
+/** Human-readable summary of a verdict for audit-log comments. */
+export function verdictSummary(verdict: Verdict): string {
+  switch (verdict.kind) {
+    case "accepted":
+      return "Accepted the recommended option.";
+    case "option_chosen":
+      return `Chose option ${verdict.optionId}.`;
+    case "mix":
+      return `Mixed options ${verdict.optionIds.join(" + ")} — ${verdict.why}`;
+    case "rejected_iteration_requested":
+      return `Requested another round — ${verdict.commentary}`;
+    case "features_selected":
+      return `Selected features: ${verdict.selected.join(", ")}`;
+  }
+}
+
 const FENCED_DECISION_REQUEST_BLOCK = /```decision-request\s*\n([\s\S]*?)\n```/;
 
 /**

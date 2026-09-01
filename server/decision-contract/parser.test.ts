@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseDecisionPayload, serializeDecisionPayload, verdictStatus } from "./parser.js";
+import { parseDecisionPayload, serializeDecisionPayload, verdictStatus, verdictSummary } from "./parser.js";
 
 const SAMPLE_PAYLOAD = {
   version: "dostal:decision-request/v1" as const,
@@ -226,8 +226,54 @@ describe("decision-request/v1 parser", () => {
       [{ kind: "option_chosen" as const, optionId: "A" }, "done"],
       [{ kind: "mix" as const, optionIds: ["A", "B"], why: "combine" }, "done"],
       [{ kind: "rejected_iteration_requested" as const, commentary: "redo" }, "in_progress"],
+      [{ kind: "features_selected" as const, selected: ["dark-mode", "oauth"] }, "done"],
     ] as const)("maps %o to status %s", (verdict, expected) => {
       expect(verdictStatus(verdict)).toBe(expected);
+    });
+  });
+
+  describe("verdictSummary", () => {
+    it("summarizes an accepted verdict", () => {
+      expect(verdictSummary({ kind: "accepted" })).toBe("Accepted the recommended option.");
+    });
+
+    it("summarizes an option_chosen verdict", () => {
+      expect(verdictSummary({ kind: "option_chosen", optionId: "B" })).toBe("Chose option B.");
+    });
+
+    it("summarizes a mix verdict", () => {
+      expect(verdictSummary({ kind: "mix", optionIds: ["A", "C"], why: "best of both" })).toBe(
+        "Mixed options A + C — best of both",
+      );
+    });
+
+    it("summarizes a rejected_iteration_requested verdict", () => {
+      expect(verdictSummary({ kind: "rejected_iteration_requested", commentary: "needs work" })).toBe(
+        "Requested another round — needs work",
+      );
+    });
+
+    it("summarizes a features_selected verdict listing the selected feature ids", () => {
+      expect(verdictSummary({ kind: "features_selected", selected: ["dark-mode", "oauth", "2fa"] })).toBe(
+        "Selected features: dark-mode, oauth, 2fa",
+      );
+    });
+  });
+
+  describe("FeatureSelectionPayload", () => {
+    it("validates a well-formed feature-selection/v1 payload is accepted by the type", () => {
+      const payload = {
+        version: "dostal:feature-selection/v1" as const,
+        title: "Pick your features",
+        context: "Choose the features to enable.",
+        features: [
+          { id: "dark-mode", name: "Dark Mode", description: "Switch to dark theme." },
+          { id: "oauth", name: "OAuth Login", description: "Sign in with Google/GitHub.", default: true },
+        ],
+      };
+      expect(payload.version).toBe("dostal:feature-selection/v1");
+      expect(payload.features).toHaveLength(2);
+      expect(payload.features[1].default).toBe(true);
     });
   });
 });
