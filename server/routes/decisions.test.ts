@@ -248,6 +248,23 @@ describe("POST /api/decisions", () => {
       expect(found.decision_payload.version).toBe("dostal:feature-selection/v1");
     });
   });
+
+  it("round-trips research[] losslessly: POST with research[] then GET returns research[] intact", async () => {
+    const payloadWithResearch = {
+      ...VALID_PAYLOAD,
+      research: [
+        { title: "Architecture survey", body: "We evaluated three approaches.", sources: ["https://example.com/ref"] },
+        { title: "Prior art", body: "Similar systems omit caching at this layer." },
+      ],
+    };
+    const postRes = await post({ id: "research-roundtrip", title: "Research round-trip", decision_payload: payloadWithResearch });
+    expect(postRes.statusCode).toBe(201);
+
+    const getRes = await app.inject({ method: "GET", url: "/api/decisions" });
+    const items = getRes.json();
+    const item = items.find((i: { id: string }) => i.id === "research-roundtrip");
+    expect(item?.decision_payload?.research).toEqual(payloadWithResearch.research);
+  });
 });
 
 describe("POST /api/decisions — feature-selection/v1", () => {

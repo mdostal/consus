@@ -56,12 +56,6 @@ export interface FeatureOption {
   default?: boolean;
 }
 
-export interface ResearchSection {
-  title: string;
-  body: string;
-  sources?: string[];
-}
-
 export interface FeatureSelectionPayload {
   version: "dostal:feature-selection/v1";
   title: string;
