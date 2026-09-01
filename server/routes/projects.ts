@@ -247,6 +247,16 @@ export function registerProjectRoutes(
       if (!repoPath) {
         return reply.code(404).send({ error: `unknown project: ${project}` });
       }
+      // PANT-58: gate on the path actually existing on disk before calling
+      // scanRepo. Without this check, a registered-but-unmounted path causes
+      // a native Node assertion failure inside scanRepo (the Consus 502 from
+      // 2026-08-31). The facade (core/api/repos.ts) enforces this same guard
+      // centrally; this is Consus's own call-site mirror of that contract.
+      if (!existsSync(repoPath)) {
+        return reply.code(404).send({
+          error: `repo path for project "${project}" is not yet mounted at ${repoPath} -- run the mount-generation script (PANT-57) to provision it`,
+        });
+      }
 
       // s2-branch-scoped-decisions: a sibling ref-aware path on the same
       // route, gated on ?ref= being present. The unparameterized branch
