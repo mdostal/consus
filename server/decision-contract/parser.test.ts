@@ -220,6 +220,36 @@ describe("decision-request/v1 parser", () => {
     });
   });
 
+  describe("research[] field (s1-research-schema-field)", () => {
+    it("round-trips a payload that includes research[] through parse -> serialize without loss", () => {
+      const payloadWithResearch = {
+        ...SAMPLE_PAYLOAD,
+        research: [
+          { title: "Background", body: "Some findings.", sources: ["https://example.com"] },
+          { title: "Prior art", body: "What others did." },
+        ],
+      };
+      const parsed = parseDecisionPayload(JSON.stringify(payloadWithResearch));
+      expect(parsed).toEqual(payloadWithResearch);
+    });
+
+    it("parses a payload without research[] correctly — backward-compatible", () => {
+      const parsed = parseDecisionPayload(JSON.stringify(SAMPLE_PAYLOAD));
+      expect(parsed).toEqual(SAMPLE_PAYLOAD);
+      expect(parsed?.research).toBeUndefined();
+    });
+
+    it("allows ResearchSection to omit sources", () => {
+      const payloadWithResearch = {
+        ...SAMPLE_PAYLOAD,
+        research: [{ title: "Finding", body: "Details without any source links." }],
+      };
+      const parsed = parseDecisionPayload(JSON.stringify(payloadWithResearch));
+      expect(parsed?.research).toEqual([{ title: "Finding", body: "Details without any source links." }]);
+      expect(parsed?.research?.[0].sources).toBeUndefined();
+    });
+  });
+
   describe("verdictStatus", () => {
     it.each([
       [{ kind: "accepted" as const }, "done"],
