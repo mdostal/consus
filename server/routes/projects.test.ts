@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -316,5 +316,153 @@ describe("POST /api/projects/scan-all", () => {
     const cResult = body.results.find((r: { project: string }) => r.project === "c");
 
     expect(cResult.ok).toBe(true);
+  });
+});
+
+// PANT-58: Pantheon repo-access facade wiring in POST /api/projects/:project/ingest
+// These tests cover the fix for the real Consus 502 bug: calling scanRepo with a
+// path that didn't exist on disk caused a native Node assertion crash
+// (RemoveEnvironmentCleanupHook). Routing through the facade means a missing mount
+// returns a clean 404 instead of crashing the process.
+describe("POST /api/projects/:project/ingest -- Pantheon repo-access facade (PANT-58)", () => {
+  let repoDir: string;
+  let db: Database.Database;
+  let app: FastifyInstance;
+
+  function fakeFacadeOk(path: string): typeof fetch {
+    return vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ tenant: "personal", repo: "life", path }),
+    })) as unknown as typeof fetch;
+  }
+
+  function fakeFacadeNotFound(error = "repo \"personal/life\" is registered but not yet mounted"): typeof fetch {
+    return vi.fn(async () => ({
+      ok: false,
+      status: 404,
+      json: async () => ({ error }),
+    })) as unknown as typeof fetch;
+  }
+
+  beforeEach(async () => {
+    repoDir = mkdtempSync(join(tmpdir(), "consus-facade-"));
+    mkdirSync(join(repoDir, ".pHive", "planning"), { recursive: true });
+    writeFileSync(join(repoDir, ".pHive", "planning", "doc.md"), "# Doc\n\ncontent");
+
+    db = new Database(":memory:");
+    runMigration(db);
+  });
+
+  afterEach(async () => {
+    await app?.close();
+    db.close();
+    rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it("calls the facade for a tenant-scoped path and proceeds with the validated path on 200", async () => {
+    const fetchImpl = fakeFacadeOk(repoDir);
+
+    app = Fastify();
+    registerProjectRoutes(app, {
+      db,
+      repos: { life: "/repos/personal/life" },
+      pantheonApiUrl: "http://core-api:3000",
+      reposBaseDir: "/repos",
+      fetchImpl,
+    });
+    await app.ready();
+
+    // The facade is called and returns the real repoDir path; scanRepo runs on repoDir.
+    vi.spyOn(global, "fetch").mockImplementation(fetchImpl);
+
+    const res = await app.inject({ method: "POST", url: "/api/projects/life/ingest" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ project: "life", docsScanned: 1 });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://core-api:3000/api/repos/tenants/personal/repos/life/path",
+    );
+  });
+
+  // This is the exact crash-repro scenario from tonight: a project is registered in
+  // Consus but the filesystem mount doesn't exist. Old code: scanRepo crashes with
+  // native Node assertion failure. New code: facade returns 404 → clean HTTP error.
+  it("returns a clean 404 when the facade reports the mount is missing (crash-repro)", async () => {
+    const fetchImpl = fakeFacadeNotFound();
+
+    app = Fastify();
+    registerProjectRoutes(app, {
+      db,
+      repos: { life: "/repos/personal/life" },
+      pantheonApiUrl: "http://core-api:3000",
+      reposBaseDir: "/repos",
+      fetchImpl,
+    });
+    await app.ready();
+
+    const res = await app.inject({ method: "POST", url: "/api/projects/life/ingest" });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toMatchObject({ error: expect.stringContaining("not yet mounted") });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT call the facade for non-tenant-scoped paths (one path segment — infrastructure)", async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch;
+
+    app = Fastify();
+    registerProjectRoutes(app, {
+      db,
+      repos: { "pantheon-v2": repoDir },
+      pantheonApiUrl: "http://core-api:3000",
+      reposBaseDir: "/repos",
+      fetchImpl,
+    });
+    await app.ready();
+
+    const res = await app.inject({ method: "POST", url: "/api/projects/pantheon-v2/ingest" });
+
+    expect(res.statusCode).toBe(200);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("does NOT call the facade when pantheonApiUrl is not configured (backward compat)", async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch;
+
+    app = Fastify();
+    registerProjectRoutes(app, {
+      db,
+      repos: { life: repoDir },
+      // no pantheonApiUrl — existing behaviour preserved
+      fetchImpl,
+    });
+    await app.ready();
+
+    const res = await app.inject({ method: "POST", url: "/api/projects/life/ingest" });
+
+    expect(res.statusCode).toBe(200);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("returns 502 when the facade itself is unreachable", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error("connection refused");
+    }) as unknown as typeof fetch;
+
+    app = Fastify();
+    registerProjectRoutes(app, {
+      db,
+      repos: { life: "/repos/personal/life" },
+      pantheonApiUrl: "http://core-api:3000",
+      reposBaseDir: "/repos",
+      fetchImpl,
+    });
+    await app.ready();
+
+    const res = await app.inject({ method: "POST", url: "/api/projects/life/ingest" });
+
+    expect(res.statusCode).toBe(502);
+    expect(res.json()).toMatchObject({ error: expect.stringContaining("unreachable") });
   });
 });

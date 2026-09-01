@@ -36,6 +36,74 @@ export interface ProjectRoutesOptions {
    *  Additive to the parent-directory-of-every-registered-project roots
    *  discover always resolves; empty by default. */
   discoveryRoots?: string[];
+  /** Base URL of Pantheon core-api, used to validate tenant-scoped repo
+   *  paths through the central repo-access facade (GET
+   *  /api/repos/tenants/:tenant/repos/:repo/path) before any scanRepo call.
+   *  When set, paths matching <reposBaseDir>/<tenant>/<repo> are validated
+   *  via the facade first; a 404 from the facade returns a clean HTTP error
+   *  here instead of passing a bad path to scanRepo and crashing the process.
+   *  Defaults to PANTHEON_API_URL env var; when neither is set, validation
+   *  is skipped and existing behaviour (direct path use) is preserved. */
+  pantheonApiUrl?: string;
+  /** Tenant-scoped repo mount root, used to detect which registered paths
+   *  are tenant-scoped. Defaults to REPOS_BASE_DIR env var, then "/repos". */
+  reposBaseDir?: string;
+  /** Override for `fetch` — injected in tests so the suite never touches a
+   *  real network. Production callers leave this unset. */
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * Detects whether `registeredPath` is a tenant-scoped mount (i.e. of the
+ * form `<reposBaseDir>/<tenant>/<repo>`) and returns the extracted tenant
+ * and repo names, or null when the path does not match the pattern.
+ *
+ * Only paths with EXACTLY two path segments after the base are considered
+ * tenant-scoped — `/repos/pantheon-v2` (one segment) is infrastructure, not
+ * a tenant repo, and falls through to the existing direct-path behaviour.
+ */
+function parseTenantRepo(
+  registeredPath: string,
+  reposBaseDir: string,
+): { tenant: string; repo: string } | null {
+  const base = reposBaseDir.replace(/\/+$/, "");
+  if (!registeredPath.startsWith(`${base}/`)) return null;
+  const relative = registeredPath.slice(base.length + 1);
+  const parts = relative.split("/").filter(Boolean);
+  if (parts.length !== 2) return null;
+  return { tenant: parts[0], repo: parts[1] };
+}
+
+/**
+ * Validates a tenant-scoped repo path through Pantheon core-api's repo-access
+ * facade (GET /api/repos/tenants/:tenant/repos/:repo/path -- core/api/repos.ts,
+ * PANT-58). Returns the validated path on success, or a typed error object on
+ * 404/failure. Never throws — callers handle the error branch with a clean
+ * HTTP response rather than letting a bad path reach scanRepo.
+ *
+ * This is the specific fix for the Consus 502 bug (native Node assertion in
+ * RemoveEnvironmentCleanupHook): the old code called scanRepo with a path
+ * that didn't exist on disk; calling the facade first means a missing mount
+ * surfaces as a clean 404, not a process crash.
+ */
+async function validateViaFacade(
+  pantheonApiUrl: string,
+  tenant: string,
+  repo: string,
+  fetchImpl: typeof fetch,
+): Promise<{ ok: true; path: string } | { ok: false; status: number; error: string }> {
+  const url = `${pantheonApiUrl.replace(/\/+$/, "")}/api/repos/tenants/${tenant}/repos/${repo}/path`;
+  let response: Response;
+  try {
+    response = await fetchImpl(url);
+  } catch (err) {
+    return { ok: false, status: 502, error: `repo-access facade unreachable: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  const body = await response.json().catch(() => ({})) as { path?: string; error?: string };
+  if (!response.ok) {
+    return { ok: false, status: response.status, error: body?.error ?? `facade returned ${response.status}` };
+  }
+  return { ok: true, path: body.path ?? `${tenant}/${repo}` };
 }
 
 /** `file_path -> content_hash` snapshot of a repo's doc_index rows, read
@@ -126,8 +194,14 @@ export function registerProjectRoutes(
     repos,
     projectsConfigPath = ".pHive/consus-projects.json",
     discoveryRoots = [],
+    pantheonApiUrl,
+    reposBaseDir,
+    fetchImpl,
   }: ProjectRoutesOptions,
 ): void {
+  const effectivePantheonApiUrl = pantheonApiUrl ?? process.env.PANTHEON_API_URL;
+  const effectiveReposBaseDir = (reposBaseDir ?? process.env.REPOS_BASE_DIR ?? "/repos").replace(/\/+$/, "");
+  const effectiveFetch = fetchImpl ?? globalThis.fetch;
   /**
    * s1 (consus-phase25-project-registration-ux): `paths` is additive
    * alongside `projects` — sourced from the same in-memory `repos` map
@@ -243,9 +317,33 @@ export function registerProjectRoutes(
     async (request, reply) => {
       const { project } = request.params;
       const { ref } = request.query ?? {};
-      const repoPath = repos[project];
-      if (!repoPath) {
+      const registeredPath = repos[project];
+      if (!registeredPath) {
         return reply.code(404).send({ error: `unknown project: ${project}` });
+      }
+
+      // For tenant-scoped repos (path matches <reposBaseDir>/<tenant>/<repo>),
+      // validate through Pantheon core-api's repo-access facade before calling
+      // scanRepo. This is the PANT-58 fix: the old code passed `registeredPath`
+      // directly to scanRepo even when the mount didn't exist on disk, which
+      // caused a native Node assertion crash (RemoveEnvironmentCleanupHook).
+      // The facade validates existence centrally and returns a clean 404 here
+      // when the mount is missing — no crash, no obscure 502.
+      let repoPath = registeredPath;
+      const tenantRepo = effectivePantheonApiUrl
+        ? parseTenantRepo(registeredPath, effectiveReposBaseDir)
+        : null;
+      if (tenantRepo) {
+        const result = await validateViaFacade(
+          effectivePantheonApiUrl!,
+          tenantRepo.tenant,
+          tenantRepo.repo,
+          effectiveFetch,
+        );
+        if (!result.ok) {
+          return reply.code(result.status).send({ error: result.error });
+        }
+        repoPath = result.path;
       }
 
       // s2-branch-scoped-decisions: a sibling ref-aware path on the same
