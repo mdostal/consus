@@ -28,6 +28,33 @@ interface CreateSurveyBody {
 
 export function registerSurveyRoutes(app: FastifyInstance, { db }: SurveyRoutesOptions): void {
   /**
+   * GET /api/surveys — list all surveys with answered/total member counts.
+   * Used by the UI to populate the survey section in DecisionListPane.
+   */
+  app.get("/api/surveys", async () => {
+    const surveys = db
+      .prepare("SELECT id, title, description, created_at FROM surveys ORDER BY created_at DESC")
+      .all() as SurveyRow[];
+
+    return surveys.map((survey) => {
+      const total = (
+        db.prepare("SELECT COUNT(*) AS n FROM items WHERE survey_id = ? AND decision_payload IS NOT NULL").get(survey.id) as {
+          n: number;
+        }
+      ).n;
+      const answered = (
+        db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM items WHERE survey_id = ? AND decision_payload IS NOT NULL AND decided_at IS NOT NULL",
+          )
+          .get(survey.id) as { n: number }
+      ).n;
+
+      return { ...survey, total, answered };
+    });
+  });
+
+  /**
    * POST /api/surveys — create a named survey container.
    * Optional `decision_ids` assigns pre-existing decision items to this survey.
    * Unknown ids are silently skipped (items must exist and carry a

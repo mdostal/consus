@@ -19,7 +19,8 @@ import { EventsList, type EventRow, type EventStatus } from "./features/events/E
 import { EventProposeComposer } from "./features/events/EventProposeComposer";
 import type { DecisionPayload, Verdict } from "./features/decisions/answer-shapes/types";
 import { useSelectedDecisionId } from "./features/decisions/useSelectedDecisionId";
-import { DecisionListPane, type DecisionListItem } from "./features/decisions/DecisionListPane";
+import { DecisionListPane, type DecisionListItem, type SurveyListItem } from "./features/decisions/DecisionListPane";
+import { SurveyView } from "./features/decisions/SurveyView";
 import { AttachmentsPanel } from "./features/decisions/attachments/AttachmentsPanel";
 import { useSkinPreference } from "./theme/useSkinPreference";
 import { ThemeSkinPicker } from "./theme/ThemeSkinPicker";
@@ -270,6 +271,23 @@ function DecisionsSection({
   // Hooks run unconditionally, before the `!decisions` early return below,
   // so the hook order stays stable across the loading -> loaded transition.
   const [selectedId, select] = useSelectedDecisionId();
+  const [surveys, setSurveys] = useState<SurveyListItem[] | null>(null);
+  const [selectedSurveyId, setSelectedSurveyId] = useState<string | null>(null);
+
+  const loadSurveys = useCallback(() => {
+    fetch("/api/surveys")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(setSurveys)
+      .catch(() => {
+        // best-effort — surveys degrade gracefully to an empty list if the
+        // endpoint is unavailable (e.g. pre-S5 deployment)
+        setSurveys([]);
+      });
+  }, []);
+
+  useEffect(() => {
+    loadSurveys();
+  }, [loadSurveys]);
 
   if (!decisions) return <p className="state">Loading decisions…</p>;
 
@@ -287,6 +305,24 @@ function DecisionsSection({
 
   const selected = effectiveId !== null ? (decisions.find((d) => d.id === effectiveId) ?? null) : null;
 
+  function handleSelectSurvey(id: string) {
+    setSelectedSurveyId(id);
+    // Clear decision selection when a survey is chosen so the right pane
+    // shows SurveyView and not a stale DecisionView.
+    select(id);
+  }
+
+  function handleSelectDecision(id: string) {
+    setSelectedSurveyId(null);
+    select(id);
+  }
+
+  const selectedSurvey = selectedSurveyId !== null
+    ? (surveys ?? []).find((s) => s.id === selectedSurveyId) ?? null
+    : null;
+
+  const showSurveyView = selectedSurveyId !== null && selectedSurvey !== null;
+
   return (
     <div>
       <div className="consus__section-lead">
@@ -296,10 +332,27 @@ function DecisionsSection({
 
       <div className="decisions-two-pane">
         <div className="decisions-two-pane__list">
-          <DecisionListPane items={decisions} selectedId={effectiveId} onSelect={select} />
+          <DecisionListPane
+            items={decisions}
+            selectedId={showSurveyView ? null : effectiveId}
+            onSelect={handleSelectDecision}
+            surveys={surveys ?? []}
+            selectedSurveyId={selectedSurveyId}
+            onSelectSurvey={handleSelectSurvey}
+          />
         </div>
         <div className="decisions-two-pane__detail">
-          {selected ? (
+          {showSurveyView ? (
+            <SurveyView
+              key={selectedSurveyId}
+              surveyId={selectedSurveyId}
+              surveyTitle={selectedSurvey.title}
+              onVerdictRecorded={() => {
+                reload();
+                loadSurveys();
+              }}
+            />
+          ) : selected ? (
             <DecisionView key={selected.id} item={selected} onDecided={reload} />
           ) : (
             <div className="empty">

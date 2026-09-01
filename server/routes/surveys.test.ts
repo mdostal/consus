@@ -23,6 +23,91 @@ function insertDecision(db: Database.Database, id: string, surveyId: string | nu
   ).run(id, "decision_request", `Decision ${id}`, "open", now, now, JSON.stringify(VALID_PAYLOAD), surveyId);
 }
 
+describe("GET /api/surveys", () => {
+  let db: Database.Database;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    runMigration(db);
+    app = Fastify();
+    registerSurveyRoutes(app, { db });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+  });
+
+  it("returns an empty array when no surveys exist", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/surveys" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual([]);
+  });
+
+  it("returns surveys with id, title, description, created_at, total, and answered fields", async () => {
+    const create = await app.inject({
+      method: "POST",
+      url: "/api/surveys",
+      payload: { title: "Shape check survey" },
+    });
+    const { id } = create.json();
+
+    const res = await app.inject({ method: "GET", url: "/api/surveys" });
+    expect(res.statusCode).toBe(200);
+    const surveys = res.json();
+    expect(surveys).toHaveLength(1);
+    const s = surveys[0];
+    expect(s.id).toBe(id);
+    expect(s.title).toBe("Shape check survey");
+    expect(s).toHaveProperty("description");
+    expect(s).toHaveProperty("created_at");
+    expect(s.total).toBe(0);
+    expect(s.answered).toBe(0);
+  });
+
+  it("reports answered/total counts correctly", async () => {
+    const create = await app.inject({
+      method: "POST",
+      url: "/api/surveys",
+      payload: { title: "Count survey" },
+    });
+    const surveyId = create.json().id;
+
+    const now = new Date().toISOString();
+    db.prepare(
+      "INSERT INTO items (id, type, title, status, created_at, updated_at, decision_payload, survey_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run("d-open", "decision_request", "Open Q", "open", now, now, JSON.stringify(VALID_PAYLOAD), surveyId);
+    db.prepare(
+      "INSERT INTO items (id, type, title, status, created_at, updated_at, decision_payload, decided_at, survey_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run("d-done", "decision_request", "Done Q", "approved", now, now, JSON.stringify(VALID_PAYLOAD), now, surveyId);
+
+    const res = await app.inject({ method: "GET", url: "/api/surveys" });
+    const survey = res.json()[0];
+    expect(survey.total).toBe(2);
+    expect(survey.answered).toBe(1);
+  });
+
+  it("does not count items without decision_payload in totals", async () => {
+    const create = await app.inject({
+      method: "POST",
+      url: "/api/surveys",
+      payload: { title: "Non-decision survey" },
+    });
+    const surveyId = create.json().id;
+    const now = new Date().toISOString();
+    db.prepare(
+      "INSERT INTO items (id, type, title, status, created_at, updated_at, survey_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).run("non-decision", "doc_ref", "Not a Q", "open", now, now, surveyId);
+
+    const res = await app.inject({ method: "GET", url: "/api/surveys" });
+    const survey = res.json()[0];
+    expect(survey.total).toBe(0);
+    expect(survey.answered).toBe(0);
+  });
+});
+
 describe("POST /api/surveys", () => {
   let db: Database.Database;
   let app: FastifyInstance;
