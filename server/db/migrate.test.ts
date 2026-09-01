@@ -290,4 +290,93 @@ describe("runMigration", () => {
 
     db.close();
   });
+
+  // s5-survey-grouping: new surveys table and nullable survey_id FK on items.
+  it("creates the surveys table with expected columns", () => {
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
+    const db = new Database(dbPath);
+
+    runMigration(db);
+
+    expect(tableNames(db)).toContain("surveys");
+
+    const columns = db
+      .prepare("PRAGMA table_info(surveys)")
+      .all()
+      .map((c) => (c as { name: string }).name);
+
+    expect(columns.sort()).toEqual(["created_at", "description", "id", "title"]);
+
+    db.close();
+  });
+
+  it("surveys table migration is idempotent — running twice does not error or alter existing rows", () => {
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
+    const db = new Database(dbPath);
+
+    runMigration(db);
+    db.prepare("INSERT INTO surveys (id, title, created_at) VALUES (?, ?, ?)").run(
+      "survey-1",
+      "Test Survey",
+      "2026-09-01T00:00:00Z",
+    );
+
+    expect(() => runMigration(db)).not.toThrow();
+
+    const row = db.prepare("SELECT title FROM surveys WHERE id = ?").get("survey-1") as { title: string };
+    expect(row.title).toBe("Test Survey");
+
+    db.close();
+  });
+
+  it("adds a nullable survey_id column to items that defaults to NULL for existing rows", () => {
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
+    const db = new Database(dbPath);
+
+    runMigration(db);
+
+    const columns = db
+      .prepare("PRAGMA table_info(items)")
+      .all()
+      .map((c) => (c as { name: string }).name);
+    expect(columns).toContain("survey_id");
+
+    db.prepare(
+      "INSERT INTO items (id, type, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run("item-no-survey", "doc_ref", "No survey", "open", "2026-09-01T00:00:00Z", "2026-09-01T00:00:00Z");
+
+    const row = db.prepare("SELECT survey_id FROM items WHERE id = ?").get("item-no-survey") as {
+      survey_id: string | null;
+    };
+    expect(row.survey_id).toBeNull();
+
+    db.close();
+  });
+
+  it("survey_id migration is idempotent — re-running does not corrupt existing items rows with a non-null survey_id", () => {
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
+    const db = new Database(dbPath);
+
+    runMigration(db);
+    db.prepare("INSERT INTO surveys (id, title, created_at) VALUES (?, ?, ?)").run(
+      "srv-idem",
+      "Idempotent survey",
+      "2026-09-01T00:00:00Z",
+    );
+    db.prepare(
+      "INSERT INTO items (id, type, title, status, created_at, updated_at, survey_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).run("item-with-survey", "doc_ref", "Has survey", "open", "2026-09-01T00:00:00Z", "2026-09-01T00:00:00Z", "srv-idem");
+
+    expect(() => runMigration(db)).not.toThrow();
+    expect(() => runMigration(db)).not.toThrow();
+
+    const row = db.prepare("SELECT survey_id, title FROM items WHERE id = ?").get("item-with-survey") as {
+      survey_id: string | null;
+      title: string;
+    };
+    expect(row.survey_id).toBe("srv-idem");
+    expect(row.title).toBe("Has survey");
+
+    db.close();
+  });
 });
