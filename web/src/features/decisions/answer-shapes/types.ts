@@ -16,6 +16,21 @@ export interface DecisionDocPointer {
   ref?: string;
 }
 
+export interface FeatureOption {
+  id: string;
+  name: string;
+  description: string;
+  default?: boolean;
+}
+
+export interface FeatureSelectionPayload {
+  version: "dostal:feature-selection/v1";
+  title: string;
+  context: string;
+  features: FeatureOption[];
+  research?: { title: string; body: string; sources?: string[] }[];
+}
+
 export interface DecisionPayload {
   version: "dostal:decision-request/v1";
   title: string;
@@ -30,4 +45,5 @@ export type Verdict =
   | { kind: "accepted" }
   | { kind: "option_chosen"; optionId: string }
   | { kind: "mix"; optionIds: string[]; why: string }
-  | { kind: "rejected_iteration_requested"; commentary: string };
+  | { kind: "rejected_iteration_requested"; commentary: string }
+  | { kind: "features_selected"; selected: string[] };

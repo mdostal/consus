@@ -23,6 +23,21 @@ export interface DecisionDocPointer {
   ref?: string;
 }
 
+export interface FeatureOption {
+  id: string;
+  name: string;
+  description: string;
+  default?: boolean;
+}
+
+export interface FeatureSelectionPayload {
+  version: "dostal:feature-selection/v1";
+  title: string;
+  context: string;
+  features: FeatureOption[];
+  research?: { title: string; body: string; sources?: string[] }[];
+}
+
 export interface DecisionPayload {
   version: "dostal:decision-request/v1";
   title: string;
@@ -46,11 +61,28 @@ export type Verdict =
   | { kind: "accepted" }
   | { kind: "option_chosen"; optionId: string }
   | { kind: "mix"; optionIds: string[]; why: string }
-  | { kind: "rejected_iteration_requested"; commentary: string };
+  | { kind: "rejected_iteration_requested"; commentary: string }
+  | { kind: "features_selected"; selected: string[] };
 
-/** Maps a verdict to the ticket status transition (accept/choose/mix -> done, reject -> in_progress). */
+/** Maps a verdict to the ticket status transition (accept/choose/mix/features_selected -> done, reject -> in_progress). */
 export function verdictStatus(verdict: Verdict): "done" | "in_progress" {
   return verdict.kind === "rejected_iteration_requested" ? "in_progress" : "done";
+}
+
+/** Human-readable summary of a verdict for audit-log comments. */
+export function verdictSummary(verdict: Verdict): string {
+  switch (verdict.kind) {
+    case "accepted":
+      return "Accepted the recommended option.";
+    case "option_chosen":
+      return `Chose option ${verdict.optionId}.`;
+    case "mix":
+      return `Mixed options ${verdict.optionIds.join(" + ")} — ${verdict.why}`;
+    case "rejected_iteration_requested":
+      return `Requested another round — ${verdict.commentary}`;
+    case "features_selected":
+      return `Selected features: ${verdict.selected.join(", ")}`;
+  }
 }
 
 const FENCED_DECISION_REQUEST_BLOCK = /```decision-request\s*\n([\s\S]*?)\n```/;

@@ -135,6 +135,35 @@ describe("POST /api/decisions/:id/verdict", () => {
     expect(bridgeCalls).toHaveLength(0);
   });
 
+  it("records a features_selected verdict and marks status done", async () => {
+    insertDecision(db, "dec-fs", "Feature check");
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/decisions/dec-fs/verdict",
+      payload: { verdict: { kind: "features_selected", selected: ["dark-mode", "oauth"] } },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ ok: true, status: "done" });
+    const row = db.prepare("SELECT status, decided_at FROM items WHERE id = 'dec-fs'").get() as {
+      status: string;
+      decided_at: string;
+    };
+    expect(row.status).toBe("done");
+    expect(row.decided_at).toBeTruthy();
+  });
+
+  it("fires the bridge for a features_selected verdict", async () => {
+    insertDecision(db, "dec-fs-bridge", "Feature bridge test");
+    await app.inject({
+      method: "POST",
+      url: "/api/decisions/dec-fs-bridge/verdict",
+      payload: { verdict: { kind: "features_selected", selected: ["dark-mode"] } },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(bridgeCalls).toHaveLength(1);
+    expect(bridgeCalls[0].url).toBe("http://core-api:3012/api/events/decisions");
+  });
+
   it("verdict succeeds even when the bridge call throws", async () => {
     const failingCalls: CapturedCall[] = [];
     const failApp = Fastify();
