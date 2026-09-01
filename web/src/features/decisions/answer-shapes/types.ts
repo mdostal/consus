@@ -45,6 +45,7 @@ export interface FeatureSelectionPayload {
   title: string;
   context: string;
   features: FeatureOption[];
+  research?: ResearchSection[];
 }
 
 export type Verdict =

@@ -1,5 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
+import { verdictStatus, verdictSummary } from "../decision-contract/parser.js";
+import type { Verdict } from "../decision-contract/parser.js";
 
 export interface InteractionRoutesOptions {
   db: Database.Database;
@@ -8,32 +10,6 @@ export interface InteractionRoutesOptions {
   pantheonApiUrl?: string;
   /** Override the fetch implementation — used in tests to capture bridge calls. */
   fetch?: typeof globalThis.fetch;
-}
-
-type Verdict =
-  | { kind: "accepted" }
-  | { kind: "option_chosen"; optionId: string }
-  | { kind: "mix"; optionIds: string[]; why: string }
-  | { kind: "rejected_iteration_requested"; commentary: string }
-  | { kind: "features_selected"; selected: string[] };
-
-function verdictStatus(v: Verdict): "done" | "in_progress" {
-  return v.kind === "rejected_iteration_requested" ? "in_progress" : "done";
-}
-
-function verdictSummary(v: Verdict): string {
-  switch (v.kind) {
-    case "accepted":
-      return "Accepted the recommended option.";
-    case "option_chosen":
-      return `Chose option ${v.optionId}.`;
-    case "mix":
-      return `Mixed options ${v.optionIds.join(" + ")} — ${v.why}`;
-    case "rejected_iteration_requested":
-      return `Requested another round — ${v.commentary}`;
-    case "features_selected":
-      return `Selected features: ${v.selected.join(", ")}`;
-  }
 }
 
 /**
