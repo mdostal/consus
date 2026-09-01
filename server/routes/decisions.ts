@@ -37,16 +37,24 @@ function validateDecisionPayload(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") {
     return "decision_payload is required";
   }
-  const p = payload as Partial<DecisionPayload & FeatureSelectionPayload>;
-  if (p.version === "dostal:feature-selection/v1") {
+  // `DecisionPayload & FeatureSelectionPayload` collapses to `never`:
+  // `version` is a different string literal on each interface, and
+  // intersecting two incompatible literal types makes the whole intersected
+  // shape uninhabitable -- Partial<> wraps the ALREADY-collapsed type, so it
+  // doesn't help. Read the discriminant off a loose Record first, then cast
+  // to the real, specific type inside each branch once it's known.
+  const raw = payload as Record<string, unknown>;
+  if (raw.version === "dostal:feature-selection/v1") {
+    const p = payload as FeatureSelectionPayload;
     if (!Array.isArray(p.features) || p.features.length < 1) {
       return "decision_payload.features must have at least 1 entry";
     }
     return null;
   }
-  if (p.version !== "dostal:decision-request/v1") {
+  if (raw.version !== "dostal:decision-request/v1") {
     return `decision_payload.version must be "dostal:decision-request/v1" or "dostal:feature-selection/v1"`;
   }
+  const p = payload as DecisionPayload;
   if (!Array.isArray(p.options) || p.options.length < 2) {
     return "decision_payload.options must have at least 2 entries";
   }
