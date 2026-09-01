@@ -1,8 +1,9 @@
 import { useState } from "react";
-import type { DecisionPayload, Verdict } from "./types";
+import type { DecisionPayload, FeatureSelectionPayload, Verdict } from "./types";
+import { FeatureChecklist } from "./FeatureChecklist";
 
 export interface AnswerControlProps {
-  payload: DecisionPayload;
+  payload: DecisionPayload | FeatureSelectionPayload;
   onVerdict: (verdict: Verdict) => void;
 }
 
@@ -14,6 +15,9 @@ export interface AnswerControlProps {
  * Never a lone generic "Approve" button standing in for an actual decision.
  */
 export function AnswerControl({ payload, onVerdict }: AnswerControlProps) {
+  if (payload.version === "dostal:feature-selection/v1") {
+    return <FeatureChecklist payload={payload} onVerdict={onVerdict} />;
+  }
   const [mixSelected, setMixSelected] = useState<string[]>([]);
   const [mixWhy, setMixWhy] = useState("");
   const [rejectCommentary, setRejectCommentary] = useState("");
