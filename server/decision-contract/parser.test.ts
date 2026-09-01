@@ -50,6 +50,24 @@ describe("decision-request/v1 parser", () => {
     expect(parseDecisionPayload(JSON.stringify({ ...SAMPLE_PAYLOAD, options: [SAMPLE_PAYLOAD.options[0]] }))).toBeNull();
   });
 
+  it("round-trips a payload that includes research sections without loss", () => {
+    const withResearch = {
+      ...SAMPLE_PAYLOAD,
+      research: [
+        { title: "Performance benchmarks", body: "Service A is 2× faster under load.", sources: ["bench.md"] },
+        { title: "Cost analysis", body: "Option B costs 30% more per month." },
+      ],
+    };
+    const parsed = parseDecisionPayload(JSON.stringify(withResearch));
+    expect(parsed).toEqual(withResearch);
+  });
+
+  it("accepts payloads without a research field (backward compat)", () => {
+    const parsed = parseDecisionPayload(JSON.stringify(SAMPLE_PAYLOAD));
+    expect(parsed).toEqual(SAMPLE_PAYLOAD);
+    expect(parsed).not.toHaveProperty("research");
+  });
+
   describe("heuristic-from-markdown fallback tier (REQ-23)", () => {
     it("extracts options from '#### Option A — title' headings and a 'recommend' line", () => {
       const ticketBody = [

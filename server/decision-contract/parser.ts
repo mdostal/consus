@@ -23,6 +23,12 @@ export interface DecisionDocPointer {
   ref?: string;
 }
 
+export interface ResearchSection {
+  title: string;
+  body: string;
+  sources?: string[];
+}
+
 export interface DecisionPayload {
   version: "dostal:decision-request/v1";
   title: string;
@@ -32,6 +38,7 @@ export interface DecisionPayload {
   recommended: string;
   diagram?: boolean;
   doc?: DecisionDocPointer;
+  research?: ResearchSection[];
   /**
    * Set to "heuristic" by parseHeuristicPayload (tier 2); left unset
    * (undefined) on the tier-1 structured path — undefined is the implicit
