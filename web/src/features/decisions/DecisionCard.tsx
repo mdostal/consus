@@ -37,6 +37,24 @@ export function DecisionCard({
 
       {recommendation ? <p className="decision-card__recommendation">{recommendation}</p> : null}
 
+      {payload.research && payload.research.length > 0 ? (
+        <div className="decision-card__research" aria-label="Research findings">
+          {payload.research.map((section, i) => (
+            <details key={i} className="decision-card__research-section" aria-label={section.title}>
+              <summary className="decision-card__research-title">{section.title}</summary>
+              <div className="decision-card__research-body">{section.body}</div>
+              {section.sources && section.sources.length > 0 ? (
+                <ul className="decision-card__research-sources" aria-label="Sources">
+                  {section.sources.map((src, j) => (
+                    <li key={j}>{src}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </details>
+          ))}
+        </div>
+      ) : null}
+
       <div className="decision-card__answer-slot">
         <AnswerControl payload={payload} onVerdict={onVerdict} />
       </div>
