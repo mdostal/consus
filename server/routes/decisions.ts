@@ -19,6 +19,7 @@ interface ItemRow {
   decision_type: string | null;
   triage_bucket: string | null;
   source_branch: string | null;
+  survey_id: string | null;
 }
 
 interface CreateDecisionBody {
@@ -26,6 +27,7 @@ interface CreateDecisionBody {
   title?: string;
   source_repo?: string;
   decision_payload?: DecisionPayload;
+  survey_id?: string;
 }
 
 /** Structural validation only — this route stores what a caller supplies, it
@@ -70,19 +72,34 @@ function validateDecisionPayload(payload: unknown): string | null {
  * `source_branch IS NULL` filter is added, so today's unfiltered behavior
  * (every item matching the decision_payload/decided_at condition, regardless
  * of source_branch) is unchanged.
+ *
+ * `?survey=<id>` (s5-survey-grouping) further filters to items belonging to
+ * a specific survey (survey_id = ?). Composes with `?all=1` and `?branch=`.
  */
 export function registerDecisionRoutes(app: FastifyInstance, { db }: DecisionRoutesOptions): void {
-  app.get<{ Querystring: { all?: string; branch?: string } }>("/api/decisions", async (request) => {
+  app.get<{ Querystring: { all?: string; branch?: string; survey?: string } }>("/api/decisions", async (request) => {
     const includeDecided = request.query?.all === "1" || request.query?.all === "true";
     const branch = request.query?.branch;
+    const survey = request.query?.survey;
 
     const baseSql = includeDecided
-      ? "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch FROM items WHERE decision_payload IS NOT NULL ORDER BY (decided_at IS NULL) DESC, updated_at DESC, created_at ASC"
-      : "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch FROM items WHERE decision_payload IS NOT NULL AND decided_at IS NULL ORDER BY created_at ASC";
+      ? "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch, survey_id FROM items WHERE decision_payload IS NOT NULL ORDER BY (decided_at IS NULL) DESC, updated_at DESC, created_at ASC"
+      : "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch, survey_id FROM items WHERE decision_payload IS NOT NULL AND decided_at IS NULL ORDER BY created_at ASC";
 
-    const rows = branch
-      ? (db.prepare(baseSql.replace(" ORDER BY", " AND source_branch = ? ORDER BY")).all(branch) as ItemRow[])
-      : (db.prepare(baseSql).all() as ItemRow[]);
+    let sql = baseSql;
+    const params: unknown[] = [];
+
+    if (branch) {
+      sql = sql.replace(" ORDER BY", " AND source_branch = ? ORDER BY");
+      params.push(branch);
+    }
+
+    if (survey) {
+      sql = sql.replace(" ORDER BY", " AND survey_id = ? ORDER BY");
+      params.push(survey);
+    }
+
+    const rows = (db.prepare(sql).all(...params) as ItemRow[]);
 
     return rows.map((row) => {
       // s1-wire-classifier-into-decisions-route: opportunistic backfill for
@@ -115,7 +132,7 @@ export function registerDecisionRoutes(app: FastifyInstance, { db }: DecisionRou
    * twice, so a duplicate `id` is a 409, not a silent upsert.
    */
   app.post<{ Body: CreateDecisionBody }>("/api/decisions", async (request, reply) => {
-    const { id, title, source_repo: sourceRepo, decision_payload: decisionPayload } = request.body ?? {};
+    const { id, title, source_repo: sourceRepo, decision_payload: decisionPayload, survey_id: surveyId } = request.body ?? {};
 
     if (!id) {
       return reply.code(400).send({ error: "id is required" });
@@ -133,17 +150,24 @@ export function registerDecisionRoutes(app: FastifyInstance, { db }: DecisionRou
       return reply.code(409).send({ error: `item already exists: ${id}` });
     }
 
+    if (surveyId) {
+      const surveyExists = db.prepare("SELECT id FROM surveys WHERE id = ?").get(surveyId);
+      if (!surveyExists) {
+        return reply.code(400).send({ error: `survey not found: ${surveyId}` });
+      }
+    }
+
     const now = new Date().toISOString();
     db.prepare(
-      `INSERT INTO items (id, type, title, status, source_repo, created_at, updated_at, decision_payload)
-       VALUES (?, 'decision_request', ?, 'open', ?, ?, ?, ?)`,
-    ).run(id, title, sourceRepo ?? null, now, now, JSON.stringify(decisionPayload));
+      `INSERT INTO items (id, type, title, status, source_repo, created_at, updated_at, decision_payload, survey_id)
+       VALUES (?, 'decision_request', ?, 'open', ?, ?, ?, ?, ?)`,
+    ).run(id, title, sourceRepo ?? null, now, now, JSON.stringify(decisionPayload), surveyId ?? null);
 
     classifyItem(db, id);
 
     const row = db
       .prepare(
-        "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket FROM items WHERE id = ?",
+        "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, survey_id FROM items WHERE id = ?",
       )
       .get(id) as ItemRow;
 
