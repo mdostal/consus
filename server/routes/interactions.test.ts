@@ -182,4 +182,25 @@ describe("POST /api/decisions/:id/verdict", () => {
     if (savedEnv !== undefined) process.env.PANTHEON_API_URL = savedEnv;
     await noBridgeApp.close();
   });
+
+  it("accepts a features_selected verdict, sets status to done, and fires the bridge", async () => {
+    insertDecision(db, "dec-fs", "Feature set decision");
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/decisions/dec-fs/verdict",
+      payload: { verdict: { kind: "features_selected", selected: ["auth", "dark-mode"] } },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.status).toBe("done");
+    expect(body.decided_at).toBeTruthy();
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(bridgeCalls).toHaveLength(1);
+
+    const auditRow = db
+      .prepare("SELECT new_value FROM audit_log WHERE item_id = ? AND field = 'verdict'")
+      .get("dec-fs") as { new_value: string } | undefined;
+    expect(JSON.parse(auditRow!.new_value)).toEqual({ kind: "features_selected", selected: ["auth", "dark-mode"] });
+  });
 });

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
-import type { DecisionPayload } from "../decision-contract/parser.js";
+import type { DecisionPayload, FeatureSelectionPayload } from "../decision-contract/parser.js";
 import { classifyItem } from "../decision-contract/classifier.js";
 
 export interface DecisionRoutesOptions {
@@ -26,7 +26,7 @@ interface CreateDecisionBody {
   id?: string;
   title?: string;
   source_repo?: string;
-  decision_payload?: DecisionPayload;
+  decision_payload?: DecisionPayload | FeatureSelectionPayload;
   survey_id?: string;
 }
 
@@ -37,9 +37,15 @@ function validateDecisionPayload(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") {
     return "decision_payload is required";
   }
-  const p = payload as Partial<DecisionPayload>;
+  const p = payload as Partial<DecisionPayload & FeatureSelectionPayload>;
+  if (p.version === "dostal:feature-selection/v1") {
+    if (!Array.isArray(p.features) || p.features.length < 1) {
+      return "decision_payload.features must have at least 1 entry";
+    }
+    return null;
+  }
   if (p.version !== "dostal:decision-request/v1") {
-    return `decision_payload.version must be "dostal:decision-request/v1"`;
+    return `decision_payload.version must be "dostal:decision-request/v1" or "dostal:feature-selection/v1"`;
   }
   if (!Array.isArray(p.options) || p.options.length < 2) {
     return "decision_payload.options must have at least 2 entries";

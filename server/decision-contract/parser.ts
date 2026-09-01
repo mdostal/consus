@@ -42,13 +42,35 @@ export interface DecisionPayload {
   extractionTier?: "structured" | "heuristic";
 }
 
+export interface FeatureOption {
+  id: string;
+  name: string;
+  description: string;
+  default?: boolean;
+}
+
+export interface ResearchSection {
+  title: string;
+  body: string;
+  sources?: string[];
+}
+
+export interface FeatureSelectionPayload {
+  version: "dostal:feature-selection/v1";
+  title: string;
+  context: string;
+  features: FeatureOption[];
+  research?: ResearchSection[];
+}
+
 export type Verdict =
   | { kind: "accepted" }
   | { kind: "option_chosen"; optionId: string }
   | { kind: "mix"; optionIds: string[]; why: string }
-  | { kind: "rejected_iteration_requested"; commentary: string };
+  | { kind: "rejected_iteration_requested"; commentary: string }
+  | { kind: "features_selected"; selected: string[] };
 
-/** Maps a verdict to the ticket status transition (accept/choose/mix -> done, reject -> in_progress). */
+/** Maps a verdict to the ticket status transition (accept/choose/mix/features_selected -> done, reject -> in_progress). */
 export function verdictStatus(verdict: Verdict): "done" | "in_progress" {
   return verdict.kind === "rejected_iteration_requested" ? "in_progress" : "done";
 }
