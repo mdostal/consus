@@ -171,11 +171,10 @@ describe("SurveyView", () => {
       version: "dostal:feature-selection/v1" as unknown as "dostal:decision-request/v1",
       title: "Pick features",
       context: "ctx",
-      options: [
-        { id: "A", title: "Feature Alpha", tradeoffs: "" },
-        { id: "B", title: "Feature Beta", tradeoffs: "" },
+      features: [
+        { id: "alpha", name: "Feature Alpha", description: "First feature" },
+        { id: "beta", name: "Feature Beta", description: "Second feature" },
       ],
-      recommended: "A",
     };
     const featureMember: SurveyDecisionItem = {
       id: "m-feature",
