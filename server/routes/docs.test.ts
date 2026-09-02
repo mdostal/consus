@@ -127,6 +127,7 @@ describe("GET /api/docs/features", () => {
   let otherRepoDir: string;
   let db: Database.Database;
   let app: FastifyInstance;
+  let repos: Record<string, string>;
 
   beforeEach(async () => {
     repoDir = mkdtempSync(join(tmpdir(), "consus-repo-"));
@@ -154,8 +155,9 @@ describe("GET /api/docs/features", () => {
     scanRepo(db, { repoName: "consus", repoPath: repoDir });
     scanRepo(db, { repoName: "other-project", repoPath: otherRepoDir });
 
+    repos = { consus: repoDir, "other-project": otherRepoDir };
     app = Fastify();
-    registerDocRoutes(app, { db, repos: { consus: repoDir, "other-project": otherRepoDir } });
+    registerDocRoutes(app, { db, repos });
     await app.ready();
   });
 
@@ -226,6 +228,64 @@ describe("GET /api/docs/features", () => {
 
     const overviewPaths = body.overview.map((d: { file_path: string }) => d.file_path);
     expect(overviewPaths.filter((p: string) => p === "README.md")).toHaveLength(2);
+  });
+
+  it("excludes a repo's docs from features[]/overview[] when it's present in doc_index but absent from the registry (s5, orphaned Portunus data)", async () => {
+    // Simulates the real bug found against this repo's own .pHive/consus.sqlite:
+    // a repo scanned in the past, then deregistered (dropped from
+    // consus-projects.json / the `repos` map passed to registerDocRoutes),
+    // whose doc_index rows nonetheless linger untouched.
+    const orphanRepoDir = mkdtempSync(join(tmpdir(), "consus-orphan-repo-"));
+    mkdirSync(join(orphanRepoDir, ".pHive", "epics", "epic-orphan", "design"), { recursive: true });
+    writeFileSync(join(orphanRepoDir, ".pHive", "epics", "epic-orphan", "design", "design.md"), "# Orphan design");
+    writeFileSync(join(orphanRepoDir, "README.md"), "# orphan readme");
+
+    try {
+      // Scanned into doc_index...
+      scanRepo(db, { repoName: "orphan-project", repoPath: orphanRepoDir });
+      // ...but NOT added to the `repos` map the running app was built with —
+      // i.e. deregistered (or never (re-)registered) from the app's point of
+      // view, even though doc_index still has its rows.
+      expect(repos["orphan-project"]).toBeUndefined();
+
+      const excludedRes = await app.inject({ method: "GET", url: "/api/docs/features" });
+      const excludedBody = excludedRes.json();
+      expect(excludedBody.features.map((f: { epic: string }) => f.epic)).not.toContain("epic-orphan");
+      // The orphan repo contributed a README.md too, but consus + other-project
+      // already contribute one README.md each — assert via count (still
+      // exactly 2, not 3) rather than presence, since presence alone can't
+      // distinguish "orphan's README excluded" from "some registered repo's".
+      const readmeCount = excludedBody.overview.filter((d: { file_path: string }) => d.file_path === "README.md").length;
+      expect(readmeCount).toBe(2);
+
+      // The underlying doc_index rows are untouched by this exclusion — a
+      // query-time filter, never a destructive prune (s5's design decision).
+      const orphanRowCount = (
+        db.prepare("SELECT COUNT(*) AS n FROM doc_index WHERE repo = ?").get("orphan-project") as { n: number }
+      ).n;
+      expect(orphanRowCount).toBeGreaterThan(0);
+
+      // Re-registering it — mutating the same `repos` object in place, the
+      // way POST /api/projects does, with NO further scanRepo() call — makes
+      // its already-scanned docs reappear immediately.
+      repos["orphan-project"] = orphanRepoDir;
+
+      const reincludedRes = await app.inject({ method: "GET", url: "/api/docs/features" });
+      const reincludedBody = reincludedRes.json();
+      expect(reincludedBody.features.map((f: { epic: string }) => f.epic)).toContain("epic-orphan");
+      const readmeCountAfter = reincludedBody.overview.filter((d: { file_path: string }) => d.file_path === "README.md").length;
+      expect(readmeCountAfter).toBe(3);
+
+      // Still the same doc_index row count for orphan-project — reappearing
+      // required no re-scan and no row mutation whatsoever.
+      const orphanRowCountAfter = (
+        db.prepare("SELECT COUNT(*) AS n FROM doc_index WHERE repo = ?").get("orphan-project") as { n: number }
+      ).n;
+      expect(orphanRowCountAfter).toBe(orphanRowCount);
+    } finally {
+      delete repos["orphan-project"];
+      rmSync(orphanRepoDir, { recursive: true, force: true });
+    }
   });
 
   it("doesn't duplicate or drop any doc_index row compared to GET /api/docs for the same repo", async () => {

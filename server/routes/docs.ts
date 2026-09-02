@@ -50,6 +50,20 @@ export function docItemIdFor(repo: string, path: string): string {
 }
 
 export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutesOptions): void {
+  // s5 (consus-phase27-feature-doc-review-ui): scopedRepos is always derived
+  // from Object.keys(repos) -- the live project registry this route handler
+  // closes over (buildServer's `repos`, loaded from .pHive/consus-projects.json
+  // and mutated in place by POST /api/projects) -- never from `SELECT DISTINCT
+  // repo FROM doc_index` or any other doc_index-sourced list. That means a
+  // repo whose doc_index rows outlive its deregistration (e.g. hand-editing
+  // consus-projects.json to drop a repo, then restarting) is never queried
+  // here and so never appears in this response, even though its rows are
+  // still sitting in doc_index untouched -- this is a query-time exclusion,
+  // re-derived fresh on every request, not a cached/hardcoded denylist and
+  // not a destructive prune. If the repo is re-registered, its
+  // previously-scanned docs reappear immediately with no re-scan needed.
+  // GET /api/docs/features below uses this identical pattern -- the two
+  // routes intentionally do not diverge on orphaned-repo handling.
   app.get<{ Querystring: { project?: string } }>("/api/docs", async (request) => {
     const { project } = request.query;
     const scopedRepos = project ? Object.keys(repos).filter((r) => r === project) : Object.keys(repos);
@@ -84,6 +98,21 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutes
    * .pHive/planning/** docs, which are epic=null, phase='planning') don't
    * belong in either bucket here and are intentionally omitted — GET
    * /api/docs remains the place to see those.
+   *
+   * s5 (consus-phase27-feature-doc-review-ui): registry-membership filter
+   * against orphaned doc_index rows. Confirmed live against this repo's own
+   * .pHive/consus.sqlite during this epic's research pass: 76 docs across
+   * 29 epics sat in doc_index tagged repo="Portunus" while "Portunus" was
+   * absent from .pHive/consus-projects.json — a leftover from an earlier
+   * scan of a since-deregistered repo. Left unfiltered, this endpoint would
+   * have surfaced 29 dead "features" pointing at a repo Consus can no
+   * longer resolve a path for (repos/content lookups below all key off this
+   * same `repos` map). scopedRepos, exactly as in GET /api/docs above, is
+   * always derived from Object.keys(repos) — the live registry, re-read on
+   * every request — never from a distinct-repo scan of doc_index itself, so
+   * a deregistered repo's rows are excluded automatically without ever
+   * issuing a DELETE against doc_index, and a later re-registration makes
+   * them reappear immediately with no re-scan required.
    */
   app.get<{ Querystring: { project?: string } }>("/api/docs/features", async (request) => {
     const { project } = request.query;
