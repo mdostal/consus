@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 
 export interface DocIndexRow {
@@ -20,6 +20,20 @@ export interface ScanOptions {
 
 export const DOC_EXTENSIONS = new Set([".md", ".html"]);
 export const SCAN_ROOTS = [join(".pHive", "planning"), join(".pHive", "epics")];
+
+/**
+ * Repo-level "overview" docs (s1 of consus-phase27-feature-doc-review-ui):
+ * top-level README/VISION plus a repo-root docs/ tree. These are always
+ * tagged epic: null, phase: "overview" — a new, reserved phase value
+ * distinct from "planning" (which specifically means .pHive/planning/*
+ * content, derived below by deriveEpicAndPhase). Deliberately kept OUT of
+ * SCAN_ROOTS itself: SCAN_ROOTS is also imported by ./git-ref.ts, whose
+ * isUnderScanRoots() (and its test) specifically assert README.md at repo
+ * root is NOT a scan-root match for that ref-aware git plumbing — folding
+ * these in there would silently change that unrelated module's behavior.
+ */
+export const OVERVIEW_ROOT_FILES = ["README.md", "VISION.md"];
+export const OVERVIEW_ROOT_DIR = "docs";
 
 function walk(dir: string): string[] {
   let out: string[] = [];
@@ -52,6 +66,21 @@ function deriveEpicAndPhase(relPath: string): { epic: string | null; phase: stri
   return { epic: null, phase: null };
 }
 
+/**
+ * Finds repo-root README.md/VISION.md (if present) plus every doc under a
+ * repo-root docs/ tree (if present), following the same tolerant-existsSync
+ * convention used elsewhere in this codebase (e.g. project-registry.ts,
+ * server/index.ts's WEB_ROOT check) — a repo with none of these simply
+ * yields no files, never an error. docs/ recursion reuses walk(), the same
+ * directory-walk convention SCAN_ROOTS already uses for .pHive/epics/**.
+ */
+function walkOverviewFiles(repoPath: string): string[] {
+  const rootFiles = OVERVIEW_ROOT_FILES.map((name) => join(repoPath, name)).filter((absPath) =>
+    existsSync(absPath),
+  );
+  return rootFiles.concat(walk(join(repoPath, OVERVIEW_ROOT_DIR)));
+}
+
 function hashContent(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
@@ -70,6 +99,7 @@ export function scanRepo(db: Database.Database, { repoName, repoPath }: ScanOpti
   `);
 
   const files = SCAN_ROOTS.flatMap((root) => walk(join(repoPath, root)));
+  const overviewFiles = walkOverviewFiles(repoPath);
 
   for (const absPath of files) {
     const relPath = relative(repoPath, absPath);
@@ -80,6 +110,24 @@ export function scanRepo(db: Database.Database, { repoName, repoPath }: ScanOpti
       repo: repoName,
       epic,
       phase,
+      file_path: relPath,
+      content_hash: hashContent(content),
+      last_scanned_at: now,
+    });
+  }
+
+  // Repo-level overview docs (README.md/VISION.md/docs/**) are always
+  // epic: null, phase: "overview" — a fixed, reserved tag distinct from
+  // "planning" (see OVERVIEW_ROOT_FILES's doc comment above), never derived
+  // from path structure the way .pHive/epics/** docs are.
+  for (const absPath of overviewFiles) {
+    const relPath = relative(repoPath, absPath);
+    const content = readFileSync(absPath, "utf-8");
+
+    upsert.run({
+      repo: repoName,
+      epic: null,
+      phase: "overview",
       file_path: relPath,
       content_hash: hashContent(content),
       last_scanned_at: now,

@@ -1,0 +1,54 @@
+name: consus-phase26-desktop-app
+title: Native macOS desktop shell for Consus (Tauri, tray, sidecar)
+description: >
+  Ship Consus.app — a menu-bar desktop app that spawns Consus's own compiled
+  server as a background sidecar process and points a native window at it,
+  at full feature parity with the already-shipped Heimdall.app and
+  Portunus.app on this machine (tray icon, single-instance, close-to-tray,
+  autostart, background updater). Packaging/distribution only — no changes
+  to Consus's own product surface.
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: classic
+version_bump: minor
+sidecar_retention: committed
+
+git_flow:
+  base_branch: dev
+  branch_strategy: per-epic
+
+planning_team:
+  matched_tags: [desktop-packaging, macos, tauri]
+  roster: [orchestrator]
+  per_tag_reasoning:
+    desktop-packaging: "Direct adaptation of a proven same-workspace precedent (Heimdall/Portunus Tauri shells); single-pass design discussion + direct story decomposition, not full multi-persona pipeline."
+  confidence: high
+  gate_decisions:
+    hv_planning: skipped
+    structured_outline: skipped
+    reason: "Medium scope, low novelty — pattern already proven twice in this workspace."
+
+stories:
+  - id: s1-desktop-app-scaffold-and-state
+    title: Tauri v2 project scaffold + app-local state env wiring
+    complexity: medium
+    depends_on: []
+  - id: s2-sidecar-process-management
+    title: Spawn, health-check, and cleanly kill the Consus server sidecar
+    complexity: medium
+    depends_on: [s1-desktop-app-scaffold-and-state]
+  - id: s3-tray-menu-and-lifecycle
+    title: Tray menu, single-instance guard, close-to-tray, autostart
+    complexity: medium
+    depends_on: [s2-sidecar-process-management]
+  - id: s4-app-icons
+    title: Produce a minimal app icon set (tray + Dock)
+    complexity: low
+    depends_on: [s1-desktop-app-scaffold-and-state]
+  - id: s5-build-resources-and-packaging
+    title: Stage production build into the .app bundle; verify a real cargo tauri build
+    complexity: medium
+    depends_on: [s2-sidecar-process-management, s4-app-icons]
+  - id: s6-background-updater
+    title: Background update checker against GitHub releases
+    complexity: low
+    depends_on: [s3-tray-menu-and-lifecycle]

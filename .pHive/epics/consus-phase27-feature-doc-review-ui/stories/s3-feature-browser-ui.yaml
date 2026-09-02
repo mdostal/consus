@@ -1,0 +1,80 @@
+id: s3-feature-browser-ui
+epic: consus-phase27-feature-doc-review-ui
+title: Feature list + feature detail view (replaces the flat DocBrowser)
+status: pending
+complexity: medium
+methodology: classic
+depends_on: [s2-feature-grouped-docs-api]
+
+description: |
+  Confirmed this session: web/src/features/docs/DocBrowser.tsx is a
+  35-line flat repo -> phase -> <doc rows> renderer, with epic shown only
+  as a small inline badge per row — no click-through grouping exists at
+  all today. This story replaces it with two views built against s2's
+  new GET /api/docs/features: a feature list (one row per epic, doc
+  count shown, plus a separate "Overview" section for the phase='overview'
+  bucket) and a feature detail view that, when a feature is clicked, shows
+  every doc belonging to that epic together on one screen.
+
+  This story does NOT add approve/deny/change controls — that's s4,
+  layered on top of this view once it exists. This story is purely the
+  navigation/grouping restructure.
+
+acceptance_criteria:
+  - "Given a project with docs across multiple epics, the feature list shows one row per epic with a real doc count (matching s2's docCount field), not an inline badge buried in a flat list"
+  - "Given the Overview section, it lists the repo-meta docs from s1/s2's overview[] bucket, visually distinct from the per-feature list"
+  - "Given a feature is clicked, the detail view shows every doc for that epic together on one screen (same doc rendering DocRenderer already does per-doc, just grouped)"
+  - "Given this repo's own real, hundreds-of-docs data (201 docs / 79 epic pairs across consus/heimdall/mnemosyne, confirmed via live query this session), the feature list renders without visibly breaking or becoming unusable at that real scale — spot-check by actually running the dev server against this repo's own .pHive/consus.sqlite (a read-only view of it, or a copy — do NOT risk writing test data into the live DB) and looking at the rendered result"
+  - "Given the old flat DocBrowser.tsx is removed/replaced, no other component still imports it (grep confirms zero remaining references)"
+
+steps:
+  - id: research
+    description: Read DocBrowser.tsx (35 lines) and DocRenderer.tsx in full, plus how App.tsx currently mounts the docs section, to plan the minimal-diff replacement.
+    agent: researcher
+  - id: implement
+    description: Build FeatureBrowser.tsx (list + Overview section) and FeatureDetailView.tsx, wire into App.tsx replacing DocBrowser's mount point, remove DocBrowser.tsx once nothing references it.
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Component tests for the new views; a real spot-check against this repo's actual scale of data (read-only), per the acceptance criteria.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm DocBrowser.tsx has zero remaining references anywhere, confirm the existing per-doc DocRenderer rendering itself is unchanged (only its grouping context changed).
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase27-feature-doc-review-ui.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: web/src/features/docs/DocBrowser.tsx
+      purpose: "The current 35-line flat renderer this story replaces — confirmed full-file-read this session"
+    - path: web/src/App.tsx
+      purpose: "Line ~782 has the comment confirming docs are read-only today; this is also where DocBrowser is currently mounted and needs re-wiring to FeatureBrowser"
+
+files_to_modify:
+  - file: web/src/features/docs/FeatureBrowser.tsx
+    change: New file — feature list + Overview section, consuming GET /api/docs/features
+  - file: web/src/features/docs/FeatureDetailView.tsx
+    change: New file — all docs for one clicked feature, rendered together
+  - file: web/src/features/docs/DocBrowser.tsx
+    change: Removed once nothing references it
+  - file: web/src/App.tsx
+    change: Replace DocBrowser mount with FeatureBrowser
+
+design_decisions:
+  - decision: "Separate FeatureDetailView rather than expanding rows inline in the list"
+    rationale: "The request explicitly asks to 'click to a FEATURE and then review ALL the docs for that feature' — a real navigation, not an accordion — matching how a feature with many docs (some epics in this repo's own data have well over a dozen files) needs real screen space to review properly."
+
+risks:
+  - severity: medium
+    description: "Testing against the real, live .pHive/consus.sqlite could risk writing test data into an operator's real decisions DB (a caution this session's own history has hit before)"
+    mitigation: "Acceptance criteria explicitly says read-only view or a copy of the DB, never live test writes — same discipline already established elsewhere in this repo's own testing conventions"
+
+cross_cutting:
+  - concern: documentation
+    action: "Any README/screenshot references to the old flat doc list should be updated once this ships — check for any before closing this out."

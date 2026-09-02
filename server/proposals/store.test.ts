@@ -57,6 +57,42 @@ describe("proposeChange", () => {
     expect(transport.calls[0].method).toBe("proposeChange");
   });
 
+  it("dispatches a doc-review proposal (s4, consus-phase27-feature-doc-review-ui) through the harness transport exactly like a diagram's", async () => {
+    // Mirrors web/src/features/docs/FeatureDetailView.tsx's real Approve
+    // payload: itemId is a docItemIdFor(repo, path)-shaped id, targetType
+    // is "doc", diff/description are the fixed approve marker text — never
+    // a special-cased dispatch path, per this file's own "no content-type
+    // branching" test just below.
+    const transport = fakeTransport({ ok: true, result: { acknowledged: true } });
+    insertItem(db, "doc:consus:.pHive/epics/sample-epic/docs/prd.md");
+
+    const result = await proposeChange(db, transport, {
+      itemId: "doc:consus:.pHive/epics/sample-epic/docs/prd.md",
+      targetType: "doc",
+      diff: "(no changes — approved as-is)",
+      description: "Approved",
+      requestedBy: "Mathew",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const row = db.prepare("SELECT * FROM proposals WHERE id = ?").get(result.proposalId) as Record<
+      string,
+      unknown
+    >;
+    expect(row.status).toBe("pending");
+    expect(row.target_type).toBe("doc");
+
+    expect(transport.calls).toHaveLength(1);
+    expect(transport.calls[0].method).toBe("proposeChange");
+    expect(transport.calls[0].params).toMatchObject({
+      itemId: "doc:consus:.pHive/epics/sample-epic/docs/prd.md",
+      targetType: "doc",
+      description: "Approved",
+    });
+  });
+
   it("works identically for a decision, a diagram, or a doc — no content-type branching in the dispatch path", async () => {
     const transport = fakeTransport({ ok: true, result: {} });
 

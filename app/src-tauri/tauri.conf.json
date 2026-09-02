@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Consus",
+  "version": "0.14.0",
+  "identifier": "com.mdostal.consus",
+  "build": {
+    "frontendDist": "../dist-placeholder",
+    "beforeBuildCommand": {
+      "script": "bash build-resources.sh",
+      "cwd": "."
+    }
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "resources": {
+      "resources/consus": "consus"
+    },
+    "macOS": {
+      "signingIdentity": "-"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
