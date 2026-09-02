@@ -24,6 +24,8 @@ tauri-plugin-log = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2.7.2"
+ureq = "2"
+wait-timeout = "0.2"
 
 [dev-dependencies]
 # unit tests for app_data_dir() live inline in lib.rs

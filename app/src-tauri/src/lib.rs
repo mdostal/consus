@@ -1,6 +1,10 @@
-use std::path::PathBuf;
+mod sidecar;
 
-use tauri::{WebviewUrl, WebviewWindowBuilder};
+use std::path::PathBuf;
+use std::process::Child;
+use std::sync::Mutex;
+
+use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
 /// Resolves (and creates if absent) this app's app-local state directory:
 /// `~/Library/Application Support/com.mdostal.consus/`.
@@ -14,10 +18,10 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 ///
 /// This is computed directly from `$HOME` rather than via Tauri's own
 /// `app.path().app_data_dir()` resolver so it can be called (and unit
-/// tested) before an `AppHandle` exists, and so a later story (s2) can
-/// call it to compute the env vars it sets before spawning the sidecar --
-/// see server/index.ts's CONSUS_DB_PATH / CONSUS_PROJECTS_CONFIG /
-/// CONSUS_ATTACHMENTS_DIR contract.
+/// tested) before an `AppHandle` exists, and so sidecar.rs (s2) can call
+/// it to compute the CONSUS_DB_PATH / CONSUS_PROJECTS_CONFIG /
+/// CONSUS_ATTACHMENTS_DIR env vars it sets before spawning the sidecar --
+/// see server/index.ts's own env-var contract.
 pub fn app_data_dir() -> std::io::Result<PathBuf> {
     let home = std::env::var("HOME").map_err(|_| {
         std::io::Error::new(std::io::ErrorKind::NotFound, "HOME env var not set")
@@ -30,9 +34,38 @@ pub fn app_data_dir() -> std::io::Result<PathBuf> {
     Ok(dir)
 }
 
+/// Holds the spawned sidecar so it isn't silently orphaned by a dropped
+/// handle -- Quit (any path: Cmd+Q, Dock, later a tray menu) kills it
+/// explicitly via the RunEvent handler below. Ported from Heimdall's own
+/// SidecarState: kill_sidecar() is idempotent (guards on `guard.take()`),
+/// so it's safe to call from both RunEvent variants below regardless of
+/// which one (or both) actually fires for a given quit path.
+pub struct SidecarState {
+    pub child: Mutex<Option<Child>>,
+    pub port: u16,
+}
+
+fn kill_sidecar(app: &tauri::AppHandle) {
+    let Some(state) = app.try_state::<SidecarState>() else {
+        log::warn!("kill_sidecar: no SidecarState found on app handle");
+        return;
+    };
+    let Ok(mut guard) = state.child.lock() else {
+        log::error!("kill_sidecar: failed to lock sidecar state mutex");
+        return;
+    };
+    let Some(mut child) = guard.take() else {
+        return; // already killed by the other RunEvent variant
+    };
+    if let Err(e) = child.kill() {
+        log::error!("kill_sidecar: kill() failed for pid={}: {e}", child.id());
+    }
+    let _ = child.wait();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // Must be registered first (documented Tauri requirement) -- a
         // second launch should focus the existing window rather than
         // spawning a second copy that collides on the same app-local
@@ -59,21 +92,63 @@ pub fn run() {
                 Err(e) => log::warn!("failed to resolve app-local state dir: {e}"),
             }
 
-            // Sidecar spawn (s2) and tray wiring (s3) are separate, later
-            // units of work -- for now just show the static loading
-            // placeholder so the window isn't blank. Once the sidecar
-            // exists, s2 will health-check it and navigate this window to
-            // its real URL, same pattern as Heimdall's app_lib::run().
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+            let handle = sidecar::spawn_sidecar(app.handle());
+            let port = handle.port;
+            log::info!("sidecar spawned on picked free port {port}");
+            app.manage(SidecarState {
+                child: Mutex::new(Some(handle.child)),
+                port,
+            });
+
+            // Show the loading placeholder immediately; swap to the real
+            // sidecar URL (or show an error state) once health-checked --
+            // never a browser connection-refused page. Tray wiring (s3) is
+            // a separate, later unit of work.
+            let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("Consus")
                 .inner_size(1280.0, 860.0)
                 .visible(true)
                 .build()?;
 
+            let window_for_thread = window.clone();
+            std::thread::spawn(move || {
+                if sidecar::wait_until_healthy(port) {
+                    log::info!("sidecar healthy on port {port}, navigating window");
+                    let url = format!("http://127.0.0.1:{port}");
+                    if let Ok(parsed) = tauri::Url::parse(&url) {
+                        let _ = window_for_thread.navigate(parsed);
+                    }
+                } else {
+                    log::error!("sidecar did not become healthy within the poll timeout");
+                    let _ = window_for_thread.eval(
+                        "document.getElementById('spinner').style.display='none';\
+                         document.getElementById('status').style.display='none';\
+                         var e=document.getElementById('err');\
+                         e.style.display='block';\
+                         e.textContent='Consus did not start in time. \
+                         Check that node is installed and on PATH, then relaunch.';",
+                    );
+                }
+            });
+
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running consus application");
+        .build(tauri::generate_context!())
+        .expect("error while building consus application");
+
+    builder.run(|app_handle, event| {
+        // The one place sidecar cleanup is guaranteed to run, regardless of
+        // which quit path triggered it (Cmd+Q, Dock menu, or a later tray
+        // "Quit"). Confirmed live on Heimdall's own build (same platform,
+        // same Tauri version) that Cmd+Q delivers RunEvent::Exit directly,
+        // WITHOUT a preceding ExitRequested -- so cleanup must run on both.
+        // kill_sidecar() is idempotent (guards on `guard.take()`), so
+        // handling both is safe regardless of which one (or both) actually
+        // fires for a given quit path.
+        if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
+            kill_sidecar(app_handle);
+        }
+    });
 }
 
 #[cfg(test)]
