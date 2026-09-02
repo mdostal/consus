@@ -32,6 +32,17 @@ interface GroupedDocs {
   };
 }
 
+interface FeatureDoc {
+  file_path: string;
+  content_hash: string;
+  last_scanned_at: string;
+}
+
+interface FeatureGroupedDocs {
+  features: Array<{ epic: string; docCount: number; docs: FeatureDoc[] }>;
+  overview: FeatureDoc[];
+}
+
 /** The item id a doc's propose-a-change proposals target (s5). One item per
  *  repo+path, mirroring diagrams' one-item-per-repo-diagram approach. */
 export function docItemIdFor(repo: string, path: string): string {
@@ -58,6 +69,52 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutes
       }
     }
     return grouped;
+  });
+
+  /**
+   * s2 of consus-phase27-feature-doc-review-ui: a reshape of the same
+   * doc_index data GET /api/docs returns (queryDocIndex, above), grouped
+   * the way the feature-doc review UI actually needs it — one entry per
+   * feature (non-null epic) with its doc count and doc list, plus a
+   * separate "overview" bucket sourced from s1's repo-root README/VISION/
+   * docs/** scan (phase='overview', epic=null). This is purely additive:
+   * GET /api/docs's own shape and behavior are untouched above.
+   *
+   * Rows that are neither in a named epic nor phase='overview' (e.g.
+   * .pHive/planning/** docs, which are epic=null, phase='planning') don't
+   * belong in either bucket here and are intentionally omitted — GET
+   * /api/docs remains the place to see those.
+   */
+  app.get<{ Querystring: { project?: string } }>("/api/docs/features", async (request) => {
+    const { project } = request.query;
+    const scopedRepos = project ? Object.keys(repos).filter((r) => r === project) : Object.keys(repos);
+
+    const docsByEpic = new Map<string, FeatureDoc[]>();
+    const overview: FeatureDoc[] = [];
+
+    for (const repo of scopedRepos) {
+      for (const row of queryDocIndex(db, repo)) {
+        const doc: FeatureDoc = {
+          file_path: row.file_path,
+          content_hash: row.content_hash,
+          last_scanned_at: row.last_scanned_at,
+        };
+        if (row.phase === "overview") {
+          overview.push(doc);
+        } else if (row.epic !== null) {
+          const docs = docsByEpic.get(row.epic) ?? [];
+          docs.push(doc);
+          docsByEpic.set(row.epic, docs);
+        }
+      }
+    }
+
+    const features = Array.from(docsByEpic.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([epic, docs]) => ({ epic, docCount: docs.length, docs }));
+
+    const result: FeatureGroupedDocs = { features, overview };
+    return result;
   });
 
   app.get<{ Querystring: { repo: string; path: string; ref?: string } }>(
