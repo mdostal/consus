@@ -6,15 +6,16 @@
 //! module's Quit item triggers via `app.exit(0)`).
 //!
 //! Ported from Heimdall's own tray.rs (app/src-tauri/src/tray.rs), same
-//! structure, menu labels changed to "Consus". "Check for Updates…" is
-//! present as a menu item now (matches Heimdall's ordering) but its click
-//! handler is a no-op log line -- the actual updater logic is a later unit
-//! of work (s6), not built here.
+//! structure, menu labels changed to "Consus". "Check for Updates…" now
+//! wires to updater::check_now() (s6-background-updater) -- it was a
+//! no-op placeholder through s3-s5.
 
 use tauri::menu::{CheckMenuItemBuilder, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::ManagerExt;
+
+use crate::updater;
 
 pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let open_item = MenuItem::with_id(app, "open", "Open Consus", true, None::<&str>)?;
@@ -44,12 +45,7 @@ pub fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(true)
         .on_menu_event(move |app, event| match event.id().as_ref() {
             "open" => show_main_window(app),
-            "check_updates" => {
-                // Updater logic itself is a later unit of work (s6) -- this
-                // menu item exists now (mirrors Heimdall's ordering) but is
-                // intentionally a no-op beyond logging until s6 wires it up.
-                log::info!("tray: 'Check for Updates…' clicked (updater not yet implemented -- see s6)");
-            }
+            "check_updates" => updater::check_now(app),
             "autostart" => {
                 let autolaunch = app.autolaunch();
                 let enabled = autolaunch.is_enabled().unwrap_or(false);

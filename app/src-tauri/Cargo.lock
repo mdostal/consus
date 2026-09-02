@@ -523,6 +523,7 @@ name = "consus-desktop"
 version = "0.12.0"
 dependencies = [
  "log",
+ "semver",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",

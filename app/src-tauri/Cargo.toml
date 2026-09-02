@@ -24,8 +24,11 @@ tauri-plugin-log = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2.7.2"
+semver = "1.0.28"
 ureq = "2"
 wait-timeout = "0.2"
 
 [dev-dependencies]
-# unit tests for app_data_dir() live inline in lib.rs
+# unit tests for app_data_dir() live inline in lib.rs, and for
+# updater::is_newer() (equal/older/newer/malformed-tag semver comparison)
+# inline in updater.rs

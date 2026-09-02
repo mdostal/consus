@@ -1,5 +1,6 @@
 mod sidecar;
 mod tray;
+mod updater;
 
 use std::path::PathBuf;
 use std::process::Child;
@@ -102,6 +103,7 @@ pub fn run() {
             });
 
             tray::build_tray(app.handle())?;
+            updater::spawn_background_checker(app.handle().clone());
 
             // Show the loading placeholder immediately; swap to the real
             // sidecar URL (or show an error state) once health-checked --
