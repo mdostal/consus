@@ -21,6 +21,25 @@
   `DirectoryBrowser` component — navigate from the home directory, breadcrumb back up, select any
   directory regardless of whether it's repo-flagged. All three path-filling methods (manual entry,
   discovered-candidates select, browser) are additive; none is a hard requirement.
+- **`Consus.app` — a native macOS desktop shell** (`consus-phase26-desktop-app`, 6 dependency-tracked
+  stories, planned and built by directly reading Heimdall's real, shipped `app/src-tauri/`
+  implementation and adapting it, not reinventing it): a Tauri v2 app that spawns Consus's own
+  compiled server as a background sidecar (spawn/health-check-via-`GET /health`/idempotent kill
+  across every quit path, login-shell `PATH` capture, an OS-assigned free port), a menu-bar tray
+  (Open Consus / Check for Updates… / Launch at Login / Quit), a single-instance guard so a second
+  launch focuses the existing window instead of colliding on the shared app-local sqlite file,
+  close-to-tray window behavior, a minimal app icon set, a real `cargo tauri build` release
+  packaging pipeline that stages both `dist-server/` and `dist-web/` into the bundle (the one place
+  Consus's real two-artifact build genuinely diverges from Heimdall's single-artifact one), and a
+  background update checker against this repo's own GitHub releases. Runs with its own fresh,
+  empty state under `~/Library/Application Support/com.mdostal.consus/` — never the operator's live
+  decisions data — so the operator registers projects themselves on first launch.
+
+### Changed
+
+- **`consus-phase26-desktop-app` release finalization.** Applied the epic's planned `minor` version
+  bump (`0.12.0` → `0.13.0`) and kept `package.json`, `app/src-tauri/tauri.conf.json`, and
+  `app/src-tauri/Cargo.toml` in lockstep.
 
 ## [0.12.0] - 2026-08-19
 

@@ -1,0 +1,131 @@
+id: s2-sidecar-process-management
+epic: consus-phase26-desktop-app
+title: Spawn, health-check, and cleanly kill the Consus server sidecar
+status: pending
+complexity: medium
+methodology: classic
+depends_on: [s1-desktop-app-scaffold-and-state]
+
+description: |
+  Port Heimdall's sidecar.rs pattern to Consus: spawn the staged
+  dist-server/index.js as a plain `node` child process (no bundled Node
+  runtime), capture the operator's real login-shell PATH (GUI-launched
+  macOS processes get a near-empty PATH — a confirmed, real gotcha, not
+  hypothetical, per Heimdall's own sidecar.rs header comment), pick a
+  fresh OS-assigned free port instead of hardcoding 8722 (avoids
+  colliding with anything else already running — this session hit
+  exactly this problem with a stale leftover process squatting on 8722),
+  and health-check via Consus's REAL endpoint before the window ever
+  navigates to it.
+
+  Critical correction from Heimdall's own pattern: Consus's health
+  endpoint is `GET /health` (confirmed by reading server/index.ts this
+  session), NOT `/healthz` like Heimdall's — do not copy that path
+  string, verify it against the real route registration in
+  server/index.ts (`app.get("/health", ...)`).
+
+  Env vars set on the spawned process, all confirmed real (not guessed)
+  against server/index.ts: PORT (the picked free port), CONSUS_DB_PATH,
+  CONSUS_PROJECTS_CONFIG, CONSUS_ATTACHMENTS_DIR — all three pointed at
+  s1's app_data_dir() (~/Library/Application Support/com.mdostal.consus/).
+  HOST is left unset so it defaults to 127.0.0.1 (never set HOST=0.0.0.0
+  here — that default exists for containerized deploys, not this app).
+
+acceptance_criteria:
+  - "Given the app launches, a node child process is spawned running dist-server/index.js from the staged resource dir, with PORT set to a freshly OS-assigned free port"
+  - "Given the sidecar is starting, the app polls GET http://127.0.0.1:{port}/health until it returns {status:'ok', sqlite:'connected'} or a bounded timeout (30s, matching Heimdall's HEALTH_POLL_TIMEOUT) elapses"
+  - "Given the health check times out, the placeholder window shows an explicit error state (not a browser connection-refused page) explaining node must be installed and on PATH"
+  - "Given the health check succeeds, the window navigates to http://127.0.0.1:{port}"
+  - "Given the app quits via any path (tray Quit, Cmd+Q, Dock), the sidecar child process is killed exactly once — verified live by checking `ps` for the child pid before and after quit, not just trusting the code compiles"
+  - "Given the spawned process's environment, PATH is the operator's real captured login-shell PATH, not the near-empty GUI-launch default — verified live by having the sidecar itself successfully invoke something that requires a real PATH (or, if Consus's server never shells out to external CLIs, document that explicitly as why this still matters for the child's own node resolution)"
+
+steps:
+  - id: research
+    description: Confirm current server/index.ts env-var contract and /health route are unchanged from what s1 assumed; read Heimdall's real sidecar.rs in full.
+    agent: researcher
+  - id: implement
+    description: Port sidecar.rs to Consus (spawn, health poll against /health, PATH capture, free port pick, kill_sidecar idempotent double-handler in lib.rs's RunEvent).
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Live-verify (not just cargo test) — launch the debug build, confirm the sidecar process appears in ps, confirm /health responds, quit and confirm the process is gone.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm the health-check path is genuinely GET /health (not /healthz), confirm kill_sidecar is idempotent across both RunEvent variants, confirm env vars point at s1's Application Support path.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase26-desktop-app.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: server/index.ts
+      purpose: "Source of truth for the health route (GET /health, NOT /healthz) and every env var the sidecar needs set — read directly, this story must not copy Heimdall's /healthz by accident"
+    - path: app/src-tauri/src/lib.rs
+      purpose: "s1's setup skeleton — this story adds the sidecar spawn call and the RunEvent quit-kill handler"
+
+files_to_modify:
+  - file: app/src-tauri/src/sidecar.rs
+    change: "New file — ported from Heimdall's sidecar.rs: capture_login_shell_path(), pick_free_port(), spawn_sidecar(), wait_until_healthy() polling GET /health"
+  - file: app/src-tauri/src/lib.rs
+    change: "Add SidecarState, kill_sidecar(), the RunEvent::ExitRequested | RunEvent::Exit double-handler, and the health-poll-then-navigate thread from Heimdall's setup()"
+
+code_examples:
+  - title: "Heimdall's real health poll (adapt the path from /healthz to /health)"
+    file: /Users/mdostal/Documents/work/pantheon/heimdall/app/src-tauri/src/sidecar.rs
+    snippet: |
+      const HEALTH_POLL_TIMEOUT: Duration = Duration::from_secs(30);
+      const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(200);
+      pub fn pick_free_port() -> u16 {
+          let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind an ephemeral port");
+          listener.local_addr().expect("listener has no local addr").port()
+      }
+  - title: "Heimdall's real idempotent kill_sidecar + double RunEvent handler"
+    file: /Users/mdostal/Documents/work/pantheon/heimdall/app/src-tauri/src/lib.rs
+    snippet: |
+      fn kill_sidecar(app: &tauri::AppHandle) {
+          let Some(state) = app.try_state::<SidecarState>() else { return; };
+          let Ok(mut guard) = state.child.lock() else { return; };
+          let Some(mut child) = guard.take() else { return; }; // idempotent
+          if let Err(e) = child.kill() { log::error!("kill failed: {e}"); }
+          let _ = child.wait();
+      }
+      // Confirmed live: Cmd+Q delivers RunEvent::Exit directly, WITHOUT a
+      // preceding ExitRequested on this platform/build — handle both.
+      if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
+          kill_sidecar(app_handle);
+      }
+  - title: "Consus's real health route (the one to actually poll)"
+    file: server/index.ts
+    snippet: |
+      app.get("/health", async () => {
+        const row = db.prepare("SELECT 1 AS ok").get() as { ok: number } | undefined;
+        return { status: "ok", sqlite: row?.ok === 1 ? "connected" : "unreachable" };
+      });
+
+design_decisions:
+  - decision: "Poll GET /health, not /healthz"
+    rationale: "Heimdall's endpoint name does not carry over — verified directly against Consus's own server/index.ts this session. Copying the path string without checking would silently hang every launch on the 30s timeout."
+  - decision: "No bundled Node runtime — spawn the operator's own installed node"
+    rationale: "Same tradeoff Heimdall makes deliberately (targets one already-provisioned machine, not portable distribution) — consistent with this epic's non-goals (no public notarized release)."
+
+risks:
+  - severity: high
+    description: "A stale sidecar process from a prior debug run squatting on a port, or never being killed on quit, silently accumulating background node processes — this session directly hit a variant of this bug (a leftover throwaway-server process from earlier verification work squatting on port 8722)"
+    mitigation: "Free-port-per-launch avoids the collision; the live kill-and-verify-via-ps acceptance criterion is not optional — this must be checked with a real running process, not assumed from code review"
+  - severity: medium
+    description: "GUI-launched PATH capture failing silently, sidecar's own node process then unable to find something it shells out to"
+    mitigation: "Ported verbatim from Heimdall's already-solved implementation, including its conservative fallback PATH"
+
+references:
+  - path: /Users/mdostal/Documents/work/pantheon/heimdall/app/src-tauri/src/sidecar.rs
+    relevant_excerpt: |
+      pub fn capture_login_shell_path() -> String {
+          let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+          // ... -ilc "echo -n \"$PATH\"", bounded by PATH_CAPTURE_TIMEOUT
+
+cross_cutting: []

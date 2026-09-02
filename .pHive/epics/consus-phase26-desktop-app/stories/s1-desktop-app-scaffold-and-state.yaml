@@ -1,0 +1,138 @@
+id: s1-desktop-app-scaffold-and-state
+epic: consus-phase26-desktop-app
+title: Tauri v2 project scaffold + app-local state env wiring
+status: pending
+complexity: medium
+methodology: classic
+depends_on: []
+
+description: |
+  Create the new app/src-tauri/ Tauri v2 project skeleton for Consus's
+  desktop shell, adapted directly from Heimdall's real, shipped
+  app/src-tauri/ (read at /Users/mdostal/Documents/work/pantheon/heimdall/app/src-tauri/
+  this session — Cargo.toml, tauri.conf.json, main.rs, lib.rs, build.rs).
+  This story lays the foundation everything else in the epic builds on:
+  the crate itself, the base window/setup skeleton (sidecar spawn/tray
+  wiring come in s2/s3), and the app-local state directory resolution
+  that makes the desktop app use its OWN empty consus.sqlite / project
+  registry rather than this git checkout's live .pHive/ data (explicit
+  operator decision this session — do not point the desktop app at this
+  checkout's real data).
+
+  Consus's server already reads its config entirely from env vars
+  (confirmed by reading server/index.ts this session) — this story's job
+  is computing the right values and setting them before spawning the
+  sidecar (the actual spawn is s2's job; this story defines the function
+  that resolves the paths and exposes them for s2 to consume).
+
+acceptance_criteria:
+  - "Given a fresh checkout with no app/ directory, `cargo tauri build --debug` from app/src-tauri/ produces a running .app skeleton (window may show a placeholder — sidecar isn't wired until s2)"
+  - "Given the app launches, a helper function (e.g. `app_data_dir()`) resolves ~/Library/Application Support/com.mdostal.consus/ and creates it if absent, without touching this git checkout's own .pHive/ directory"
+  - "Given tauri.conf.json, productName is 'Consus', identifier is 'com.mdostal.consus', version matches root package.json's current version (0.12.0) exactly"
+  - "Given Cargo.toml, the crate is named consus-desktop (following heimdall-desktop's naming convention) and pulls in the same tauri feature set Heimdall uses (tray-icon, image-png) plus tauri-plugin-log, tauri-plugin-single-instance, tauri-plugin-autostart, tauri-plugin-dialog — even though s2/s3 wire their actual usage, declaring them now avoids a second Cargo.toml-touching story later"
+
+steps:
+  - id: research
+    description: Read Heimdall's app/src-tauri/ end-to-end (already done at plan time — re-verify nothing has changed) and Consus's own server/index.ts env-var contract.
+    agent: researcher
+  - id: implement
+    description: Scaffold app/src-tauri/ (Cargo.toml, tauri.conf.json, build.rs, main.rs, lib.rs skeleton with app_data_dir() resolution), plus app/ package.json-less placeholder frontend dir if Tauri's build step requires one (check Heimdall's dist-placeholder/ pattern — it uses a static placeholder, not a real frontend build, since Consus's real UI is served by the sidecar itself, not by Tauri's own webview bundle).
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Verify `cargo tauri build --debug` succeeds and produces a .app that launches to a placeholder window without crashing.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm app_data_dir() never resolves inside this git checkout, confirm version lockstep with package.json, confirm no accidental writes to this checkout's .pHive/.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase26-desktop-app.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  tech_stack:
+    rust: "1.97.1 (already installed, used for Heimdall/Portunus)"
+    tauri: "2.11.4 CLI (already installed)"
+  key_files:
+    - path: app/src-tauri/tauri.conf.json
+      purpose: New file this story creates — Consus's own Tauri manifest, modeled on Heimdall's
+    - path: app/src-tauri/src/lib.rs
+      purpose: New file this story creates — setup skeleton only; sidecar spawn (s2) and tray (s3) extend this in later stories
+    - path: server/index.ts
+      purpose: "Defines the exact env-var contract this story's app_data_dir() must satisfy: CONSUS_DB_PATH, CONSUS_PROJECTS_CONFIG, CONSUS_ATTACHMENTS_DIR — confirmed by reading this file directly, not guessed"
+    - path: package.json
+      purpose: Root version field (0.12.0) that tauri.conf.json's version must match
+
+files_to_modify:
+  - file: app/src-tauri/Cargo.toml
+    change: New file — crate consus-desktop, tauri 2.x + plugin deps
+  - file: app/src-tauri/tauri.conf.json
+    change: New file — productName Consus, identifier com.mdostal.consus
+  - file: app/src-tauri/build.rs
+    change: New file — standard tauri-build passthrough (copy Heimdall's verbatim, it's boilerplate)
+  - file: app/src-tauri/src/main.rs
+    change: New file — standard Tauri entrypoint (copy Heimdall's verbatim, it's boilerplate)
+  - file: app/src-tauri/src/lib.rs
+    change: New file — setup() skeleton, app_data_dir() helper, window creation with placeholder content
+  - file: app/dist-placeholder/index.html
+    change: New file — static loading placeholder shown before the sidecar's real URL is navigated to (s2 wires the navigation)
+
+code_examples:
+  - title: "Heimdall's real tauri.conf.json (adapt productName/identifier/resources only)"
+    file: /Users/mdostal/Documents/work/pantheon/heimdall/app/src-tauri/tauri.conf.json
+    snippet: |
+      {
+        "$schema": "https://schema.tauri.app/config/2",
+        "productName": "Heimdall",
+        "identifier": "com.mdostal.heimdall",
+        "build": {
+          "frontendDist": "../dist-placeholder",
+          "beforeBuildCommand": "bash src-tauri/build-resources.sh"
+        },
+        "bundle": { "active": true, "targets": ["app"], "macOS": { "signingIdentity": "-" } }
+      }
+  - title: "Heimdall's real Cargo.toml dependency set"
+    file: /Users/mdostal/Documents/work/pantheon/heimdall/app/src-tauri/Cargo.toml
+    snippet: |
+      [dependencies]
+      tauri = { version = "2.11.3", features = ["tray-icon", "image-png"] }
+      tauri-plugin-log = "2"
+      tauri-plugin-single-instance = "2"
+      tauri-plugin-autostart = "2"
+      ureq = "2"
+      wait-timeout = "0.2"
+      tauri-plugin-dialog = "2.7.2"
+      semver = "1.0.28"
+
+design_decisions:
+  - decision: "Fresh app-local state under ~/Library/Application Support/com.mdostal.consus/, not this checkout's .pHive/"
+    rationale: "Explicit operator decision (AskUserQuestion, this session) — the desktop app is a first-run-clean install, not a viewer bolted onto one developer's live decisions DB."
+  - decision: "No real frontend bundle for Tauri's own webview — a static placeholder only, real UI comes from the sidecar's own served SPA"
+    rationale: "Matches Heimdall exactly: Consus's dist-web/ is served BY the Node sidecar itself (server/index.ts already does this via @fastify/static), so Tauri's webview just navigates to the sidecar's URL once healthy (s2). Tauri's own frontendDist is only ever a loading placeholder."
+
+risks:
+  - severity: medium
+    description: "Accidentally defaulting env vars to this checkout's .pHive/ paths (copy-paste from this session's own manual npm start invocation) instead of the fresh Application Support path"
+    mitigation: "Acceptance criteria explicitly test that app_data_dir() never resolves inside the git checkout; reviewer step checks this directly"
+
+references:
+  - path: /Users/mdostal/Documents/work/pantheon/heimdall/app/src-tauri/src/lib.rs
+    relevant_excerpt: |
+      let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+          .title("Heimdall")
+          .inner_size(1280.0, 860.0)
+          .visible(true)
+          .build()?;
+  - path: server/index.ts
+    relevant_excerpt: |
+      const dbPath = process.env.CONSUS_DB_PATH ?? ".pHive/consus.sqlite";
+      const projectsConfigPath = process.env.CONSUS_PROJECTS_CONFIG ?? ".pHive/consus-projects.json";
+      const attachmentsDir = process.env.CONSUS_ATTACHMENTS_DIR ?? ".pHive/attachments";
+
+cross_cutting:
+  - concern: documentation
+    action: "Add a short 'Desktop App' section to README.md once s5 produces a working build — not this story; note here so it isn't dropped."

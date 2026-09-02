@@ -1,0 +1,34 @@
+[package]
+name = "consus-desktop"
+version = "0.13.0"
+description = "Consus -- a native desktop shell around the existing Consus service (a standalone knowledgebase, graph, and doc editor for any repo's decisions, docs, and architecture, served by its own Node process), kept in lockstep with the consus npm package's own version."
+authors = ["Mathew Dostal"]
+license = "MIT"
+repository = "https://github.com/mdostal/consus"
+edition = "2021"
+rust-version = "1.77.2"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+log = "0.4"
+tauri = { version = "2.11.3", features = ["tray-icon", "image-png"] }
+tauri-plugin-log = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-dialog = "2.7.2"
+semver = "1.0.28"
+ureq = "2"
+wait-timeout = "0.2"
+
+[dev-dependencies]
+# unit tests for app_data_dir() live inline in lib.rs, and for
+# updater::is_newer() (equal/older/newer/malformed-tag semver comparison)
+# inline in updater.rs
