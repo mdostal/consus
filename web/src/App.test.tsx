@@ -58,6 +58,7 @@ function branchFetchMock(
         json: async () => ({ format: "md", content: "# doc", itemId: "doc:consus:architecture.md" }),
       });
     }
+    if (url.startsWith("/api/docs/features")) return Promise.resolve({ ok: true, json: async () => FEATURES_WITH_ENTRY });
     if (url.startsWith("/api/docs")) return Promise.resolve({ ok: true, json: async () => DOCS_WITH_ENTRY });
     return Promise.resolve({ ok: true, json: async () => [] });
   });
@@ -74,6 +75,22 @@ const DIAGRAM_RESPONSE = { itemId: "diagram:consus", epics: [] };
 const DOCS_EMPTY = { consus: {} };
 const DOCS_WITH_ENTRY = {
   consus: { planning: [{ epic: null, file_path: "architecture.md", content_hash: "abc", last_scanned_at: "2026-08-01T00:00:00Z" }] },
+};
+
+// s3 (consus-phase27-feature-doc-review-ui): GET /api/docs/features's shape
+// — the feature-grouped response ProjectDocs/DocsSection now consume
+// instead of the flat GroupedDocs above (still used by the top-level
+// onboarding gate only, untouched by this story).
+const FEATURES_EMPTY = { features: [], overview: [] };
+const FEATURES_WITH_ENTRY = {
+  features: [
+    {
+      epic: "sample-epic",
+      docCount: 1,
+      docs: [{ file_path: "architecture.md", content_hash: "abc", last_scanned_at: "2026-08-01T00:00:00Z" }],
+    },
+  ],
+  overview: [],
 };
 
 function mockFetchImpl(responses: Record<string, unknown>) {
@@ -110,6 +127,7 @@ describe("App — per-project view folds in docs + an Ingest repo action (phase6
         "/api/diagrams": DIAGRAM_RESPONSE,
         "/api/items/": [],
         "GET /api/docs?project=consus": DOCS_WITH_ENTRY,
+        "GET /api/docs/features?project=consus": FEATURES_WITH_ENTRY,
         "GET /api/projects": { projects: ["consus"] },
       }),
     );
@@ -124,7 +142,8 @@ describe("App — per-project view folds in docs + an Ingest repo action (phase6
     await openConsusProject();
 
     expect(await screen.findByText("Architecture note")).toBeInTheDocument();
-    expect(await screen.findByText("architecture.md")).toBeInTheDocument();
+    expect(await screen.findByText("sample-epic")).toBeInTheDocument();
+    expect(screen.getByText("1 doc")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /ingest repo/i })).toBeInTheDocument();
   });
 
@@ -137,6 +156,7 @@ describe("App — per-project view folds in docs + an Ingest repo action (phase6
         "/api/diagrams": DIAGRAM_RESPONSE,
         "/api/items/": [],
         "GET /api/docs?project=consus": DOCS_EMPTY,
+        "GET /api/docs/features?project=consus": FEATURES_EMPTY,
         "GET /api/projects": { projects: ["consus"] },
       }),
     );
@@ -160,9 +180,9 @@ describe("App — per-project view folds in docs + an Ingest repo action (phase6
         return Promise.resolve({ ok: true, json: async () => ({ project: "consus", docsScanned: 1 }) });
       }
       if (url.startsWith("/api/projects")) return Promise.resolve({ ok: true, json: async () => ({ projects: ["consus"] }) });
-      if (url.startsWith("/api/docs?project=consus")) {
+      if (url.startsWith("/api/docs/features?project=consus")) {
         docsCallCount += 1;
-        return Promise.resolve({ ok: true, json: async () => (docsCallCount === 1 ? DOCS_EMPTY : DOCS_WITH_ENTRY) });
+        return Promise.resolve({ ok: true, json: async () => (docsCallCount === 1 ? FEATURES_EMPTY : FEATURES_WITH_ENTRY) });
       }
       if (url.startsWith("/api/decisions")) return Promise.resolve({ ok: true, json: async () => [] });
       if (url.startsWith("/api/kb-entries")) return Promise.resolve({ ok: true, json: async () => [KB_ENTRY] });
@@ -179,7 +199,7 @@ describe("App — per-project view folds in docs + an Ingest repo action (phase6
 
     fireEvent.click(screen.getByRole("button", { name: /ingest repo/i }));
 
-    expect(await screen.findByText("architecture.md")).toBeInTheDocument();
+    expect(await screen.findByText("sample-epic")).toBeInTheDocument();
     expect(screen.queryByText("No docs indexed yet")).not.toBeInTheDocument();
   });
 
@@ -192,7 +212,7 @@ describe("App — per-project view folds in docs + an Ingest repo action (phase6
         return Promise.resolve({ ok: false, status: 500, json: async () => ({ error: "scan failed" }) });
       }
       if (url.startsWith("/api/projects")) return Promise.resolve({ ok: true, json: async () => ({ projects: ["consus"] }) });
-      if (url.startsWith("/api/docs?project=consus")) return Promise.resolve({ ok: true, json: async () => DOCS_EMPTY });
+      if (url.startsWith("/api/docs/features?project=consus")) return Promise.resolve({ ok: true, json: async () => FEATURES_EMPTY });
       if (url.startsWith("/api/decisions")) return Promise.resolve({ ok: true, json: async () => [] });
       if (url.startsWith("/api/kb-entries")) return Promise.resolve({ ok: true, json: async () => [KB_ENTRY] });
       if (url.startsWith("/api/diagrams")) return Promise.resolve({ ok: true, json: async () => DIAGRAM_RESPONSE });
@@ -218,6 +238,7 @@ describe("App — per-project view folds in docs + an Ingest repo action (phase6
         "/api/kb-entries": [],
         "/api/diagrams": DIAGRAM_RESPONSE,
         "/api/items/": [],
+        "GET /api/docs/features?project=consus": FEATURES_WITH_ENTRY,
         "GET /api/docs?project=consus": DOCS_WITH_ENTRY,
         "GET /api/docs": DOCS_WITH_ENTRY,
         "GET /api/projects": { projects: ["consus"] },
@@ -227,7 +248,7 @@ describe("App — per-project view folds in docs + an Ingest repo action (phase6
     render(<App />);
     await openConsusProject();
 
-    expect(await screen.findByText("architecture.md")).toBeInTheDocument();
+    expect(await screen.findByText("sample-epic")).toBeInTheDocument();
   });
 
   // s1 (consus-phase25-project-registration-ux): GET /api/projects now
@@ -243,6 +264,7 @@ describe("App — per-project view folds in docs + an Ingest repo action (phase6
         "/api/diagrams": DIAGRAM_RESPONSE,
         "/api/items/": [],
         "GET /api/docs?project=consus": DOCS_WITH_ENTRY,
+        "GET /api/docs/features?project=consus": FEATURES_WITH_ENTRY,
         "GET /api/projects": { projects: ["consus"], paths: { consus: "/tmp/consus-repo" } },
       }),
     );
@@ -263,6 +285,7 @@ describe("App — per-project view folds in docs + an Ingest repo action (phase6
         "/api/diagrams": DIAGRAM_RESPONSE,
         "/api/items/": [],
         "GET /api/docs?project=consus": DOCS_WITH_ENTRY,
+        "GET /api/docs/features?project=consus": FEATURES_WITH_ENTRY,
         "GET /api/projects": { projects: ["consus"], paths: { consus: "/tmp/consus-repo" } },
       }),
     );
@@ -290,7 +313,7 @@ describe("App — branch picker, branch-scoped decisions, doc diff (consus-phase
 
     // Existing per-project surfaces render exactly as before this story.
     expect(await screen.findByText("Architecture note")).toBeInTheDocument();
-    expect(await screen.findByText("architecture.md")).toBeInTheDocument();
+    expect(await screen.findByText("sample-epic")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /ingest repo/i })).toBeInTheDocument();
 
     // The picker itself is present (additive UI) and populated...
@@ -376,7 +399,7 @@ describe("App — branch picker, branch-scoped decisions, doc diff (consus-phase
     await waitFor(() => expect(within(select).getByRole("option", { name: "feature/x" })).toBeInTheDocument());
     fireEvent.change(select, { target: { value: "feature/x" } });
 
-    fireEvent.click(await screen.findByText("architecture.md"));
+    fireEvent.click(await screen.findByText("sample-epic"));
     fireEvent.click(await screen.findByRole("button", { name: "View diff vs default branch" }));
 
     const pre = await screen.findByTestId("doc-diff");
@@ -395,7 +418,7 @@ describe("App — branch picker, branch-scoped decisions, doc diff (consus-phase
     await waitFor(() => expect(within(select).getByRole("option", { name: "feature/x" })).toBeInTheDocument());
     fireEvent.change(select, { target: { value: "feature/x" } });
 
-    fireEvent.click(await screen.findByText("architecture.md"));
+    fireEvent.click(await screen.findByText("sample-epic"));
     fireEvent.click(await screen.findByRole("button", { name: "View diff vs default branch" }));
 
     expect(await screen.findByTestId("doc-diff-none")).toBeInTheDocument();
@@ -409,7 +432,7 @@ describe("App — branch picker, branch-scoped decisions, doc diff (consus-phase
     render(<App />);
     await openConsusProject();
 
-    fireEvent.click(await screen.findByText("architecture.md"));
+    fireEvent.click(await screen.findByText("sample-epic"));
     expect(screen.queryByRole("button", { name: "View diff vs default branch" })).not.toBeInTheDocument();
   });
 
@@ -1005,6 +1028,7 @@ function buildDocsSearchFetchMock(opts: { searchResults?: DocSearchResultLike[];
       }
       return Promise.resolve({ ok: true, json: async () => ({ query: "x", results: opts.searchResults ?? [] }) });
     }
+    if (url.startsWith("/api/docs/features")) return Promise.resolve({ ok: true, json: async () => FEATURES_WITH_ENTRY });
     if (url.startsWith("/api/docs")) return Promise.resolve({ ok: true, json: async () => DOCS_WITH_ENTRY });
     if (url.startsWith("/api/decisions")) return Promise.resolve({ ok: true, json: async () => [] });
     if (url.startsWith("/api/kb-entries")) return Promise.resolve({ ok: true, json: async () => [KB_ENTRY] });
@@ -1043,7 +1067,7 @@ describe("App — Docs tab search (p14-6)", () => {
 
     render(<App />);
     await openDocsTab();
-    await screen.findByText("architecture.md");
+    await screen.findByText("sample-epic");
 
     fireEvent.change(screen.getByRole("searchbox", { name: /search docs/i }), { target: { value: "other" } });
 
@@ -1064,13 +1088,13 @@ describe("App — Docs tab search (p14-6)", () => {
 
     render(<App />);
     await openDocsTab();
-    await screen.findByText("architecture.md");
+    await screen.findByText("sample-epic");
 
     fireEvent.change(screen.getByRole("searchbox", { name: /search docs/i }), { target: { value: "boom" } });
 
     expect(await screen.findByText(/search failed/i, {}, { timeout: 2000 })).toBeInTheDocument();
-    // A failed search never blocks browsing — the tree stays usable.
-    const treeButton = screen.getByText("architecture.md");
+    // A failed search never blocks browsing — the feature list stays usable.
+    const treeButton = screen.getByText("sample-epic");
     expect(treeButton).toBeInTheDocument();
     expect(treeButton.closest("button")).toBeEnabled();
   });
@@ -1081,7 +1105,7 @@ describe("App — Docs tab search (p14-6)", () => {
 
     render(<App />);
     await openDocsTab();
-    await screen.findByText("architecture.md");
+    await screen.findByText("sample-epic");
 
     fireEvent.change(screen.getByRole("searchbox", { name: /search docs/i }), {
       target: { value: "nothing-matches" },
@@ -1109,13 +1133,13 @@ describe("App — Docs tab search (p14-6)", () => {
 
     render(<App />);
     await openDocsTab();
-    await screen.findByText("architecture.md");
+    await screen.findByText("sample-epic");
 
     const input = screen.getByRole("searchbox", { name: /search docs/i });
     fireEvent.change(input, { target: { value: "other" } });
 
     expect(await screen.findByText("docs/other.md", {}, { timeout: 2000 })).toBeInTheDocument();
-    expect(screen.queryByText("architecture.md")).not.toBeInTheDocument();
+    expect(screen.queryByText("sample-epic")).not.toBeInTheDocument();
 
     fireEvent.change(input, { target: { value: "" } });
 
@@ -1125,7 +1149,7 @@ describe("App — Docs tab search (p14-6)", () => {
       },
       { timeout: 2000 },
     );
-    expect(await screen.findByText("architecture.md")).toBeInTheDocument();
+    expect(await screen.findByText("sample-epic")).toBeInTheDocument();
   });
 });
 
