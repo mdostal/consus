@@ -122,6 +122,196 @@ describe("GET /api/docs", () => {
   });
 });
 
+describe("GET /api/docs/features", () => {
+  let repoDir: string;
+  let otherRepoDir: string;
+  let db: Database.Database;
+  let app: FastifyInstance;
+  let repos: Record<string, string>;
+
+  beforeEach(async () => {
+    repoDir = mkdtempSync(join(tmpdir(), "consus-repo-"));
+    // Two docs in one epic, one doc in another epic, plus a .pHive/planning
+    // doc (epic=null, phase='planning' — belongs in neither bucket) and
+    // repo-root overview docs (epic=null, phase='overview', from s1).
+    mkdirSync(join(repoDir, ".pHive", "epics", "epic-a", "design"), { recursive: true });
+    mkdirSync(join(repoDir, ".pHive", "epics", "epic-a", "stories"), { recursive: true });
+    mkdirSync(join(repoDir, ".pHive", "epics", "epic-b", "design"), { recursive: true });
+    mkdirSync(join(repoDir, ".pHive", "planning"), { recursive: true });
+    writeFileSync(join(repoDir, ".pHive", "epics", "epic-a", "design", "design.md"), "# Epic A design");
+    writeFileSync(join(repoDir, ".pHive", "epics", "epic-a", "stories", "s1.md"), "# Epic A story");
+    writeFileSync(join(repoDir, ".pHive", "epics", "epic-b", "design", "design.md"), "# Epic B design");
+    writeFileSync(join(repoDir, ".pHive", "planning", "prd.md"), "# PRD");
+    writeFileSync(join(repoDir, "README.md"), "# repo readme");
+    writeFileSync(join(repoDir, "VISION.md"), "# repo vision");
+
+    otherRepoDir = mkdtempSync(join(tmpdir(), "consus-other-repo-"));
+    mkdirSync(join(otherRepoDir, ".pHive", "epics", "epic-c", "design"), { recursive: true });
+    writeFileSync(join(otherRepoDir, ".pHive", "epics", "epic-c", "design", "design.md"), "# Epic C design");
+    writeFileSync(join(otherRepoDir, "README.md"), "# other readme");
+
+    db = new Database(":memory:");
+    runMigration(db);
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
+    scanRepo(db, { repoName: "other-project", repoPath: otherRepoDir });
+
+    repos = { consus: repoDir, "other-project": otherRepoDir };
+    app = Fastify();
+    registerDocRoutes(app, { db, repos });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+    rmSync(repoDir, { recursive: true, force: true });
+    rmSync(otherRepoDir, { recursive: true, force: true });
+  });
+
+  it("groups docs by epic with a docCount and docs array, and buckets phase='overview' rows separately", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/docs/features?project=consus" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+
+    expect(body.features).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ epic: "epic-a", docCount: 2 }),
+        expect.objectContaining({ epic: "epic-b", docCount: 1 }),
+      ]),
+    );
+    expect(body.features).toHaveLength(2);
+
+    const epicA = body.features.find((f: { epic: string }) => f.epic === "epic-a");
+    expect(epicA.docs).toHaveLength(2);
+    expect(epicA.docs.sort((a: { file_path: string }, b: { file_path: string }) => a.file_path.localeCompare(b.file_path))).toEqual([
+      expect.objectContaining({ file_path: join(".pHive", "epics", "epic-a", "design", "design.md") }),
+      expect.objectContaining({ file_path: join(".pHive", "epics", "epic-a", "stories", "s1.md") }),
+    ]);
+
+    // Each doc entry matches GET /api/docs's own per-doc field list.
+    for (const doc of epicA.docs) {
+      expect(Object.keys(doc).sort()).toEqual(["content_hash", "file_path", "last_scanned_at"]);
+    }
+  });
+
+  it("returns a real, non-empty overview[] bucket containing README.md and VISION.md, separate from features[]", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/docs/features?project=consus" });
+    const body = res.json();
+
+    const overviewPaths = body.overview.map((d: { file_path: string }) => d.file_path).sort();
+    expect(overviewPaths).toEqual(["README.md", "VISION.md"]);
+
+    // .pHive/planning/prd.md (epic=null, phase='planning') belongs in
+    // neither features[] nor overview[] — it's out of scope for this
+    // endpoint's reshape.
+    const allFeatureDocPaths = body.features.flatMap((f: { docs: Array<{ file_path: string }> }) =>
+      f.docs.map((d) => d.file_path),
+    );
+    expect(allFeatureDocPaths).not.toContain(join(".pHive", "planning", "prd.md"));
+    expect(overviewPaths).not.toContain(join(".pHive", "planning", "prd.md"));
+  });
+
+  it("scopes to a single project via ?project=, excluding every other project's docs", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/docs/features?project=consus" });
+    const body = res.json();
+
+    const epics = body.features.map((f: { epic: string }) => f.epic);
+    expect(epics).not.toContain("epic-c");
+  });
+
+  it("scopes across every registered repo by default when no ?project= is given", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/docs/features" });
+    const body = res.json();
+
+    const epics = body.features.map((f: { epic: string }) => f.epic).sort();
+    expect(epics).toEqual(["epic-a", "epic-b", "epic-c"]);
+
+    const overviewPaths = body.overview.map((d: { file_path: string }) => d.file_path);
+    expect(overviewPaths.filter((p: string) => p === "README.md")).toHaveLength(2);
+  });
+
+  it("excludes a repo's docs from features[]/overview[] when it's present in doc_index but absent from the registry (s5, orphaned Portunus data)", async () => {
+    // Simulates the real bug found against this repo's own .pHive/consus.sqlite:
+    // a repo scanned in the past, then deregistered (dropped from
+    // consus-projects.json / the `repos` map passed to registerDocRoutes),
+    // whose doc_index rows nonetheless linger untouched.
+    const orphanRepoDir = mkdtempSync(join(tmpdir(), "consus-orphan-repo-"));
+    mkdirSync(join(orphanRepoDir, ".pHive", "epics", "epic-orphan", "design"), { recursive: true });
+    writeFileSync(join(orphanRepoDir, ".pHive", "epics", "epic-orphan", "design", "design.md"), "# Orphan design");
+    writeFileSync(join(orphanRepoDir, "README.md"), "# orphan readme");
+
+    try {
+      // Scanned into doc_index...
+      scanRepo(db, { repoName: "orphan-project", repoPath: orphanRepoDir });
+      // ...but NOT added to the `repos` map the running app was built with —
+      // i.e. deregistered (or never (re-)registered) from the app's point of
+      // view, even though doc_index still has its rows.
+      expect(repos["orphan-project"]).toBeUndefined();
+
+      const excludedRes = await app.inject({ method: "GET", url: "/api/docs/features" });
+      const excludedBody = excludedRes.json();
+      expect(excludedBody.features.map((f: { epic: string }) => f.epic)).not.toContain("epic-orphan");
+      // The orphan repo contributed a README.md too, but consus + other-project
+      // already contribute one README.md each — assert via count (still
+      // exactly 2, not 3) rather than presence, since presence alone can't
+      // distinguish "orphan's README excluded" from "some registered repo's".
+      const readmeCount = excludedBody.overview.filter((d: { file_path: string }) => d.file_path === "README.md").length;
+      expect(readmeCount).toBe(2);
+
+      // The underlying doc_index rows are untouched by this exclusion — a
+      // query-time filter, never a destructive prune (s5's design decision).
+      const orphanRowCount = (
+        db.prepare("SELECT COUNT(*) AS n FROM doc_index WHERE repo = ?").get("orphan-project") as { n: number }
+      ).n;
+      expect(orphanRowCount).toBeGreaterThan(0);
+
+      // Re-registering it — mutating the same `repos` object in place, the
+      // way POST /api/projects does, with NO further scanRepo() call — makes
+      // its already-scanned docs reappear immediately.
+      repos["orphan-project"] = orphanRepoDir;
+
+      const reincludedRes = await app.inject({ method: "GET", url: "/api/docs/features" });
+      const reincludedBody = reincludedRes.json();
+      expect(reincludedBody.features.map((f: { epic: string }) => f.epic)).toContain("epic-orphan");
+      const readmeCountAfter = reincludedBody.overview.filter((d: { file_path: string }) => d.file_path === "README.md").length;
+      expect(readmeCountAfter).toBe(3);
+
+      // Still the same doc_index row count for orphan-project — reappearing
+      // required no re-scan and no row mutation whatsoever.
+      const orphanRowCountAfter = (
+        db.prepare("SELECT COUNT(*) AS n FROM doc_index WHERE repo = ?").get("orphan-project") as { n: number }
+      ).n;
+      expect(orphanRowCountAfter).toBe(orphanRowCount);
+    } finally {
+      delete repos["orphan-project"];
+      rmSync(orphanRepoDir, { recursive: true, force: true });
+    }
+  });
+
+  it("doesn't duplicate or drop any doc_index row compared to GET /api/docs for the same repo", async () => {
+    const [featuresRes, docsRes] = await Promise.all([
+      app.inject({ method: "GET", url: "/api/docs/features?project=consus" }),
+      app.inject({ method: "GET", url: "/api/docs?project=consus" }),
+    ]);
+    const featuresBody = featuresRes.json();
+    const docsBody = docsRes.json();
+
+    const featuresTotal =
+      featuresBody.features.reduce((sum: number, f: { docCount: number }) => sum + f.docCount, 0) +
+      featuresBody.overview.length;
+
+    const docsTotal = Object.values(docsBody.consus).reduce(
+      (sum: number, phaseGroup: unknown) => sum + (phaseGroup as unknown[]).length,
+      0,
+    );
+
+    // consus has one doc (.pHive/planning/prd.md) that's out of scope for
+    // /api/docs/features (epic=null, phase='planning') — every other row
+    // must appear in exactly one of features[]/overview[].
+    expect(docsTotal).toBe(featuresTotal + 1);
+  });
+});
+
 describe("GET /api/docs/content?ref=", () => {
   let repoDir: string;
   let db: Database.Database;

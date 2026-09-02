@@ -78,6 +78,8 @@ app/src-tauri/gen/
 !.pHive/epics/consus-phase25-project-registration-ux/**
 !.pHive/epics/consus-phase26-desktop-app/
 !.pHive/epics/consus-phase26-desktop-app/**
+!.pHive/epics/consus-phase27-feature-doc-review-ui/
+!.pHive/epics/consus-phase27-feature-doc-review-ui/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/

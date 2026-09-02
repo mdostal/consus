@@ -12,7 +12,8 @@ import { ArchitectureDiagramView } from "./features/projects/ArchitectureDiagram
 import { DiagramPendingCount } from "./features/projects/DiagramChangeset";
 import { AuditPanel, type AuditTrailEntry } from "./features/audit/AuditPanel";
 import { BacklogBrowser, type BacklogEntry, type KbCollection } from "./features/kb/BacklogBrowser";
-import { DocBrowser, type GroupedDocs } from "./features/docs/DocBrowser";
+import { FeatureBrowser, type Feature, type FeatureDoc } from "./features/docs/FeatureBrowser";
+import { FeatureDetailView } from "./features/docs/FeatureDetailView";
 import { DocSearch, type DocSearchResult } from "./features/docs/DocSearch";
 import { DocRenderer } from "./features/docs/DocRenderer";
 import { EventsList, type EventRow, type EventStatus } from "./features/events/EventsList";
@@ -35,12 +36,29 @@ import "./features/decisions/decisions-two-pane.css";
 /* Types + shared helpers                                           */
 /* ---------------------------------------------------------------- */
 
+/** GET /api/docs's response shape — repo -> phase -> doc rows. Used only by
+ *  the top-level onboarding gate below (checkOnboarding), which is untouched
+ *  by s3's feature-grouped restructure; the per-project/global Docs surfaces
+ *  now consume s2's GET /api/docs/features instead (see FeatureBrowser). */
+interface GroupedDocs {
+  [repo: string]: {
+    [phase: string]: Array<{ epic: string | null; file_path: string; content_hash: string; last_scanned_at: string }>;
+  };
+}
+
 /** GET /api/docs (and its ?project= scoped form) always includes an entry
  *  for every registered repo, even with zero docs indexed — e.g. `{consus:
  *  {}}`, never a bare `{}`. So "any docs at all" means every repo's grouped
  *  phase map is itself empty, not that the top-level object has no keys. */
 function docsAreEmpty(grouped: GroupedDocs): boolean {
   return Object.values(grouped).every((byPhase) => Object.keys(byPhase).length === 0);
+}
+
+/** s3: GET /api/docs/features's shape once repo has been attached to each
+ *  doc client-side (see ProjectDocs/DocsSection) — "empty" means no
+ *  features and no overview docs at all. */
+function featureDataIsEmpty(data: { features: Feature[]; overview: FeatureDoc[] }): boolean {
+  return data.features.length === 0 && data.overview.length === 0;
 }
 
 /** A decision as returned by GET /api/decisions (payload parsed server-side).
@@ -781,6 +799,13 @@ function ProjectArchitectureDiagram({
  * entries — folding the previously-separate global Docs tab's data into
  * the per-project view too. Read-only here (no propose-change wiring);
  * the global Docs tab remains the full-featured surface for that.
+ *
+ * s3 (consus-phase27-feature-doc-review-ui): now sourced from s2's GET
+ * /api/docs/features (feature list + Overview section) instead of the flat
+ * DocBrowser tree — always scoped to this one `repo`, so `repo` is attached
+ * to every doc client-side (the endpoint's response is repo-agnostic per
+ * doc; see FeatureBrowser.tsx). Clicking a feature opens FeatureDetailView,
+ * which stays read-only same as before — no onProposeChange wired in.
  */
 function ProjectDocs({
   repo,
@@ -790,21 +815,28 @@ function ProjectDocs({
   repo: string;
   refreshToken?: number;
   /** s4 (consus-phase24-branch-level-surfacing): when set (a branch other
-   *  than "(default)" is picked), the open-doc view gains a "view diff vs
+   *  than "(default)" is picked), every open doc gains a "view diff vs
    *  default branch" action (DocDiffCheck). null (the default) leaves this
    *  component's behavior byte-identical to before this story. */
   branch?: string | null;
 }) {
-  const [grouped, setGrouped] = useState<GroupedDocs | null>(null);
+  const [featureData, setFeatureData] = useState<{ features: Feature[]; overview: FeatureDoc[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
   const [openDoc, setOpenDoc] = useState<{ format: "md" | "html"; content: string; path: string } | null>(null);
 
   useEffect(() => {
-    setGrouped(null);
+    setFeatureData(null);
+    setSelectedFeature(null);
     setOpenDoc(null);
-    fetch(`/api/docs?project=${encodeURIComponent(repo)}`)
+    fetch(`/api/docs/features?project=${encodeURIComponent(repo)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then(setGrouped)
+      .then((body: { features: Array<Omit<Feature, "docs"> & { docs: Omit<FeatureDoc, "repo">[] }>; overview: Omit<FeatureDoc, "repo">[] }) => {
+        setFeatureData({
+          features: body.features.map((f) => ({ ...f, docs: f.docs.map((d) => ({ ...d, repo })) })),
+          overview: body.overview.map((d) => ({ ...d, repo })),
+        });
+      })
       .catch((e) => setError(e.message));
   }, [repo, refreshToken]);
 
@@ -819,9 +851,9 @@ function ProjectDocs({
   }
 
   if (error) return <p className="state state--err">Could not load docs: {error}</p>;
-  if (!grouped) return <p className="state">Loading docs…</p>;
+  if (!featureData) return <p className="state">Loading docs…</p>;
 
-  const empty = docsAreEmpty(grouped);
+  const empty = featureDataIsEmpty(featureData);
 
   if (openDoc) {
     return (
@@ -835,6 +867,17 @@ function ProjectDocs({
     );
   }
 
+  if (selectedFeature) {
+    return (
+      <FeatureDetailView
+        epic={selectedFeature.epic}
+        docs={selectedFeature.docs}
+        branch={branch}
+        onBack={() => setSelectedFeature(null)}
+      />
+    );
+  }
+
   return (
     <div>
       <h3 className="dv__section-title">Docs</h3>
@@ -844,7 +887,12 @@ function ProjectDocs({
           Click "Ingest repo" above to pull this project's generated docs into Consus.
         </div>
       ) : (
-        <DocBrowser grouped={grouped} onOpen={open} />
+        <FeatureBrowser
+          features={featureData.features}
+          overview={featureData.overview}
+          onSelectFeature={setSelectedFeature}
+          onOpenDoc={open}
+        />
       )}
     </div>
   );
@@ -904,7 +952,19 @@ function KbSection() {
 /* ---------------------------------------------------------------- */
 
 function DocsSection() {
-  const [grouped, setGrouped] = useState<GroupedDocs | null>(null);
+  // s3 (consus-phase27-feature-doc-review-ui): s2's GET /api/docs/features
+  // is per-doc repo-agnostic — a doc's repo is only implied by the
+  // `?project=` scope of the request that fetched it (see
+  // server/routes/docs.ts). This global (cross-repo) tab has no single repo
+  // to scope by, so it fetches the registered project list (the same GET
+  // /api/projects pattern EventsSection already uses for its project
+  // filter) and issues one /api/docs/features?project=<p> call per repo,
+  // merging the results client-side while attaching `repo` to every doc —
+  // never a single unscoped /api/docs/features call, which would lose
+  // repo association entirely and make content-fetching ambiguous.
+  const [projects, setProjects] = useState<string[] | null>(null);
+  const [featureData, setFeatureData] = useState<{ features: Feature[]; overview: FeatureDoc[] } | null>(null);
+  const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openDoc, setOpenDoc] = useState<
     { format: "md" | "html"; content: string; path: string; repo: string; itemId: string } | null
@@ -914,18 +974,59 @@ function DocsSection() {
   const [auditEntries, setAuditEntries] = useState<AuditTrailEntry[]>([]);
 
   // p14-6: search state — searchResults null means no search performed yet
-  // (or the query was cleared), so the plain DocBrowser tree stays the
-  // default view; [] means searched with zero matches.
+  // (or the query was cleared), so the feature browser stays the default
+  // view; [] means searched with zero matches.
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<DocSearchResult[] | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/docs")
+    fetch("/api/projects")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then(setGrouped)
+      .then((body: { projects: string[] }) => setProjects(body.projects))
       .catch((e) => setError(e.message));
   }, []);
+
+  useEffect(() => {
+    if (!projects) return;
+    if (projects.length === 0) {
+      setFeatureData({ features: [], overview: [] });
+      return;
+    }
+
+    type RawFeatureResponse = {
+      features: Array<{ epic: string; docCount: number; docs: Omit<FeatureDoc, "repo">[] }>;
+      overview: Omit<FeatureDoc, "repo">[];
+    };
+
+    Promise.all(
+      projects.map((project) =>
+        fetch(`/api/docs/features?project=${encodeURIComponent(project)}`)
+          .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+          .then((body: RawFeatureResponse) => ({ project, body })),
+      ),
+    )
+      .then((results) => {
+        const byEpic = new Map<string, Feature>();
+        const overview: FeatureDoc[] = [];
+        for (const { project, body } of results) {
+          for (const f of body.features) {
+            const docs = f.docs.map((d) => ({ ...d, repo: project }));
+            const existing = byEpic.get(f.epic);
+            if (existing) {
+              existing.docCount += f.docCount;
+              existing.docs.push(...docs);
+            } else {
+              byEpic.set(f.epic, { epic: f.epic, docCount: f.docCount, docs });
+            }
+          }
+          overview.push(...body.overview.map((d) => ({ ...d, repo: project })));
+        }
+        const features = Array.from(byEpic.values()).sort((a, b) => a.epic.localeCompare(b.epic));
+        setFeatureData({ features, overview });
+      })
+      .catch((e) => setError(e.message));
+  }, [projects]);
 
   function handleSearch(query: string) {
     setSearchQuery(query);
@@ -992,9 +1093,9 @@ function DocsSection() {
   );
 
   if (error) return <p className="state state--err">Could not load docs: {error}</p>;
-  if (!grouped) return <p className="state">Loading docs…</p>;
+  if (!featureData) return <p className="state">Loading docs…</p>;
 
-  const empty = docsAreEmpty(grouped);
+  const empty = featureDataIsEmpty(featureData);
 
   if (openDoc) {
     return (
@@ -1016,11 +1117,15 @@ function DocsSection() {
     );
   }
 
+  if (selectedFeature) {
+    return <FeatureDetailView epic={selectedFeature.epic} docs={selectedFeature.docs} onBack={() => setSelectedFeature(null)} />;
+  }
+
   return (
     <div>
       <div className="consus__section-lead">
         <h1>Docs</h1>
-        <p>Generated briefs, PRDs, architecture, and plans — browsed by repo, epic, and phase, rendered in-app.</p>
+        <p>Generated briefs, PRDs, architecture, and plans — browsed by feature, rendered in-app.</p>
       </div>
       <DocSearch onSearch={handleSearch} results={searchResults} onOpen={open} error={searchError} />
       {searchResults === null ? (
@@ -1031,7 +1136,12 @@ function DocsSection() {
             output. Run a scan or add a project to populate this.
           </div>
         ) : (
-          <DocBrowser grouped={grouped} onOpen={open} />
+          <FeatureBrowser
+            features={featureData.features}
+            overview={featureData.overview}
+            onSelectFeature={setSelectedFeature}
+            onOpenDoc={open}
+          />
         )
       ) : null}
     </div>
