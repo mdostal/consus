@@ -1,0 +1,54 @@
+name: consus-phase27-feature-doc-review-ui
+title: Feature-scoped doc browsing and review, plus repo-overview docs
+description: >
+  Restructure Consus's doc UI from one flat repo->phase list into two real
+  groupings: per-FEATURE (using the epic column doc_index already has —
+  click a feature, see all its docs together, approve/deny/request-change
+  and fire that back through the existing proposals mechanism) and
+  per-OVERALL (repo-level README/VISION/docs meta, which is not scanned
+  at all today — a real gap, not a grouping problem). Grounded in a live
+  research pass: 201 real docs / 79 (repo,epic) pairs on this operator's
+  own data; the approve/deny mechanism already works for diagrams and
+  events but is explicitly not wired for docs (App.tsx's own comment:
+  "Read-only here (no propose-change wiring)").
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: classic
+version_bump: minor
+sidecar_retention: committed
+
+git_flow:
+  base_branch: dev
+  branch_strategy: per-epic
+
+planning_team:
+  matched_tags: [ui-restructure, doc-review, information-architecture]
+  roster: [orchestrator]
+  per_tag_reasoning:
+    ui-restructure: "Grounded in a live research pass over the real schema/UI/data before design — single-pass design discussion + direct story decomposition, proportionate to a medium-scope reshape of existing capability."
+  confidence: high
+  gate_decisions:
+    hv_planning: skipped
+    structured_outline: skipped
+    reason: "Medium scope — reshapes existing data/mechanisms rather than inventing new ones; no full multi-persona pipeline needed."
+
+stories:
+  - id: s1-repo-overview-doc-scanning
+    title: Scan repo-level README/VISION/docs as a distinct "overview" bucket
+    complexity: low
+    depends_on: []
+  - id: s2-feature-grouped-docs-api
+    title: "GET /api/docs/features — reshape doc_index into per-epic + overview groups"
+    complexity: low
+    depends_on: [s1-repo-overview-doc-scanning]
+  - id: s3-feature-browser-ui
+    title: Feature list + feature detail view (replaces the flat DocBrowser)
+    complexity: medium
+    depends_on: [s2-feature-grouped-docs-api]
+  - id: s4-doc-review-actions
+    title: Wire approve/deny/request-change into per-doc rendering (reuse existing proposals mechanism)
+    complexity: medium
+    depends_on: [s3-feature-browser-ui]
+  - id: s5-exclude-deregistered-repos
+    title: Exclude doc_index rows for repos no longer in the project registry from the feature view
+    complexity: low
+    depends_on: [s2-feature-grouped-docs-api]
