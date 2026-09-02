@@ -1,10 +1,11 @@
 mod sidecar;
+mod tray;
 
 use std::path::PathBuf;
 use std::process::Child;
 use std::sync::Mutex;
 
-use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 /// Resolves (and creates if absent) this app's app-local state directory:
 /// `~/Library/Application Support/com.mdostal.consus/`.
@@ -35,8 +36,8 @@ pub fn app_data_dir() -> std::io::Result<PathBuf> {
 }
 
 /// Holds the spawned sidecar so it isn't silently orphaned by a dropped
-/// handle -- Quit (any path: Cmd+Q, Dock, later a tray menu) kills it
-/// explicitly via the RunEvent handler below. Ported from Heimdall's own
+/// handle -- Quit (any path: Cmd+Q, Dock, tray menu) kills it explicitly
+/// via the RunEvent handler below. Ported from Heimdall's own
 /// SidecarState: kill_sidecar() is idempotent (guards on `guard.take()`),
 /// so it's safe to call from both RunEvent variants below regardless of
 /// which one (or both) actually fires for a given quit path.
@@ -67,12 +68,12 @@ fn kill_sidecar(app: &tauri::AppHandle) {
 pub fn run() {
     let builder = tauri::Builder::default()
         // Must be registered first (documented Tauri requirement) -- a
-        // second launch should focus the existing window rather than
-        // spawning a second copy that collides on the same app-local
-        // state directory. The actual "focus existing window" wiring
-        // (tray, etc.) lands in a later story; the callback is a no-op
-        // for now.
-        .plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| {}))
+        // second launch focuses the existing window instead of spawning a
+        // second sidecar and colliding on s1's shared app-local sqlite
+        // file.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            tray::show_main_window(app);
+        }))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -100,15 +101,28 @@ pub fn run() {
                 port,
             });
 
+            tray::build_tray(app.handle())?;
+
             // Show the loading placeholder immediately; swap to the real
             // sidecar URL (or show an error state) once health-checked --
-            // never a browser connection-refused page. Tray wiring (s3) is
-            // a separate, later unit of work.
+            // never a browser connection-refused page.
             let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("Consus")
                 .inner_size(1280.0, 860.0)
                 .visible(true)
                 .build()?;
+
+            // Close-to-tray: the window hides, the sidecar keeps running,
+            // the tray icon stays -- standard menu-bar-app UX. Only the
+            // explicit Quit path (tray menu / Cmd+Q / Dock) actually
+            // terminates, handled once in the RunEvent handler below.
+            let window_for_close = window.clone();
+            window.on_window_event(move |event| {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window_for_close.hide();
+                }
+            });
 
             let window_for_thread = window.clone();
             std::thread::spawn(move || {
@@ -138,8 +152,9 @@ pub fn run() {
 
     builder.run(|app_handle, event| {
         // The one place sidecar cleanup is guaranteed to run, regardless of
-        // which quit path triggered it (Cmd+Q, Dock menu, or a later tray
-        // "Quit"). Confirmed live on Heimdall's own build (same platform,
+        // which quit path triggered it (Cmd+Q, Dock menu, or the tray
+        // "Quit" item, which calls app.exit(0)). Confirmed live on
+        // Heimdall's own build (same platform,
         // same Tauri version) that Cmd+Q delivers RunEvent::Exit directly,
         // WITHOUT a preceding ExitRequested -- so cleanup must run on both.
         // kill_sidecar() is idempotent (guards on `guard.take()`), so
