@@ -46,22 +46,27 @@ pub fn is_newer(current: &str, latest_tag: &str) -> Result<bool, String> {
 /// the user's own already-authenticated gh CLI, never a token this app
 /// holds itself.
 fn check_latest_release_tag() -> Result<String, String> {
+    // `gh release view --repo <repo> latest` returns "release not found" on
+    // this machine's gh 2.96.0 even for repos with real releases (confirmed
+    // live against both mdostal/consus and mdostal/heimdall) -- `gh api
+    // repos/<repo>/releases/latest` resolves the same data correctly, so use
+    // the REST endpoint directly rather than the `release view` subcommand.
     let output = Command::new("gh")
         .args([
-            "release", "view", "--repo", REPO, "latest",
-            "--json", "tagName", "--jq", ".tagName",
+            "api", &format!("repos/{REPO}/releases/latest"),
+            "--jq", ".tag_name",
         ])
         .output()
         .map_err(|e| format!("failed to run gh: {e}"))?;
     if !output.status.success() {
         return Err(format!(
-            "gh release view failed: {}",
+            "gh api releases/latest failed: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
     let tag = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if tag.is_empty() {
-        return Err("gh release view returned an empty tag".to_string());
+        return Err("gh api releases/latest returned an empty tag".to_string());
     }
     Ok(tag)
 }
