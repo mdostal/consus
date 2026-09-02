@@ -34,12 +34,27 @@
   background update checker against this repo's own GitHub releases. Runs with its own fresh,
   empty state under `~/Library/Application Support/com.mdostal.consus/` — never the operator's live
   decisions data — so the operator registers projects themselves on first launch.
+- **Feature-scoped doc browsing and review** (`consus-phase27-feature-doc-review-ui`, 5
+  dependency-tracked stories, grounded in a live research pass over the real schema/UI/data
+  before design): the flat repo→phase doc list is replaced by two real groupings — per-feature
+  (a `FeatureBrowser` list + `FeatureDetailView` showing every doc for one epic together,
+  reusing the existing `DocRenderer`) and per-overview (`README.md`/`VISION.md`/root `docs/*.md`,
+  now scanned into `doc_index` for the first time as a distinct `phase: "overview"` bucket — they
+  were never indexed at all before this). Docs can now be approved, denied, or have a change
+  proposed directly from the feature view, firing back through the same `POST /api/proposals`
+  mechanism already proven for diagrams and events — closing a real gap (`App.tsx`'s own prior
+  comment: docs were "Read-only here (no propose-change wiring)"). Also fixes a real data-hygiene
+  bug found during research: `GET /api/docs/features` now excludes repos no longer in the active
+  project registry (found live: 76 orphaned docs across 29 epics from a deregistered repo).
 
 ### Changed
 
 - **`consus-phase26-desktop-app` release finalization.** Applied the epic's planned `minor` version
   bump (`0.12.0` → `0.13.0`) and kept `package.json`, `app/src-tauri/tauri.conf.json`, and
   `app/src-tauri/Cargo.toml` in lockstep.
+- **`consus-phase27-feature-doc-review-ui` release finalization.** Applied the epic's planned
+  `minor` version bump (`0.13.0` → `0.14.0`) and kept `package.json`, `app/src-tauri/tauri.conf.json`,
+  and `app/src-tauri/Cargo.toml` in lockstep.
 
 ## [0.12.0] - 2026-08-19
 
