@@ -168,6 +168,27 @@ pub fn spawn_sidecar(app: &AppHandle) -> SidecarHandle {
         );
     });
 
+    // server/config/project-registry.ts's loadProjectRegistry() falls back
+    // to a single hardcoded `{ consus: cwd }` project whenever
+    // CONSUS_PROJECTS_CONFIG doesn't exist yet (its own v1-compat default,
+    // predating desktop packaging). Since this sidecar always runs with
+    // cwd set to consus_root (the bundled resources/consus dir in a
+    // release build), an untouched first run would silently self-register
+    // "consus" pointing at the app bundle's own Resources directory --
+    // discovered via a genuine from-scratch packaged-build test, not
+    // theoretical. Pre-seeding an empty registry here (only if one doesn't
+    // already exist, so a returning user's real projects are never
+    // touched) keeps s1's fresh-app-local-state decision true all the way
+    // through a release build, not just the dev loop.
+    if !projects_config_path.exists() {
+        if let Err(e) = fs::write(&projects_config_path, "{}\n") {
+            log::warn!(
+                "failed to pre-seed empty projects config {}: {e}",
+                projects_config_path.display()
+            );
+        }
+    }
+
     let port = pick_free_port();
     let path = capture_login_shell_path();
 

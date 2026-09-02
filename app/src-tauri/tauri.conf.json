@@ -4,7 +4,11 @@
   "version": "0.12.0",
   "identifier": "com.mdostal.consus",
   "build": {
-    "frontendDist": "../dist-placeholder"
+    "frontendDist": "../dist-placeholder",
+    "beforeBuildCommand": {
+      "script": "bash build-resources.sh",
+      "cwd": "."
+    }
   },
   "app": {
     "windows": [],
@@ -15,6 +19,9 @@
   "bundle": {
     "active": true,
     "targets": ["app"],
+    "resources": {
+      "resources/consus": "consus"
+    },
     "macOS": {
       "signingIdentity": "-"
     },
