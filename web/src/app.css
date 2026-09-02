@@ -1331,6 +1331,47 @@ body {
   color: var(--consus-ink-muted);
   margin: 0 0 8px;
 }
+.feature-detail-view__doc-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.feature-detail-view__doc-head .feature-detail-view__doc-path {
+  flex: 1;
+}
+.feature-detail-view__doc-review-actions {
+  display: flex;
+  gap: 8px;
+}
+.feature-detail-view__doc-review-actions button,
+.feature-detail-view__deny-actions button {
+  font-family: var(--consus-font-ui);
+  background: var(--consus-bg-subtle);
+  color: var(--consus-ink);
+  border: 1px solid var(--consus-line);
+  padding: 5px 12px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+.feature-detail-view__deny-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0;
+}
+.feature-detail-view__deny-composer label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--consus-ink-muted);
+}
+.feature-detail-view__deny-actions {
+  display: flex;
+  gap: 8px;
+}
 
 /* ============================================================= */
 /* Events (p14-5)                                                */
