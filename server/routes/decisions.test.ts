@@ -202,6 +202,52 @@ describe("POST /api/decisions", () => {
     expect(body.decision_type).toBe("cba");
     expect(body.triage_bucket).toBe("open_question");
   });
+
+  describe("feature-selection/v1 payloads", () => {
+    const FEATURE_PAYLOAD = {
+      version: "dostal:feature-selection/v1" as const,
+      title: "Pick features",
+      context: "Choose which features to enable.",
+      features: [
+        { id: "dark-mode", name: "Dark Mode", description: "Switch to dark theme." },
+        { id: "oauth", name: "OAuth Login", description: "Sign in with Google/GitHub.", default: true },
+      ],
+    };
+
+    it("accepts and stores a feature-selection/v1 payload", async () => {
+      const res = await post({ id: "fs-1", title: "Feature selection", decision_payload: FEATURE_PAYLOAD });
+      expect(res.statusCode).toBe(201);
+      const body = res.json();
+      expect(body.decision_payload).toEqual(FEATURE_PAYLOAD);
+    });
+
+    it("rejects a feature-selection/v1 payload with an empty features array", async () => {
+      const res = await post({
+        id: "fs-empty",
+        title: "t",
+        decision_payload: { ...FEATURE_PAYLOAD, features: [] },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/features/i);
+    });
+
+    it("rejects a feature-selection/v1 payload with missing features field", async () => {
+      const { features: _, ...withoutFeatures } = FEATURE_PAYLOAD;
+      void _;
+      const res = await post({ id: "fs-nofeatures", title: "t", decision_payload: withoutFeatures });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/features/i);
+    });
+
+    it("feature-selection/v1 items show up in GET /api/decisions", async () => {
+      await post({ id: "fs-2", title: "Feature select", decision_payload: FEATURE_PAYLOAD });
+      const get = await app.inject({ method: "GET", url: "/api/decisions" });
+      const body = get.json();
+      const found = body.find((i: { id: string }) => i.id === "fs-2");
+      expect(found).toBeDefined();
+      expect(found.decision_payload.version).toBe("dostal:feature-selection/v1");
+    });
+  });
 });
 
 describe("GET /api/decisions classification backfill", () => {
