@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AnswerControl } from "./AnswerControl";
-import type { DecisionPayload } from "./types";
+import type { DecisionPayload, FeatureSelectionPayload } from "./types";
 
 const PAYLOAD: DecisionPayload = {
   version: "dostal:decision-request/v1",
@@ -13,6 +13,26 @@ const PAYLOAD: DecisionPayload = {
   ],
   recommended: "A",
 };
+
+const FEATURE_PAYLOAD: FeatureSelectionPayload = {
+  version: "dostal:feature-selection/v1",
+  title: "Which features?",
+  context: "ctx",
+  features: [
+    { id: "x", name: "Feature X", description: "desc x", default: true },
+    { id: "y", name: "Feature Y", description: "desc y", default: false },
+  ],
+};
+
+describe("AnswerControl — feature-selection/v1 delegation", () => {
+  it("renders FeatureChecklist (not the A-Z options list) for feature-selection/v1 payloads", () => {
+    render(<AnswerControl payload={FEATURE_PAYLOAD} onVerdict={vi.fn()} />);
+
+    expect(screen.getByRole("checkbox", { name: /feature x/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /confirm selection/i })).toBeInTheDocument();
+    expect(screen.queryByTestId("recommended-badge")).not.toBeInTheDocument();
+  });
+});
 
 describe("AnswerControl", () => {
   it("renders every option with its tradeoffs, and marks the recommended one", () => {

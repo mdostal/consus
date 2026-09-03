@@ -1,8 +1,9 @@
 import { useState } from "react";
-import type { DecisionPayload, Verdict } from "./types";
+import type { DecisionPayload, FeatureSelectionPayload, Verdict } from "./types";
+import { FeatureChecklist } from "./FeatureChecklist";
 
 export interface AnswerControlProps {
-  payload: DecisionPayload;
+  payload: DecisionPayload | FeatureSelectionPayload;
   onVerdict: (verdict: Verdict) => void;
 }
 
@@ -17,6 +18,10 @@ export function AnswerControl({ payload, onVerdict }: AnswerControlProps) {
   const [mixSelected, setMixSelected] = useState<string[]>([]);
   const [mixWhy, setMixWhy] = useState("");
   const [rejectCommentary, setRejectCommentary] = useState("");
+
+  if (payload.version === "dostal:feature-selection/v1") {
+    return <FeatureChecklist payload={payload} onVerdict={onVerdict} />;
+  }
 
   function toggleMix(id: string) {
     setMixSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
