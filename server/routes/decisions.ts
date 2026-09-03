@@ -35,7 +35,7 @@ function validateDecisionPayload(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") {
     return "decision_payload is required";
   }
-  const p = payload as Partial<DecisionPayload & FeatureSelectionPayload>;
+  const p = payload as { version?: string; features?: unknown[]; options?: Array<{ id: string }>; recommended?: string };
 
   if (p.version === "dostal:feature-selection/v1") {
     if (!Array.isArray(p.features) || p.features.length === 0) {
