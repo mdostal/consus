@@ -1,0 +1,98 @@
+id: s2-rendered-visual-diff
+epic: consus-phase28-interaction-completeness
+title: Shared visual diff renderer for doc line-diffs and diagram changesets
+status: pending
+complexity: medium
+methodology: classic
+depends_on: []
+
+parallel_allowed: true
+parallel_rationale: bounded-slice
+
+description: |
+  Confirmed this session: both docs and diagrams already COMPUTE a diff but
+  never RENDER one. Docs compute a line-diff string via computeLineDiff
+  purely to embed in the POST /api/proposals payload -- DocRenderer.tsx
+  never renders it as colored add/remove lines anywhere. Diagrams show a
+  structured changeset list (add/remove/move/rename rows) plus a read-only
+  derived Mermaid preview, but never a diff-styled (colored, +/- prefixed)
+  view of that same list. "Fire off the diff" already works end-to-end for
+  both; "see the diff visually" does not exist anywhere in the app.
+
+  Build ONE shared diff-render component (e.g. a VisualDiff component taking
+  either a unified-diff-shaped line list or a generic {kind: add|remove|
+  change, label}[] list) and use it in both places:
+  - Docs: render computeLineDiff's existing output as colored add/remove
+    lines in the proposal-review path (wherever a doc proposal is currently
+    reviewed before firing, per the existing docs approve/deny flow from
+    consus-phase27).
+  - Diagrams: render the existing changeset (add/remove/move/rename rows)
+    through the same shared component's visual language instead of (or in
+    addition to) the current plain list.
+
+  Node-level highlighting directly on the DiagramCanvas preview is an
+  explicit stretch option, NOT required for story completion -- ship the
+  diff-styled changeset list first.
+
+acceptance_criteria:
+  - "Given a doc proposal with a non-trivial line diff, the proposal-review UI renders colored add/remove lines (not just a plain text blob or nothing)"
+  - "Given a doc proposal with no changes (identical content), no diff view is shown or an explicit 'no changes' state is shown -- never a broken/empty diff render"
+  - "Given a diagram changeset with add/remove/move/rename entries, the changeset list is rendered using the same shared diff-styled visual language as the doc diff (consistent colors/iconography for add vs remove vs change)"
+  - "Given the shared component, it is a single implementation used by both call sites -- not two parallel diff renderers with divergent styling"
+  - "Existing proposal-firing behavior (POST /api/proposals) for both docs and diagrams is completely unchanged -- this story only adds a rendering layer before/alongside firing, never changes what gets sent"
+
+steps:
+  - id: research
+    description: Re-confirm computeLineDiff's exact output shape (docs) and the diagram changeset's exact shape (DiagramView.tsx), and where each is currently displayed (or not) before firing to /api/proposals.
+    agent: researcher
+  - id: implement
+    description: Build the shared VisualDiff component and wire it into both the doc proposal-review path and the diagram changeset display, per the approach above.
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Component tests for VisualDiff (add/remove/change rendering, empty-diff state) plus integration tests confirming it's actually rendered in both the doc and diagram flows.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm this is genuinely one shared component (not two divergent implementations), confirm no change to what's actually sent to POST /api/proposals in either flow.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase28-interaction-completeness.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: web/src/features/docs/DocRenderer.tsx
+      purpose: "Where computeLineDiff's output is currently computed but never rendered -- the doc-side integration point"
+    - path: web/src/features/diagrams/DiagramView.tsx
+      purpose: "Where the changeset (add/remove/move/rename) is currently rendered as a plain list before firing to POST /api/proposals -- the diagram-side integration point (line ~162-179 fires the changeset)"
+    - path: web/src/features/diagrams/DiagramCanvas.tsx
+      purpose: "The shared canvas component used by both diagram views -- read for context on what a changeset entry looks like structurally; not modified unless the optional node-highlight stretch is attempted"
+
+files_to_modify:
+  - file: web/src/features/docs/VisualDiff.tsx
+    change: New shared component rendering a unified line-diff or generic add/remove/change list with consistent styling
+  - file: web/src/features/docs/DocRenderer.tsx
+    change: Render VisualDiff against computeLineDiff's existing output in the proposal-review path
+  - file: web/src/features/diagrams/DiagramView.tsx
+    change: Render the existing changeset through VisualDiff's visual language instead of (or alongside) the current plain list
+
+design_decisions:
+  - decision: One shared component, not two
+    rationale: "Both flows already compute diff-shaped data; a single component avoids divergent styling and doubles as documentation of what 'the Consus diff view' looks like"
+  - decision: Node-level canvas highlighting is optional stretch, not a completion gate
+    rationale: "The literal ask ('fire off the diff') is already satisfied by proposals; the changeset list rendered diff-style directly answers 'see the diff' without requiring a full graph-overlay renderer"
+
+risks:
+  - severity: low
+    description: Diagram changeset rendering scope-creeps into a full node-overlay renderer
+    mitigation: Explicitly gate the story's completion on the diff-styled list, not the canvas overlay (design-discussion.md §4)
+
+references:
+  - path: .pHive/epics/consus-phase28-interaction-completeness/docs/research-brief.md
+    relevant_excerpt: |
+      "Fire off the diff" works end-to-end today; "see the diff visually"
+      doesn't exist anywhere in the app yet.

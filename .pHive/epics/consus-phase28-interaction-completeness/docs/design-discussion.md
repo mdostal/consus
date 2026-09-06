@@ -100,23 +100,16 @@ depend only on already-shipped, already-reconciled `dev` (phase20 diagrams,
 phase26 desktop app, phase27 feature-doc-review, and the phase28 pre-flight
 PR reconciliation completed just before this design discussion).
 
-## 6. Open questions
+## 6. Open questions (resolved)
 
-1. **Slice C navigation:** should scanned `.pHive/design/` topics appear as
-   a new section inside the existing per-repo `FeatureBrowser`, or as their
-   own top-level nav item? Recommend: fold into `FeatureBrowser` (matches
-   phase27's "one place to review everything about a feature" goal) unless
-   the user wants design artifacts kept visually separate from code docs.
-2. **Slice D `cba` payload shape:** does a cost-benefit decision already
-   carry structured comparison data anywhere upstream (e.g. from whatever
-   produces the decision), or does this slice also need to define what a
-   `cba` payload looks like from scratch? Recommend defining a minimal
-   schema (list of {option, cost, benefit, notes}) since no upstream
-   producer was found in this research pass.
-3. Confirm free-text and rating are the two new answer shapes wanted (vs.
-   e.g. ranking) — user's earlier selection covered "free-text/rating" as
-   one bundled option; ranking/drag-order was listed as a separate,
-   unselected gap.
+1. **Slice C navigation — resolved: fold into `FeatureBrowser`.** Matches
+   phase27's "one place to review everything about a feature" goal.
+2. **Slice D `cba` payload shape — resolved: define a minimal schema now.**
+   `{ options: { option, cost, benefit, notes? }[] }`, no upstream producer
+   exists. Renderer only, not a computation engine.
+3. **Slice D new answer shapes — resolved: widen to all three.** Free-text,
+   rating, *and* ranking/drag-order — not just the originally-selected
+   free-text+rating pair.
 
 ## 7. Scale assessment
 

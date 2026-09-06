@@ -1,0 +1,105 @@
+id: s4-edit-and-cba-answer-shapes
+epic: consus-phase28-interaction-completeness
+title: Real renderers for the classifier's existing edit/cba labels
+status: pending
+complexity: medium
+methodology: classic
+depends_on: []
+
+parallel_allowed: true
+parallel_rationale: bounded-slice
+
+description: |
+  Confirmed this session: server/decision-contract/classifier.ts already
+  emits "cba" and "edit" as decision-type labels (a title-regex heuristic,
+  lines 33-40) but neither has a dedicated renderer -- the classifier's own
+  comment admits any payload not matching a known shape falls through to
+  "choose", so a CBA- or edit-titled item renders through the generic
+  options-based AnswerControl today, which is misleading (it doesn't show a
+  comparison table or a proposed change, just generic option buttons).
+
+  Two renderers, same proven parser-validates -> AnswerControl-dispatches ->
+  verdict-recorded pattern already used for decision-request/v1 and
+  feature-selection/v1:
+
+  - "edit": a line-diff-style proposed-change display (reuse the
+    VisualDiff component from s2-rendered-visual-diff if that story has
+    landed first -- if run in parallel and not yet landed, build against
+    computeLineDiff's raw output directly and swap to VisualDiff in a
+    follow-up commit) with accept/reject verdict actions.
+  - "cba": user-confirmed minimal schema -- decision_payload carries
+    { options: { option: string; cost: string; benefit: string; notes?:
+    string }[] } -- rendered as a simple structured comparison table, NOT a
+    new cost-benefit computation engine. This story defines the schema from
+    scratch (no upstream producer exists) and is a renderer only.
+
+acceptance_criteria:
+  - "Given a decision_payload with version dostal:edit-proposal/v1 (new type, this story defines it), AnswerControl renders a real diff-styled proposed-change view, not the generic options fallback"
+  - "Given a decision_payload with version dostal:cba/v1 (new type, this story defines it) carrying the options[] schema above, AnswerControl renders a structured comparison table (one row per option, cost/benefit/notes columns), not the generic options fallback"
+  - "Given classifier.ts's existing title-regex heuristic for 'cba'/'edit' labels, it is unchanged -- this story routes those existing labels to real renderers, it does not change how a decision is classified"
+  - "Given the two new payload types, both are validated by the parser (rejecting malformed payloads) and both round-trip through POST /api/decisions and the verdict-recording route the same way the two existing payload types do"
+  - "Given all existing decision-request/v1 and feature-selection/v1 tests, they pass completely unmodified"
+
+steps:
+  - id: research
+    description: Re-confirm classifier.ts's cba/edit label logic, parser.ts's existing two payload-type pattern, and AnswerControl.tsx's dispatch mechanism as they stand now.
+    agent: researcher
+  - id: implement
+    description: Define dostal:edit-proposal/v1 and dostal:cba/v1 payload types in parser.ts (validation), add their AnswerControl.tsx dispatch branches and dedicated renderer components, wire verdict recording.
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Parser validation tests, AnswerControl dispatch tests, renderer component tests, and route round-trip tests for both new payload types, following the exact test pattern used for feature-selection/v1.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm classifier.ts itself is unchanged, confirm existing payload-type tests are unaffected, confirm the cba renderer is genuinely just a table (no computation logic).
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase28-interaction-completeness.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: server/decision-contract/classifier.ts
+      purpose: "Lines 14, 33-40, 58-64 -- the existing cba/edit label heuristic and the comment admitting they're currently unreachable by a dedicated renderer; read but do not change classification logic"
+    - path: server/decision-contract/parser.ts
+      purpose: "Lines 32-65 -- the exact two-payload-type pattern (decision-request/v1, feature-selection/v1) this story extends with two more"
+    - path: web/src/features/decisions/answer-shapes/FeatureChecklist.tsx
+      purpose: "The most recent prior-art example of a dedicated answer-shape renderer + its AnswerControl dispatch branch -- the pattern to replicate for edit/cba"
+
+files_to_modify:
+  - file: server/decision-contract/parser.ts
+    change: Add EditProposalPayload (dostal:edit-proposal/v1) and CbaPayload (dostal:cba/v1) types + validation
+  - file: web/src/features/decisions/answer-shapes/types.ts
+    change: Add the two new payload/verdict types, mirroring the existing pattern
+  - file: web/src/features/decisions/answer-shapes/AnswerControl.tsx
+    change: Add dispatch branches for the two new payload versions
+  - file: web/src/features/decisions/answer-shapes/EditProposalView.tsx
+    change: New renderer -- diff-styled proposed-change display with accept/reject
+  - file: web/src/features/decisions/answer-shapes/CbaTable.tsx
+    change: New renderer -- structured cost/benefit comparison table
+
+design_decisions:
+  - decision: cba payload schema defined from scratch this story
+    rationale: "User-confirmed: no upstream producer of cba comparison data was found in research; minimal {option,cost,benefit,notes}[] schema matches the existing renderer-not-calculator philosophy of AnswerControl"
+  - decision: edit renderer reuses VisualDiff if available, degrades gracefully if not
+    rationale: "s2 and s4 are planned as parallel-eligible siblings with no depends_on between them in the dependency graph, but this story explicitly notes the integration point so whichever lands first, the other adapts cleanly rather than conflicting"
+
+risks:
+  - severity: medium
+    description: cba renderer scope-creeps into an actual cost-benefit computation/recommendation engine
+    mitigation: Acceptance criteria explicitly gate on "structured comparison table," not computed recommendations (design-discussion.md risk table)
+
+cross_cutting:
+  - concern: documentation
+    action: "Update docs/prior-art.md's decision-type table (currently documents cba/edit as spec'd-but-unimplemented) and docs/api-reference.md's payload-version list"
+
+references:
+  - path: server/decision-contract/classifier.ts
+    relevant_excerpt: |
+      // 'doc' remains unreachable by either path... any other valid
+      // payload is 'choose'.
