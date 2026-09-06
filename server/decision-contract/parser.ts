@@ -64,6 +64,45 @@ export interface FeatureSelectionPayload {
   research?: ResearchSection[];
 }
 
+/**
+ * dostal:edit-proposal/v1 (s4-edit-and-cba-answer-shapes) — defined from
+ * scratch this story, a renderer-only type routed to by the classifier's
+ * pre-existing "edit" title-regex label (docs/prior-art.md's "Inline
+ * green-add/red-strike line-diff editor"). `original`/`proposed` are plain
+ * text; the renderer computes the line diff itself (no precomputed diff
+ * shipped in the payload) rather than trusting a caller-supplied diff blob.
+ */
+export interface EditProposalPayload {
+  version: "dostal:edit-proposal/v1";
+  title: string;
+  context: string;
+  original: string;
+  proposed: string;
+  research?: ResearchSection[];
+}
+
+/**
+ * dostal:cba/v1 (s4-edit-and-cba-answer-shapes) — user-confirmed minimal
+ * schema: a structured comparison table only, deliberately NOT a
+ * cost-benefit computation/recommendation engine (no scoring/weighting
+ * fields). No upstream producer exists yet; this story defines the schema
+ * from scratch, same as feature-selection/v1 did.
+ */
+export interface CbaOption {
+  option: string;
+  cost: string;
+  benefit: string;
+  notes?: string;
+}
+
+export interface CbaPayload {
+  version: "dostal:cba/v1";
+  title: string;
+  context: string;
+  options: CbaOption[];
+  research?: ResearchSection[];
+}
+
 export type Verdict =
   | { kind: "accepted" }
   | { kind: "option_chosen"; optionId: string }

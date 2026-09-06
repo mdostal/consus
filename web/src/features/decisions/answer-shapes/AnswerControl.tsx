@@ -1,9 +1,11 @@
 import { useState } from "react";
-import type { DecisionPayload, FeatureSelectionPayload, Verdict } from "./types";
+import type { CbaPayload, DecisionPayload, EditProposalPayload, FeatureSelectionPayload, Verdict } from "./types";
 import { FeatureChecklist } from "./FeatureChecklist";
+import { EditProposalView } from "./EditProposalView";
+import { CbaTable } from "./CbaTable";
 
 export interface AnswerControlProps {
-  payload: DecisionPayload | FeatureSelectionPayload;
+  payload: DecisionPayload | FeatureSelectionPayload | EditProposalPayload | CbaPayload;
   onVerdict: (verdict: Verdict) => void;
 }
 
@@ -17,6 +19,12 @@ export interface AnswerControlProps {
 export function AnswerControl({ payload, onVerdict }: AnswerControlProps) {
   if (payload.version === "dostal:feature-selection/v1") {
     return <FeatureChecklist payload={payload} onVerdict={onVerdict} />;
+  }
+  if (payload.version === "dostal:edit-proposal/v1") {
+    return <EditProposalView payload={payload} onVerdict={onVerdict} />;
+  }
+  if (payload.version === "dostal:cba/v1") {
+    return <CbaTable payload={payload} onVerdict={onVerdict} />;
   }
   const [mixSelected, setMixSelected] = useState<string[]>([]);
   const [mixWhy, setMixWhy] = useState("");

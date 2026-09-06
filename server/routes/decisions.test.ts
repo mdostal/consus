@@ -249,6 +249,98 @@ describe("POST /api/decisions", () => {
     });
   });
 
+  describe("edit-proposal/v1 payloads", () => {
+    const EDIT_PAYLOAD = {
+      version: "dostal:edit-proposal/v1" as const,
+      title: "Amend the weekly ops report",
+      context: "Tighten the summary paragraph.",
+      original: "line one\nline two\nline three",
+      proposed: "line one\nline two, tightened\nline three",
+    };
+
+    it("accepts and stores an edit-proposal/v1 payload", async () => {
+      const res = await post({ id: "edit-1", title: "Edit proposal", decision_payload: EDIT_PAYLOAD });
+      expect(res.statusCode).toBe(201);
+      const body = res.json();
+      expect(body.decision_payload).toEqual(EDIT_PAYLOAD);
+    });
+
+    it("rejects an edit-proposal/v1 payload missing proposed", async () => {
+      const { proposed: _proposed, ...withoutProposed } = EDIT_PAYLOAD;
+      void _proposed;
+      const res = await post({ id: "edit-missing-proposed", title: "t", decision_payload: withoutProposed });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/proposed/i);
+    });
+
+    it("rejects an edit-proposal/v1 payload where original is not a string", async () => {
+      const res = await post({
+        id: "edit-bad-original",
+        title: "t",
+        decision_payload: { ...EDIT_PAYLOAD, original: 42 },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/original/i);
+    });
+
+    it("edit-proposal/v1 items show up in GET /api/decisions", async () => {
+      await post({ id: "edit-2", title: "Edit proposal", decision_payload: EDIT_PAYLOAD });
+      const get = await app.inject({ method: "GET", url: "/api/decisions" });
+      const body = get.json();
+      const found = body.find((i: { id: string }) => i.id === "edit-2");
+      expect(found).toBeDefined();
+      expect(found.decision_payload.version).toBe("dostal:edit-proposal/v1");
+    });
+  });
+
+  describe("cba/v1 payloads", () => {
+    const CBA_PAYLOAD = {
+      version: "dostal:cba/v1" as const,
+      title: "Buy vs build the reporting pipeline",
+      context: "Compare the two paths before committing.",
+      options: [
+        { option: "Buy", cost: "$50k/yr", benefit: "Fast to ship", notes: "Vendor lock-in risk" },
+        { option: "Build", cost: "2 eng-months", benefit: "Full control" },
+      ],
+    };
+
+    it("accepts and stores a cba/v1 payload", async () => {
+      const res = await post({ id: "cba-1", title: "CBA", decision_payload: CBA_PAYLOAD });
+      expect(res.statusCode).toBe(201);
+      const body = res.json();
+      expect(body.decision_payload).toEqual(CBA_PAYLOAD);
+    });
+
+    it("rejects a cba/v1 payload with an empty options array", async () => {
+      const res = await post({
+        id: "cba-empty",
+        title: "t",
+        decision_payload: { ...CBA_PAYLOAD, options: [] },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/options/i);
+    });
+
+    it("rejects a cba/v1 payload whose option entry is missing cost", async () => {
+      const res = await post({
+        id: "cba-bad-option",
+        title: "t",
+        decision_payload: { ...CBA_PAYLOAD, options: [{ option: "Buy", benefit: "Fast" }] },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/option/i);
+    });
+
+    it("cba/v1 items show up in GET /api/decisions", async () => {
+      await post({ id: "cba-2", title: "CBA", decision_payload: CBA_PAYLOAD });
+      const get = await app.inject({ method: "GET", url: "/api/decisions" });
+      const body = get.json();
+      const found = body.find((i: { id: string }) => i.id === "cba-2");
+      expect(found).toBeDefined();
+      expect(found.decision_payload.version).toBe("dostal:cba/v1");
+    });
+  });
+
   it("round-trips research[] losslessly: POST with research[] then GET returns research[] intact", async () => {
     const payloadWithResearch = {
       ...VALID_PAYLOAD,

@@ -155,8 +155,15 @@ supplies — it does not compose or classify the payload itself.
 
 **Request body:** `{ "id": string, "title": string, "source_repo"?: string, "decision_payload": DecisionPayload }`.
 `id` is caller-supplied and required (never server-generated). `decision_payload` must already be
-a valid `dostal:decision-request/v1` object: `version` exactly `"dostal:decision-request/v1"`,
-`options` with at least 2 entries, `recommended` matching one of `options[].id`.
+a valid object of one of four supported `version`s (`server/decision-contract/parser.ts`):
+- `"dostal:decision-request/v1"` — `options` with at least 2 entries, `recommended` matching one
+  of `options[].id`.
+- `"dostal:feature-selection/v1"` — `features` with at least 1 entry.
+- `"dostal:edit-proposal/v1"` (s4-edit-and-cba-answer-shapes) — `original` and `proposed` plain-text
+  strings; the diff is computed by the renderer, not shipped in the payload.
+- `"dostal:cba/v1"` (s4-edit-and-cba-answer-shapes) — `options` with at least 1 entry, each
+  `{ option: string, cost: string, benefit: string, notes?: string }`; renders as a structured
+  comparison table only (no computation/recommendation engine).
 
 **Response 201:** the created item, same shape `GET /api/decisions` returns for it (`id`, `type`,
 `title`, `status`, `source_repo`, `decided_at`, `decision_payload` parsed, `decision_type`,
