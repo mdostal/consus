@@ -1,3 +1,4 @@
+import { VisualDiff, type VisualDiffEntry, type VisualDiffKind } from "../diff/VisualDiff";
 import type { DiagramChange, DiagramChangeKind } from "./diagramDiff";
 
 /**
@@ -7,14 +8,31 @@ import type { DiagramChange, DiagramChangeKind } from "./diagramDiff";
  * (a different row modifier class + label) since a text-based diagram
  * format has no notion of node position, so a pure move is a materially
  * different kind of change from a structural add/remove/relabel edit.
+ *
+ * consus-phase28/s2: row rendering (colors, glyphs, kind labels) now comes
+ * from the shared VisualDiff component — the same one DocRenderer.tsx uses
+ * for its line-diff preview — so a diagram's "added" row and a doc's added
+ * line share one visual language instead of two independently maintained
+ * ones. This component still owns its own diagram-specific chrome (the
+ * "Changeset" title, the running count, the "no pending changes yet" empty
+ * copy) — only the per-row rendering is delegated.
  */
 
-const KIND_LABEL: Record<DiagramChangeKind, string> = {
-  added: "Added",
-  removed: "Removed",
-  changed: "Changed",
-  moved: "Moved",
+const CHANGE_KIND_TO_VISUAL_DIFF: Record<DiagramChangeKind, VisualDiffKind> = {
+  added: "add",
+  removed: "remove",
+  changed: "change",
+  moved: "move",
 };
+
+function toVisualDiffEntries(changes: DiagramChange[]): VisualDiffEntry[] {
+  return changes.map((change) => ({
+    id: change.id,
+    kind: CHANGE_KIND_TO_VISUAL_DIFF[change.kind],
+    label: `${change.entity} ${change.label}`,
+    detail: change.detail,
+  }));
+}
 
 export interface DiagramChangesetProps {
   changes: DiagramChange[];
@@ -33,21 +51,7 @@ export function DiagramChangeset({ changes, title = "Changeset" }: DiagramChange
       {changes.length === 0 ? (
         <p className="diagram-changeset__empty">No pending changes yet.</p>
       ) : (
-        <ul className="diagram-changeset__list">
-          {changes.map((change) => (
-            <li
-              key={change.id}
-              className={`diagram-changeset__row diagram-changeset__row--${change.kind}`}
-              data-testid={`changeset-row-${change.kind}`}
-            >
-              <span className="diagram-changeset__kind">{KIND_LABEL[change.kind]}</span>
-              <span className="diagram-changeset__subject">
-                {change.entity} {change.label}
-              </span>
-              {change.detail ? <span className="diagram-changeset__detail">{change.detail}</span> : null}
-            </li>
-          ))}
-        </ul>
+        <VisualDiff entries={toVisualDiffEntries(changes)} />
       )}
     </div>
   );

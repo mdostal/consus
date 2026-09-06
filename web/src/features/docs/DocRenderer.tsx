@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { marked } from "marked";
 import { AuditPanel, type AuditTrailEntry } from "../audit/AuditPanel";
+import { VisualDiff, parseLineDiff } from "../diff/VisualDiff";
 import { computeLineDiff } from "./textDiff";
 import { splitIntoSections } from "./sections";
 import "../../theme/tokens.css";
@@ -59,6 +60,15 @@ function initialSectionState(section: string): SectionState {
  * never touches any other section's in-progress edit. The view-mode
  * rendering below is unchanged — it still runs marked.parse over the full
  * joined `content` string, exactly as before this story.
+ *
+ * consus-phase28/s2: computeLineDiff's output was computed here purely to
+ * embed in onProposeChange's payload — never rendered anywhere, so an
+ * operator fired a change without ever seeing what it actually changed.
+ * The edit form now shows that same diff (via the shared VisualDiff
+ * component, VisualDiff.tsx) as a live colored add/remove preview while a
+ * section is being edited; an identical draft shows an explicit "no
+ * changes yet" state instead. This is purely a rendering addition — the
+ * diff string handed to onProposeChange (fire, below) is unchanged.
  */
 export function DocRenderer({
   format,
@@ -148,6 +158,18 @@ export function DocRenderer({
                         placeholder="e.g. removed load balancers for direct traffic through..."
                       />
                     </label>
+                  ) : null}
+                  {onProposeChange ? (
+                    <div className="doc-renderer__diff-preview" data-testid={`doc-diff-preview-${index}`}>
+                      <h5 className="doc-renderer__diff-preview-title">Preview</h5>
+                      {hasChanges ? (
+                        <VisualDiff entries={parseLineDiff(computeLineDiff(section, state.draft))} />
+                      ) : (
+                        <p className="doc-renderer__diff-preview-empty" data-testid={`doc-diff-preview-empty-${index}`}>
+                          No changes yet.
+                        </p>
+                      )}
+                    </div>
                   ) : null}
                   <div className="doc-renderer__edit-actions">
                     <button type="button" onClick={() => cancelEdit(index)}>
