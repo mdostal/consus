@@ -4,6 +4,26 @@
 
 ### Added
 
+- **`consus-rich-decisions`:** three structural gaps in `dostal:decision-request/v1` closed via a
+  5-story epic (issues #122–#126, PRs #129–#133):
+  - **Structured research inline with options** — `ResearchSection` interface (`{ title, body,
+    sources? }`) added to both `DecisionPayload` (server parser + web types) and
+    `FeatureSelectionPayload`. `DecisionCard` renders research sections as collapsible `<details>`
+    panels between the recommendation and the options list; sources render as a `<ul>` beneath each
+    body. Fully optional and backward-compatible (no existing payloads break).
+  - **Feature-selection checklist** — `dostal:feature-selection/v1` is now a first-class parallel
+    payload type alongside `decision-request/v1`. `FeatureSelectionPayload` carries an ordered
+    `features` array (`{ id, name, description, default? }`). `POST /api/decisions` accepts and
+    validates it (≥1 feature required). `AnswerControl` dispatches to a new `FeatureChecklist`
+    component when `payload.version === "dostal:feature-selection/v1"`: checkboxes pre-seeded from
+    `default`, a live "N selected" badge, Confirm (emits `{ kind: "features_selected", selected }`
+    verdict) and Reject buttons. `verdictSummary` in interactions.ts handles the new kind.
+  - **Multi-question surveys** — `surveys` table + nullable `survey_id` FK on `items` (additive
+    migration, no existing rows touched). Four new routes: `POST /api/surveys` (create),
+    `GET /api/surveys/:id` (fetch with items), `POST /api/surveys/:id/items` (add question),
+    `GET /api/surveys` (list). `SurveyView` stepped UI: one question per screen, back/next
+    navigation, progress indicator (`Question N of M`), submit on the final step.
+
 - **Register a new project from the API/UI** (`POST /api/projects`, an `AddProjectForm` in the
   Projects tab): names a project, points it at a repo path on disk, persists it to
   `.pHive/consus-projects.json`, and runs an immediate scan.

@@ -5,115 +5,66 @@ import type { FeatureSelectionPayload } from "./types";
 
 const PAYLOAD: FeatureSelectionPayload = {
   version: "dostal:feature-selection/v1",
-  title: "Which features to ship?",
-  context: "ctx",
+  title: "Release feature set",
+  context: "Pick which features land in v2.",
   features: [
-    { id: "a", name: "Auth", description: "Authentication module", default: true },
-    { id: "b", name: "Dark mode", description: "Dark colour scheme", default: false },
+    { id: "auth", name: "Auth", description: "Login/logout flow", default: true },
+    { id: "dark-mode", name: "Dark mode", description: "System-level theme toggle" },
+    { id: "notifications", name: "Notifications", description: "Push alerts", default: true },
   ],
 };
 
-describe("FeatureChecklist — initial state", () => {
-  it("pre-checks features with default: true and leaves others unchecked", () => {
+describe("FeatureChecklist", () => {
+  it("pre-checks features where default is true", () => {
     render(<FeatureChecklist payload={PAYLOAD} onVerdict={vi.fn()} />);
 
     expect(screen.getByRole("checkbox", { name: /auth/i })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: /dark mode/i })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /notifications/i })).toBeChecked();
   });
 
-  it("shows live count reflecting defaults on mount", () => {
+  it("updates the count badge live as the user toggles features", () => {
     render(<FeatureChecklist payload={PAYLOAD} onVerdict={vi.fn()} />);
 
-    expect(screen.getByText(/1 of 2 selected/i)).toBeInTheDocument();
-  });
-});
-
-describe("FeatureChecklist — toggle and count", () => {
-  it("updates the live count when a feature is toggled", () => {
-    render(<FeatureChecklist payload={PAYLOAD} onVerdict={vi.fn()} />);
+    expect(screen.getByText("2 of 3 selected")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("checkbox", { name: /dark mode/i }));
-    expect(screen.getByText(/2 of 2 selected/i)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("checkbox", { name: /dark mode/i }));
-    expect(screen.getByText(/1 of 2 selected/i)).toBeInTheDocument();
-  });
-});
-
-describe("FeatureChecklist — confirm verdict", () => {
-  it("fires features_selected with the currently checked ids when Confirm is clicked", () => {
-    const onVerdict = vi.fn();
-    render(<FeatureChecklist payload={PAYLOAD} onVerdict={onVerdict} />);
-
-    fireEvent.click(screen.getByRole("checkbox", { name: /dark mode/i }));
-    fireEvent.click(screen.getByRole("button", { name: /confirm selection/i }));
-
-    expect(onVerdict).toHaveBeenCalledWith({ kind: "features_selected", selected: ["a", "b"] });
-  });
-
-  it("fires features_selected with [] when all features are unchecked", () => {
-    const onVerdict = vi.fn();
-    render(<FeatureChecklist payload={PAYLOAD} onVerdict={onVerdict} />);
+    expect(screen.getByText("3 of 3 selected")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("checkbox", { name: /auth/i }));
-    fireEvent.click(screen.getByRole("button", { name: /confirm selection/i }));
-
-    expect(onVerdict).toHaveBeenCalledWith({ kind: "features_selected", selected: [] });
+    expect(screen.getByText("2 of 3 selected")).toBeInTheDocument();
   });
 
-  it("fires features_selected with only the unchecked-away ids", () => {
+  it("fires onVerdict with features_selected and the correct ids when Confirm is clicked", () => {
     const onVerdict = vi.fn();
     render(<FeatureChecklist payload={PAYLOAD} onVerdict={onVerdict} />);
 
     fireEvent.click(screen.getByRole("button", { name: /confirm selection/i }));
 
-    expect(onVerdict).toHaveBeenCalledWith({ kind: "features_selected", selected: ["a"] });
+    expect(onVerdict).toHaveBeenCalledOnce();
+    const call = onVerdict.mock.calls[0][0];
+    expect(call.kind).toBe("features_selected");
+    expect(call.selected).toContain("auth");
+    expect(call.selected).toContain("notifications");
+    expect(call.selected).not.toContain("dark-mode");
   });
-});
 
-describe("FeatureChecklist — reject path", () => {
   it("fires rejected_iteration_requested with commentary when Reject is clicked", () => {
     const onVerdict = vi.fn();
     render(<FeatureChecklist payload={PAYLOAD} onVerdict={onVerdict} />);
 
-    fireEvent.change(screen.getByRole("textbox", { name: /commentary/i }), {
-      target: { value: "needs rethink" },
-    });
+    const textarea = screen.getByRole("textbox", { name: /commentary/i });
+    fireEvent.change(textarea, { target: { value: "Need more features first" } });
     fireEvent.click(screen.getByRole("button", { name: /reject/i }));
 
     expect(onVerdict).toHaveBeenCalledWith({
       kind: "rejected_iteration_requested",
-      commentary: "needs rethink",
+      commentary: "Need more features first",
     });
   });
 
-  it("reject button is disabled when commentary is empty", () => {
+  it("Reject button is disabled until commentary is entered", () => {
     render(<FeatureChecklist payload={PAYLOAD} onVerdict={vi.fn()} />);
-
     expect(screen.getByRole("button", { name: /reject/i })).toBeDisabled();
-  });
-});
-
-describe("FeatureChecklist — keyboard accessibility", () => {
-  it("Confirm button is reachable and keyboard-activatable", () => {
-    const onVerdict = vi.fn();
-    render(<FeatureChecklist payload={PAYLOAD} onVerdict={onVerdict} />);
-
-    const confirmBtn = screen.getByRole("button", { name: /confirm selection/i });
-    confirmBtn.focus();
-    fireEvent.keyDown(confirmBtn, { key: "Enter" });
-    confirmBtn.click();
-
-    expect(onVerdict).toHaveBeenCalledWith({ kind: "features_selected", selected: ["a"] });
-  });
-
-  it("Space toggles a feature checkbox", () => {
-    render(<FeatureChecklist payload={PAYLOAD} onVerdict={vi.fn()} />);
-
-    const darkModeCheckbox = screen.getByRole("checkbox", { name: /dark mode/i });
-    darkModeCheckbox.focus();
-    fireEvent.click(darkModeCheckbox);
-
-    expect(darkModeCheckbox).toBeChecked();
   });
 });

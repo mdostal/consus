@@ -175,6 +175,16 @@ export function runMigration(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_attachments_item_id ON attachments(item_id);
+
+    -- s5-survey-grouping: a named container that groups multiple decision
+    -- records into a single answering session. Created by POST /api/surveys;
+    -- items link back via the nullable survey_id FK added below.
+    CREATE TABLE IF NOT EXISTS surveys (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT,
+      created_at TEXT NOT NULL
+    );
   `);
 
   // Guarded ALTER TABLE for columns added after a table already existed on
@@ -215,4 +225,8 @@ export function runMigration(db: Database.Database): void {
   );
 
   db.exec("CREATE INDEX IF NOT EXISTS idx_kb_entries_collection ON kb_entries(collection)");
+
+  // s5-survey-grouping: nullable FK linking a decision item to a survey.
+  // NULL means "not part of any survey" — existing rows are untouched.
+  addColumnIfMissing(db, "items", "survey_id", "TEXT REFERENCES surveys(id)");
 }
