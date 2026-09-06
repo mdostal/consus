@@ -155,7 +155,7 @@ supplies — it does not compose or classify the payload itself.
 
 **Request body:** `{ "id": string, "title": string, "source_repo"?: string, "decision_payload": DecisionPayload }`.
 `id` is caller-supplied and required (never server-generated). `decision_payload` must already be
-a valid object of one of four supported `version`s (`server/decision-contract/parser.ts`):
+a valid object of one of seven supported `version`s (`server/decision-contract/parser.ts`):
 - `"dostal:decision-request/v1"` — `options` with at least 2 entries, `recommended` matching one
   of `options[].id`.
 - `"dostal:feature-selection/v1"` — `features` with at least 1 entry.
@@ -164,6 +164,14 @@ a valid object of one of four supported `version`s (`server/decision-contract/pa
 - `"dostal:cba/v1"` (s4-edit-and-cba-answer-shapes) — `options` with at least 1 entry, each
   `{ option: string, cost: string, benefit: string, notes?: string }`; renders as a structured
   comparison table only (no computation/recommendation engine).
+- `"dostal:free-text/v1"` (s5-freetext-rating-ranking-answer-shapes) — `prompt`, a non-empty string;
+  renders as a single open-ended text response control.
+- `"dostal:rating/v1"` (s5-freetext-rating-ranking-answer-shapes) — `prompt` (non-empty string) and
+  `scale: { min: number, max: number, labels?: Record<number, string> }` with `min` less than `max`;
+  renders as a numeric rating scale, one button per value, using `labels[value]` where given.
+- `"dostal:ranking/v1"` (s5-freetext-rating-ranking-answer-shapes) — `prompt` (non-empty string) and
+  `items` with at least 1 entry, each `{ id: string, label: string }`; renders as a drag-to-reorder
+  list (with an up/down-button fallback).
 
 **Response 201:** the created item, same shape `GET /api/decisions` returns for it (`id`, `type`,
 `title`, `status`, `source_repo`, `decided_at`, `decision_payload` parsed, `decision_type`,
@@ -197,6 +205,10 @@ summarizing the verdict.
 { "kind": "option_chosen", "optionId": "A" }
 { "kind": "mix", "optionIds": ["A", "B"], "why": "..." }
 { "kind": "rejected_iteration_requested", "commentary": "..." }
+{ "kind": "features_selected", "selected": ["dark-mode", "oauth"] }
+{ "kind": "text_response", "text": "..." }
+{ "kind": "rated", "value": 4 }
+{ "kind": "ranked", "order": ["item-a", "item-b"] }
 ```
 
 **Response 200:** `{ "ok": true, "status": "done"|"in_progress", "decided_at": string|null }`.

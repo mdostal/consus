@@ -1,7 +1,15 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AnswerControl } from "./AnswerControl";
-import type { CbaPayload, DecisionPayload, EditProposalPayload, FeatureSelectionPayload } from "./types";
+import type {
+  CbaPayload,
+  DecisionPayload,
+  EditProposalPayload,
+  FeatureSelectionPayload,
+  FreeTextPayload,
+  RankingPayload,
+  RatingPayload,
+} from "./types";
 
 const PAYLOAD: DecisionPayload = {
   version: "dostal:decision-request/v1",
@@ -115,6 +123,58 @@ describe("AnswerControl", () => {
       expect(screen.getByRole("table", { name: /cost\/benefit comparison/i })).toBeInTheDocument();
       expect(screen.getByText("Buy")).toBeInTheDocument();
       expect(screen.getByText("$50k/yr")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^mix$/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("s5-freetext-rating-ranking-answer-shapes dispatch", () => {
+    const FREE_TEXT_PAYLOAD: FreeTextPayload = {
+      version: "dostal:free-text/v1",
+      title: "Feedback",
+      context: "Wrap-up.",
+      prompt: "Anything else?",
+    };
+
+    const RATING_PAYLOAD: RatingPayload = {
+      version: "dostal:rating/v1",
+      title: "Rate it",
+      context: "How'd it go?",
+      prompt: "Rate 1-5",
+      scale: { min: 1, max: 5 },
+    };
+
+    const RANKING_PAYLOAD: RankingPayload = {
+      version: "dostal:ranking/v1",
+      title: "Rank it",
+      context: "Order these.",
+      prompt: "Drag to rank",
+      items: [
+        { id: "a", label: "Option A" },
+        { id: "b", label: "Option B" },
+      ],
+    };
+
+    it("dispatches a free-text/v1 payload to a text response control, not the generic options fallback", () => {
+      render(<AnswerControl payload={FREE_TEXT_PAYLOAD} onVerdict={vi.fn()} />);
+
+      expect(screen.getByRole("textbox", { name: /anything else/i })).toBeInTheDocument();
+      expect(screen.queryByTestId("recommended-badge")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^mix$/i })).not.toBeInTheDocument();
+    });
+
+    it("dispatches a rating/v1 payload to a rating scale control, not the generic options fallback", () => {
+      render(<AnswerControl payload={RATING_PAYLOAD} onVerdict={vi.fn()} />);
+
+      expect(screen.getByRole("button", { name: "3" })).toBeInTheDocument();
+      expect(screen.queryByTestId("recommended-badge")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^mix$/i })).not.toBeInTheDocument();
+    });
+
+    it("dispatches a ranking/v1 payload to a drag-to-reorder list, not the generic options fallback", () => {
+      render(<AnswerControl payload={RANKING_PAYLOAD} onVerdict={vi.fn()} />);
+
+      expect(screen.getByTestId("ranking-list")).toBeInTheDocument();
+      expect(screen.getByText("Option A")).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /^mix$/i })).not.toBeInTheDocument();
     });
   });
