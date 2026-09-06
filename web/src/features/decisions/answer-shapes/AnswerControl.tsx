@@ -15,9 +15,10 @@ export interface AnswerControlProps {
  * Never a lone generic "Approve" button standing in for an actual decision.
  */
 export function AnswerControl({ payload, onVerdict }: AnswerControlProps) {
-  if (payload.version === "dostal:feature-selection/v1") {
-    return <FeatureChecklist payload={payload} onVerdict={onVerdict} />;
-  }
+  // Hooks must run unconditionally on every render (Rules of Hooks) --
+  // declared before the feature-selection/v1 early return below, not after
+  // it, so this component's hook order never depends on which payload
+  // version it's rendering.
   const [mixSelected, setMixSelected] = useState<string[]>([]);
   const [mixWhy, setMixWhy] = useState("");
   const [rejectCommentary, setRejectCommentary] = useState("");
