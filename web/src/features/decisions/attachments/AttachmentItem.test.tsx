@@ -13,6 +13,16 @@ const ATTACHMENT: Attachment = {
   created_at: "2026-08-12T00:00:00Z",
 };
 
+const IMAGE_ATTACHMENT: Attachment = {
+  id: "att-2",
+  item_id: "item-1",
+  file_name: "screenshot.png",
+  mime_type: "image/png",
+  size: 4096,
+  actor: "Mathew",
+  created_at: "2026-08-12T00:00:00Z",
+};
+
 describe("AttachmentItem", () => {
   it("renders the file name, a type indicator, and a human-readable size", () => {
     render(<AttachmentItem attachment={ATTACHMENT} onDelete={vi.fn()} isDeleting={false} />);
@@ -52,5 +62,34 @@ describe("AttachmentItem", () => {
 
     expect(onDelete).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: /delete spec\.pdf/i })).toBeInTheDocument();
+  });
+
+  it("renders an inline <img> preview for image mime types, sourced from the attachment endpoint", () => {
+    render(<AttachmentItem attachment={IMAGE_ATTACHMENT} onDelete={vi.fn()} isDeleting={false} />);
+
+    const img = screen.getByRole("img", { name: "screenshot.png" }) as HTMLImageElement;
+    expect(img.getAttribute("src")).toBe("/api/attachments/att-2");
+    expect(screen.queryByText("PNG")).not.toBeInTheDocument();
+  });
+
+  it("leaves non-image mime types rendering the existing pill+download markup, with no <img>", () => {
+    render(<AttachmentItem attachment={ATTACHMENT} onDelete={vi.fn()} isDeleting={false} />);
+
+    expect(screen.getByText("PDF")).toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /download spec\.pdf/i }) as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe("/api/attachments/att-1");
+  });
+
+  it("falls back to the pill+download rendering when the image preview fails to load", () => {
+    render(<AttachmentItem attachment={IMAGE_ATTACHMENT} onDelete={vi.fn()} isDeleting={false} />);
+
+    const img = screen.getByRole("img", { name: "screenshot.png" });
+    fireEvent.error(img);
+
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.getByText("PNG")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /download screenshot\.png/i }) as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe("/api/attachments/att-2");
   });
 });
