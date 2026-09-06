@@ -1316,6 +1316,21 @@ body {
   color: var(--consus-ink-muted);
   white-space: nowrap;
 }
+/* s3 (consus-phase28-interaction-completeness): folded-in indicator that a
+ * feature has an associated .pHive/design/ topic (wireframes/brief) — never
+ * a separate nav item, just a small badge on the existing feature row. */
+.feature-browser__design-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: calc(999px * var(--consus-radius-scale, 1));
+  color: var(--consus-accent);
+  border: 1px solid color-mix(in srgb, var(--consus-accent) 45%, transparent);
+  background: color-mix(in srgb, var(--consus-accent) 10%, transparent);
+  white-space: nowrap;
+}
 /* The Overview section is deliberately visually distinct from the
  * per-feature list above — a muted, quieter card style, since it holds
  * repo-meta docs (README/VISION/docs/**) rather than epics. */
@@ -1375,6 +1390,19 @@ body {
 }
 .feature-detail-view__doc-head .feature-detail-view__doc-path {
   flex: 1;
+}
+.feature-detail-view__design-badge {
+  margin-left: 8px;
+  font-family: var(--consus-font-ui);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: calc(999px * var(--consus-radius-scale, 1));
+  color: var(--consus-accent);
+  border: 1px solid color-mix(in srgb, var(--consus-accent) 45%, transparent);
+  background: color-mix(in srgb, var(--consus-accent) 10%, transparent);
 }
 .feature-detail-view__doc-review-actions {
   display: flex;

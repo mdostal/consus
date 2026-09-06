@@ -751,3 +751,63 @@ describe("GET /api/docs/diff", () => {
     }
   });
 });
+
+describe("GET /api/docs/features — .pHive/design/ fold-in (s3 of consus-phase28-interaction-completeness)", () => {
+  let repoDir: string;
+  let db: Database.Database;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    repoDir = mkdtempSync(join(tmpdir(), "consus-repo-design-fold-"));
+    mkdirSync(join(repoDir, ".pHive", "epics", "checkout-flow", "docs"), { recursive: true });
+    writeFileSync(
+      join(repoDir, ".pHive", "epics", "checkout-flow", "docs", "architecture.md"),
+      "# Architecture\n",
+    );
+    mkdirSync(join(repoDir, ".pHive", "design", "checkout-flow"), { recursive: true });
+    writeFileSync(join(repoDir, ".pHive", "design", "checkout-flow", "brief.md"), "# Brief\n");
+    // A design-only topic with no matching code epic yet — still surfaced
+    // as its own feature entry, never dropped.
+    mkdirSync(join(repoDir, ".pHive", "design", "design-only-topic"), { recursive: true });
+    writeFileSync(join(repoDir, ".pHive", "design", "design-only-topic", "brief.md"), "# Design only\n");
+
+    db = new Database(":memory:");
+    runMigration(db);
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
+
+    app = Fastify();
+    registerDocRoutes(app, { db, repos: { consus: repoDir } });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+    rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it("folds a design topic's docs into the matching feature's docs, alongside its code docs, without a separate bucket", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/docs/features?project=consus" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+
+    const checkoutFlow = body.features.find((f: { epic: string }) => f.epic === "checkout-flow");
+    expect(checkoutFlow).toBeDefined();
+    expect(checkoutFlow.docCount).toBe(2);
+    const paths = checkoutFlow.docs.map((d: { file_path: string }) => d.file_path).sort();
+    expect(paths).toEqual([
+      join(".pHive", "design", "checkout-flow", "brief.md"),
+      join(".pHive", "epics", "checkout-flow", "docs", "architecture.md"),
+    ]);
+  });
+
+  it("surfaces a design-only topic (no matching code epic) as its own feature entry", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/docs/features?project=consus" });
+    const body = res.json();
+
+    const designOnly = body.features.find((f: { epic: string }) => f.epic === "design-only-topic");
+    expect(designOnly).toBeDefined();
+    expect(designOnly.docCount).toBe(1);
+    expect(designOnly.docs[0].file_path).toBe(join(".pHive", "design", "design-only-topic", "brief.md"));
+  });
+});

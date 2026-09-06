@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { marked } from "marked";
+import { marked, Renderer } from "marked";
 import { AuditPanel, type AuditTrailEntry } from "../audit/AuditPanel";
 import { VisualDiff, parseLineDiff } from "../diff/VisualDiff";
 import { computeLineDiff } from "./textDiff";
@@ -21,6 +21,15 @@ export interface DocRendererProps {
   /** s5: history for this doc's item (audit_log + proposals), via the
    *  shared AuditPanel. Omit to keep the panel hidden. */
   auditEntries?: AuditTrailEntry[];
+  /** s3 (consus-phase28-interaction-completeness): rewrites a markdown
+   *  image's `src` before rendering — the seam FeatureDetailView uses to
+   *  point a design topic's wireframe references (e.g. `![](v1.png)`) at
+   *  GET /api/design-assets instead of a bare relative URL the browser
+   *  could never resolve. Omit (the default, every pre-existing caller) to
+   *  render images with their literal markdown src, unchanged. Only
+   *  consulted when `format === "md"` — html docs are passed through
+   *  verbatim as before. */
+  resolveImageSrc?: (src: string) => string;
 }
 
 interface SectionState {
@@ -77,11 +86,24 @@ export function DocRenderer({
   pendingProposal,
   proposalFailureReason,
   auditEntries,
+  resolveImageSrc,
 }: DocRendererProps) {
-  const html = useMemo(() => (format === "md" ? (marked.parse(content, { async: false }) as string) : content), [
-    format,
-    content,
-  ]);
+  const html = useMemo(() => {
+    if (format !== "md") return content;
+
+    // resolveImageSrc rewrites only the `href` of an <img> — title/text are
+    // passed through to the default renderer's own image() untouched, so
+    // alt text/title behavior is identical to the no-resolver case.
+    if (!resolveImageSrc) {
+      return marked.parse(content, { async: false }) as string;
+    }
+
+    const renderer = new Renderer();
+    const defaultImage = renderer.image.bind(renderer);
+    renderer.image = (token) => defaultImage({ ...token, href: resolveImageSrc(token.href) });
+
+    return marked.parse(content, { async: false, renderer }) as string;
+  }, [format, content, resolveImageSrc]);
 
   const sections = useMemo(() => splitIntoSections(content), [content]);
   const [sectionStates, setSectionStates] = useState<SectionState[]>(() => sections.map(initialSectionState));

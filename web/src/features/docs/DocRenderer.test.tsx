@@ -28,6 +28,44 @@ describe("DocRenderer", () => {
   });
 });
 
+describe("DocRenderer — resolveImageSrc (s3 of consus-phase28-interaction-completeness)", () => {
+  it("rewrites a markdown image's src through resolveImageSrc when supplied", () => {
+    render(
+      <DocRenderer
+        format="md"
+        content={"![a wireframe](v1.png)"}
+        resolveImageSrc={(src) => `/api/design-assets?repo=consus&path=${encodeURIComponent(`.pHive/design/topic/${src}`)}`}
+      />,
+    );
+
+    const img = screen.getByRole("img", { name: "a wireframe" });
+    expect(img).toHaveAttribute(
+      "src",
+      "/api/design-assets?repo=consus&path=" + encodeURIComponent(".pHive/design/topic/v1.png"),
+    );
+  });
+
+  it("renders the literal markdown src unchanged when resolveImageSrc is not supplied (every pre-existing caller)", () => {
+    render(<DocRenderer format="md" content={"![a wireframe](v1.png)"} />);
+
+    const img = screen.getByRole("img", { name: "a wireframe" });
+    expect(img).toHaveAttribute("src", "v1.png");
+  });
+
+  it("does not touch html-format docs even when resolveImageSrc is supplied", () => {
+    render(
+      <DocRenderer
+        format="html"
+        content={'<img src="v1.png" alt="a wireframe" />'}
+        resolveImageSrc={(src) => `/rewritten/${src}`}
+      />,
+    );
+
+    const img = screen.getByRole("img", { name: "a wireframe" });
+    expect(img).toHaveAttribute("src", "v1.png");
+  });
+});
+
 describe("DocRenderer — propose a change (s5/p8-02)", () => {
   it("shows a pending indicator while a proposal is in flight", () => {
     render(<DocRenderer format="md" content="hello" onProposeChange={vi.fn()} pendingProposal />);

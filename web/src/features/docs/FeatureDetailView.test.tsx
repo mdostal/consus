@@ -385,3 +385,94 @@ describe("FeatureDetailView — approve/deny/request-change (s4)", () => {
     expect(within(section).getByText(/TIMEOUT/)).toBeInTheDocument();
   });
 });
+
+describe("FeatureDetailView — design topic docs (s3 of consus-phase28-interaction-completeness)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const CODE_AND_DESIGN_DOCS: FeatureDoc[] = [
+    {
+      repo: "consus",
+      file_path: ".pHive/epics/checkout-flow/docs/architecture.md",
+      content_hash: "abc",
+      last_scanned_at: "2026-07-25T00:00:00Z",
+    },
+    {
+      repo: "consus",
+      file_path: ".pHive/design/checkout-flow/brief.md",
+      content_hash: "def",
+      last_scanned_at: "2026-07-25T00:00:00Z",
+    },
+  ];
+
+  it("renders a design topic's docs alongside the feature's code docs on the same screen, with a Design badge", async () => {
+    vi.stubGlobal(
+      "fetch",
+      fetchMockFor({
+        ".pHive/epics/checkout-flow/docs/architecture.md": { format: "md", content: "# Architecture" },
+        ".pHive/design/checkout-flow/brief.md": { format: "md", content: "# Wireframe Brief" },
+      }),
+    );
+
+    render(<FeatureDetailView epic="checkout-flow" docs={CODE_AND_DESIGN_DOCS} onBack={vi.fn()} />);
+
+    expect(await screen.findByRole("heading", { name: "Architecture" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Wireframe Brief" })).toBeInTheDocument();
+
+    const designSection = screen.getByTestId("feature-doc-.pHive/design/checkout-flow/brief.md");
+    expect(within(designSection).getByText("Design")).toBeInTheDocument();
+
+    const codeSection = screen.getByTestId("feature-doc-.pHive/epics/checkout-flow/docs/architecture.md");
+    expect(within(codeSection).queryByText("Design")).not.toBeInTheDocument();
+  });
+
+  it("rewrites a design doc's markdown image src to GET /api/design-assets, resolved relative to the doc's own directory", async () => {
+    vi.stubGlobal(
+      "fetch",
+      fetchMockFor({
+        ".pHive/design/checkout-flow/brief.md": {
+          format: "md",
+          content: "# Wireframe Brief\n\n![the wireframe](v1.png)",
+        },
+      }),
+    );
+
+    render(
+      <FeatureDetailView
+        epic="checkout-flow"
+        docs={[CODE_AND_DESIGN_DOCS[1]]}
+        onBack={vi.fn()}
+      />,
+    );
+
+    const img = await screen.findByRole("img", { name: "the wireframe" });
+    expect(img).toHaveAttribute(
+      "src",
+      "/api/design-assets?repo=consus&path=" + encodeURIComponent(".pHive/design/checkout-flow/v1.png"),
+    );
+  });
+
+  it("does not apply image-src rewriting or the Design badge to an ordinary code doc", async () => {
+    vi.stubGlobal(
+      "fetch",
+      fetchMockFor({
+        ".pHive/epics/checkout-flow/docs/architecture.md": {
+          format: "md",
+          content: "# Architecture\n\n![a diagram](diagram.png)",
+        },
+      }),
+    );
+
+    render(
+      <FeatureDetailView
+        epic="checkout-flow"
+        docs={[CODE_AND_DESIGN_DOCS[0]]}
+        onBack={vi.fn()}
+      />,
+    );
+
+    const img = await screen.findByRole("img", { name: "a diagram" });
+    expect(img).toHaveAttribute("src", "diagram.png");
+  });
+});

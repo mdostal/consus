@@ -1,3 +1,5 @@
+import { isDesignDoc } from "./designAssets";
+
 /**
  * s3 (consus-phase27-feature-doc-review-ui): the feature list this story
  * replaces DocBrowser.tsx's flat repo -> phase -> <doc rows> tree with.
@@ -50,16 +52,30 @@ export function FeatureBrowser({ features, overview, onSelectFeature, onOpenDoc 
           <p className="feature-browser__empty">No feature docs indexed yet.</p>
         ) : (
           <ul>
-            {features.map((feature) => (
-              <li key={feature.epic}>
-                <button type="button" onClick={() => onSelectFeature(feature)}>
-                  <span className="feature-browser__epic">{feature.epic}</span>
-                  <span className="feature-browser__count">
-                    {feature.docCount} {feature.docCount === 1 ? "doc" : "docs"}
-                  </span>
-                </button>
-              </li>
-            ))}
+            {features.map((feature) => {
+              // s3 (consus-phase28-interaction-completeness): a design topic
+              // whose name matches this feature's epic already lands in
+              // feature.docs (GET /api/docs/features groups by epic
+              // regardless of phase) — surfaced here as a small badge so a
+              // feature with wireframes is visible from the list itself,
+              // folded in rather than broken out as a separate nav item.
+              const hasDesignDocs = feature.docs.some((doc) => isDesignDoc(doc.file_path));
+              return (
+                <li key={feature.epic}>
+                  <button type="button" onClick={() => onSelectFeature(feature)}>
+                    <span className="feature-browser__epic">{feature.epic}</span>
+                    {hasDesignDocs ? (
+                      <span className="feature-browser__design-badge" title="Has .pHive/design/ wireframes">
+                        Design
+                      </span>
+                    ) : null}
+                    <span className="feature-browser__count">
+                      {feature.docCount} {feature.docCount === 1 ? "doc" : "docs"}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
