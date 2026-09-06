@@ -248,6 +248,79 @@ describe("POST /api/decisions", () => {
       expect(found.decision_payload.version).toBe("dostal:feature-selection/v1");
     });
   });
+
+  it("round-trips research[] losslessly: POST with research[] then GET returns research[] intact", async () => {
+    const payloadWithResearch = {
+      ...VALID_PAYLOAD,
+      research: [
+        { title: "Architecture survey", body: "We evaluated three approaches.", sources: ["https://example.com/ref"] },
+        { title: "Prior art", body: "Similar systems omit caching at this layer." },
+      ],
+    };
+    const postRes = await post({ id: "research-roundtrip", title: "Research round-trip", decision_payload: payloadWithResearch });
+    expect(postRes.statusCode).toBe(201);
+
+    const getRes = await app.inject({ method: "GET", url: "/api/decisions" });
+    const items = getRes.json();
+    const item = items.find((i: { id: string }) => i.id === "research-roundtrip");
+    expect(item?.decision_payload?.research).toEqual(payloadWithResearch.research);
+  });
+});
+
+describe("POST /api/decisions — feature-selection/v1", () => {
+  let db: Database.Database;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    runMigration(db);
+    app = Fastify();
+    registerDecisionRoutes(app, { db });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+  });
+
+  const VALID_FEATURE_PAYLOAD = {
+    version: "dostal:feature-selection/v1" as const,
+    title: "Release feature set",
+    context: "Pick which features land in v2.",
+    features: [
+      { id: "auth", name: "Auth", description: "Login/logout flow", default: true },
+      { id: "dark-mode", name: "Dark mode", description: "System-level theme toggle" },
+    ],
+  };
+
+  function post(body: unknown) {
+    return app.inject({ method: "POST", url: "/api/decisions", payload: body });
+  }
+
+  it("accepts a valid feature-selection/v1 payload and returns 201", async () => {
+    const res = await post({ id: "fs-1", title: "Feature set", decision_payload: VALID_FEATURE_PAYLOAD });
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    expect(body.id).toBe("fs-1");
+    expect(body.decision_payload).toMatchObject({ version: "dostal:feature-selection/v1" });
+  });
+
+  it("rejects a feature-selection/v1 payload with an empty features array", async () => {
+    const res = await post({
+      id: "fs-bad",
+      title: "t",
+      decision_payload: { ...VALID_FEATURE_PAYLOAD, features: [] },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/feature/i);
+  });
+
+  it("all existing decision-request/v1 behavior unchanged", async () => {
+    const v1Payload = JSON.parse(PAYLOAD);
+    const res = await post({ id: "v1-still-works", title: "A/B decision", decision_payload: v1Payload });
+    expect(res.statusCode).toBe(201);
+  });
 });
 
 describe("GET /api/decisions classification backfill", () => {

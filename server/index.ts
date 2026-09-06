@@ -17,6 +17,7 @@ import { registerDiagramRoutes } from "./routes/diagrams.js";
 import { registerAuditTrailRoutes } from "./routes/audit-trail.js";
 import { registerEventRoutes } from "./routes/events.js";
 import { registerAttachmentRoutes } from "./routes/attachments.js";
+import { registerSurveyRoutes } from "./routes/surveys.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
 import { StdioHarnessTransport, NOOP_HARNESS_TRANSPORT, type HarnessTransport } from "./harness/transport.js";
 import { createStorageAdapter } from "./storage/index.js";
@@ -87,6 +88,7 @@ export function buildServer({
   registerAuditTrailRoutes(app, { db });
   registerEventRoutes(app, { db, repos, transport });
   registerAttachmentRoutes(app, { db, storageAdapter });
+  registerSurveyRoutes(app, { db });
 
   // Serves the built web SPA (mdostal/consus#105 — previously GET / was a
   // bare 404, so none of the app's own UI was ever reachable through this

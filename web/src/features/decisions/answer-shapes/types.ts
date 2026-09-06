@@ -16,6 +16,23 @@ export interface DecisionDocPointer {
   ref?: string;
 }
 
+export interface ResearchSection {
+  title: string;
+  body: string;
+  sources?: string[];
+}
+
+export interface DecisionPayload {
+  version: "dostal:decision-request/v1";
+  title: string;
+  context: string;
+  options: DecisionOption[];
+  recommended: string;
+  diagram?: boolean;
+  doc?: DecisionDocPointer;
+  research?: ResearchSection[];
+}
+
 export interface FeatureOption {
   id: string;
   name: string;
@@ -28,17 +45,7 @@ export interface FeatureSelectionPayload {
   title: string;
   context: string;
   features: FeatureOption[];
-  research?: { title: string; body: string; sources?: string[] }[];
-}
-
-export interface DecisionPayload {
-  version: "dostal:decision-request/v1";
-  title: string;
-  context: string;
-  options: DecisionOption[];
-  recommended: string;
-  diagram?: boolean;
-  doc?: DecisionDocPointer;
+  research?: ResearchSection[];
 }
 
 export type Verdict =

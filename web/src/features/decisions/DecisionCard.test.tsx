@@ -81,4 +81,29 @@ describe("DecisionCard", () => {
     expect(onVerdict).toHaveBeenCalledWith({ kind: "accepted" });
   });
 
+  it("renders research sections inline between recommendation and options when payload.research is non-empty", () => {
+    const payloadWithResearch = {
+      ...PAYLOAD,
+      research: [
+        { title: "Performance benchmarks", body: "Service A is 2× faster under load.", sources: ["bench.md"] },
+        { title: "Cost analysis", body: "Option B costs 30% more per month." },
+      ],
+    };
+
+    render(<DecisionCard question="q" payload={payloadWithResearch} onVerdict={vi.fn()} />);
+
+    expect(screen.getByLabelText("Research findings")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Performance benchmarks" })).toBeInTheDocument();
+    expect(screen.getByText("Service A is 2× faster under load.")).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Sources" })).toBeInTheDocument();
+    expect(screen.getByText("bench.md")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Cost analysis" })).toBeInTheDocument();
+  });
+
+  it("omits the research block entirely when payload.research is absent", () => {
+    render(<DecisionCard question="q" payload={PAYLOAD} onVerdict={vi.fn()} />);
+
+    expect(screen.queryByLabelText("Research findings")).not.toBeInTheDocument();
+  });
+
 });

@@ -103,6 +103,19 @@ describe("POST /api/projects/:project/ingest", () => {
     expect(res.json()).toEqual({ error: "unknown project: does-not-exist" });
   });
 
+  // PANT-58 crash-repro: a project IS registered (path in repos map) but the directory
+  // has been deleted from disk. Before this fix, scanRepo received the bad path and
+  // crashed Consus with a native Node assertion failure (the real 2026-08-31 502 incident).
+  it("returns 404 cleanly when the registered path does not exist on disk (crash-repro, PANT-58)", async () => {
+    // Remove the real repoDir to simulate a mounted path that has since disappeared
+    rmSync(repoDir, { recursive: true, force: true });
+
+    const res = await app.inject({ method: "POST", url: "/api/projects/consus/ingest" });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toMatchObject({ error: expect.stringContaining("not yet mounted") });
+  });
+
   it("AC11: produces the same events (trigger_kinds + count) as scan-all would for this one project — both share detectEvents", async () => {
     writeFileSync(
       join(repoDir, ".pHive", "planning", "decision.md"),

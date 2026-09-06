@@ -8,7 +8,7 @@ export interface FeatureChecklistProps {
 
 export function FeatureChecklist({ payload, onVerdict }: FeatureChecklistProps) {
   const [checked, setChecked] = useState<Set<string>>(
-    () => new Set(payload.features.filter((f) => f.default).map((f) => f.id))
+    () => new Set(payload.features.filter((f) => f.default).map((f) => f.id)),
   );
   const [rejectCommentary, setRejectCommentary] = useState("");
 
@@ -25,29 +25,28 @@ export function FeatureChecklist({ payload, onVerdict }: FeatureChecklistProps) 
   }
 
   return (
-    <div className="answer-control">
-      <ul className="answer-control__features">
+    <div className="feature-checklist">
+      <p className="feature-checklist__badge" aria-live="polite">
+        {checked.size} of {payload.features.length} selected
+      </p>
+
+      <ul className="feature-checklist__features">
         {payload.features.map((feature) => (
-          <li key={feature.id} className="answer-control__feature">
+          <li key={feature.id} className="feature-checklist__feature">
             <label>
               <input
                 type="checkbox"
-                aria-label={feature.name}
                 checked={checked.has(feature.id)}
                 onChange={() => toggle(feature.id)}
               />
-              <span className="answer-control__feature-name">{feature.name}</span>
+              <span className="feature-checklist__feature-name">{feature.name}</span>
             </label>
-            <span className="answer-control__feature-description">{feature.description}</span>
+            <span className="feature-checklist__feature-desc">{feature.description}</span>
           </li>
         ))}
       </ul>
 
-      <p className="answer-control__count">
-        {checked.size} of {payload.features.length} selected
-      </p>
-
-      <div className="answer-control__actions">
+      <div className="feature-checklist__actions">
         <button
           type="button"
           onClick={() => onVerdict({ kind: "features_selected", selected: [...checked] })}
@@ -55,7 +54,7 @@ export function FeatureChecklist({ payload, onVerdict }: FeatureChecklistProps) 
           Confirm selection
         </button>
 
-        <div className="answer-control__reject">
+        <div className="feature-checklist__reject">
           <textarea
             aria-label="Commentary (reject/iterate)"
             value={rejectCommentary}
@@ -64,9 +63,7 @@ export function FeatureChecklist({ payload, onVerdict }: FeatureChecklistProps) 
           <button
             type="button"
             disabled={!rejectCommentary.trim()}
-            onClick={() =>
-              onVerdict({ kind: "rejected_iteration_requested", commentary: rejectCommentary })
-            }
+            onClick={() => onVerdict({ kind: "rejected_iteration_requested", commentary: rejectCommentary })}
           >
             Reject — request iteration
           </button>
