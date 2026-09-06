@@ -321,17 +321,6 @@ export function registerProjectRoutes(
       if (!registeredPath) {
         return reply.code(404).send({ error: `unknown project: ${project}` });
       }
-      // PANT-58: gate on the path actually existing on disk before calling
-      // scanRepo. Without this check, a registered-but-unmounted path causes
-      // a native Node assertion failure inside scanRepo (the Consus 502 from
-      // 2026-08-31). The facade (core/api/repos.ts) enforces this same guard
-      // centrally; this is Consus's own call-site mirror of that contract.
-      if (!existsSync(repoPath)) {
-        return reply.code(404).send({
-          error: `repo path for project "${project}" is not yet mounted at ${repoPath} -- run the mount-generation script (PANT-57) to provision it`,
-        });
-      }
-
       // For tenant-scoped repos (path matches <reposBaseDir>/<tenant>/<repo>),
       // validate through Pantheon core-api's repo-access facade before calling
       // scanRepo. This is the PANT-58 fix: the old code passed `registeredPath`
@@ -354,6 +343,15 @@ export function registerProjectRoutes(
           return reply.code(result.status).send({ error: result.error });
         }
         repoPath = result.path;
+      } else if (!existsSync(registeredPath)) {
+        // PANT-58 (earlier, simpler fix): for non-tenant-scoped repos (no
+        // facade available to validate them centrally), gate on the path
+        // actually existing on disk before calling scanRepo. Without this
+        // check, a registered-but-unmounted path causes a native Node
+        // assertion failure inside scanRepo (the Consus 502 from 2026-08-31).
+        return reply.code(404).send({
+          error: `repo path for project "${project}" is not yet mounted at ${registeredPath} -- run the mount-generation script (PANT-57) to provision it`,
+        });
       }
 
       // s2-branch-scoped-decisions: a sibling ref-aware path on the same
