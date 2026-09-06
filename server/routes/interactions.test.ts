@@ -287,4 +287,79 @@ describe("POST /api/decisions/:id/verdict", () => {
       expect(row.decided_at).toBeNull();
     });
   });
+
+  describe("s5-freetext-rating-ranking-answer-shapes: new verdict kinds round-trip the same way", () => {
+    it("records a text_response verdict on a free-text/v1 item and marks it done", async () => {
+      insertDecisionWithPayload(db, "ft-verdict-1", "Anything else?", {
+        version: "dostal:free-text/v1",
+        title: "Anything else?",
+        context: "ctx",
+        prompt: "Share feedback",
+      });
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/decisions/ft-verdict-1/verdict",
+        payload: { verdict: { kind: "text_response", text: "Looks good" } },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ ok: true, status: "done" });
+      const row = db.prepare("SELECT status, decided_at FROM items WHERE id = 'ft-verdict-1'").get() as {
+        status: string;
+        decided_at: string;
+      };
+      expect(row.status).toBe("done");
+      expect(row.decided_at).toBeTruthy();
+      const auditRow = db
+        .prepare("SELECT new_value FROM audit_log WHERE item_id = ? AND field = 'verdict'")
+        .get("ft-verdict-1") as { new_value: string };
+      expect(JSON.parse(auditRow.new_value)).toEqual({ kind: "text_response", text: "Looks good" });
+    });
+
+    it("records a rated verdict on a rating/v1 item and marks it done", async () => {
+      insertDecisionWithPayload(db, "rt-verdict-1", "Rate the migration", {
+        version: "dostal:rating/v1",
+        title: "Rate the migration",
+        context: "ctx",
+        prompt: "Rate 1-5",
+        scale: { min: 1, max: 5 },
+      });
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/decisions/rt-verdict-1/verdict",
+        payload: { verdict: { kind: "rated", value: 4 } },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ ok: true, status: "done" });
+      const row = db.prepare("SELECT status, decided_at FROM items WHERE id = 'rt-verdict-1'").get() as {
+        status: string;
+        decided_at: string;
+      };
+      expect(row.status).toBe("done");
+      expect(row.decided_at).toBeTruthy();
+    });
+
+    it("records a ranked verdict on a ranking/v1 item and marks it done", async () => {
+      insertDecisionWithPayload(db, "rk-verdict-1", "Rank the priorities", {
+        version: "dostal:ranking/v1",
+        title: "Rank the priorities",
+        context: "ctx",
+        prompt: "Drag to rank",
+        items: [
+          { id: "perf", label: "Performance" },
+          { id: "a11y", label: "Accessibility" },
+        ],
+      });
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/decisions/rk-verdict-1/verdict",
+        payload: { verdict: { kind: "ranked", order: ["a11y", "perf"] } },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ ok: true, status: "done" });
+      const auditRow = db
+        .prepare("SELECT new_value FROM audit_log WHERE item_id = ? AND field = 'verdict'")
+        .get("rk-verdict-1") as { new_value: string };
+      expect(JSON.parse(auditRow.new_value)).toEqual({ kind: "ranked", order: ["a11y", "perf"] });
+    });
+  });
 });

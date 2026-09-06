@@ -1,11 +1,30 @@
 import { useState } from "react";
-import type { CbaPayload, DecisionPayload, EditProposalPayload, FeatureSelectionPayload, Verdict } from "./types";
+import type {
+  CbaPayload,
+  DecisionPayload,
+  EditProposalPayload,
+  FeatureSelectionPayload,
+  FreeTextPayload,
+  RankingPayload,
+  RatingPayload,
+  Verdict,
+} from "./types";
 import { FeatureChecklist } from "./FeatureChecklist";
 import { EditProposalView } from "./EditProposalView";
 import { CbaTable } from "./CbaTable";
+import { FreeTextResponse } from "./FreeTextResponse";
+import { RatingScale } from "./RatingScale";
+import { RankingList } from "./RankingList";
 
 export interface AnswerControlProps {
-  payload: DecisionPayload | FeatureSelectionPayload | EditProposalPayload | CbaPayload;
+  payload:
+    | DecisionPayload
+    | FeatureSelectionPayload
+    | EditProposalPayload
+    | CbaPayload
+    | FreeTextPayload
+    | RatingPayload
+    | RankingPayload;
   onVerdict: (verdict: Verdict) => void;
 }
 
@@ -33,6 +52,15 @@ export function AnswerControl({ payload, onVerdict }: AnswerControlProps) {
   }
   if (payload.version === "dostal:cba/v1") {
     return <CbaTable payload={payload} onVerdict={onVerdict} />;
+  }
+  if (payload.version === "dostal:free-text/v1") {
+    return <FreeTextResponse payload={payload} onVerdict={onVerdict} />;
+  }
+  if (payload.version === "dostal:rating/v1") {
+    return <RatingScale payload={payload} onVerdict={onVerdict} />;
+  }
+  if (payload.version === "dostal:ranking/v1") {
+    return <RankingList payload={payload} onVerdict={onVerdict} />;
   }
 
   function toggleMix(id: string) {

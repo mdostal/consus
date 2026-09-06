@@ -103,14 +103,71 @@ export interface CbaPayload {
   research?: ResearchSection[];
 }
 
+/**
+ * dostal:free-text/v1 (s5-freetext-rating-ranking-answer-shapes) — an
+ * open-ended free-text response. Deliberately just a prompt string; no
+ * upstream producer exists yet, same "defined from scratch" precedent as
+ * feature-selection/v1 and edit-proposal/v1.
+ */
+export interface FreeTextPayload {
+  version: "dostal:free-text/v1";
+  title: string;
+  context: string;
+  prompt: string;
+  research?: ResearchSection[];
+}
+
+/**
+ * dostal:rating/v1 (s5-freetext-rating-ranking-answer-shapes) — a
+ * numeric/star rating scale. `labels` optionally maps individual scale
+ * values (as object keys, since JSON has no numeric-keyed maps) to a
+ * human-readable label, e.g. `{ 1: "Poor", 5: "Excellent" }`.
+ */
+export interface RatingScaleConfig {
+  min: number;
+  max: number;
+  labels?: Record<number, string>;
+}
+
+export interface RatingPayload {
+  version: "dostal:rating/v1";
+  title: string;
+  context: string;
+  prompt: string;
+  scale: RatingScaleConfig;
+  research?: ResearchSection[];
+}
+
+/**
+ * dostal:ranking/v1 (s5-freetext-rating-ranking-answer-shapes) — a
+ * drag-to-reorder ranking of a fixed item list. The verdict records the
+ * item ids in the user's chosen order, not a per-item rank number.
+ */
+export interface RankingItem {
+  id: string;
+  label: string;
+}
+
+export interface RankingPayload {
+  version: "dostal:ranking/v1";
+  title: string;
+  context: string;
+  prompt: string;
+  items: RankingItem[];
+  research?: ResearchSection[];
+}
+
 export type Verdict =
   | { kind: "accepted" }
   | { kind: "option_chosen"; optionId: string }
   | { kind: "mix"; optionIds: string[]; why: string }
   | { kind: "rejected_iteration_requested"; commentary: string }
-  | { kind: "features_selected"; selected: string[] };
+  | { kind: "features_selected"; selected: string[] }
+  | { kind: "text_response"; text: string }
+  | { kind: "rated"; value: number }
+  | { kind: "ranked"; order: string[] };
 
-/** Maps a verdict to the ticket status transition (accept/choose/mix/features_selected -> done, reject -> in_progress). */
+/** Maps a verdict to the ticket status transition (accept/choose/mix/features_selected/text_response/rated/ranked -> done, reject -> in_progress). */
 export function verdictStatus(verdict: Verdict): "done" | "in_progress" {
   return verdict.kind === "rejected_iteration_requested" ? "in_progress" : "done";
 }
@@ -128,6 +185,12 @@ export function verdictSummary(verdict: Verdict): string {
       return `Requested another round — ${verdict.commentary}`;
     case "features_selected":
       return `Selected features: ${verdict.selected.join(", ")}`;
+    case "text_response":
+      return `Responded: ${verdict.text}`;
+    case "rated":
+      return `Rated ${verdict.value}.`;
+    case "ranked":
+      return `Ranked: ${verdict.order.join(" > ")}`;
   }
 }
 

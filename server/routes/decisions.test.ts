@@ -341,6 +341,152 @@ describe("POST /api/decisions", () => {
     });
   });
 
+  describe("free-text/v1 payloads (s5-freetext-rating-ranking-answer-shapes)", () => {
+    const FREE_TEXT_PAYLOAD = {
+      version: "dostal:free-text/v1" as const,
+      title: "Anything else?",
+      context: "Wrapping up the retro.",
+      prompt: "Share any additional feedback",
+    };
+
+    it("accepts and stores a free-text/v1 payload", async () => {
+      const res = await post({ id: "ft-1", title: "Free text", decision_payload: FREE_TEXT_PAYLOAD });
+      expect(res.statusCode).toBe(201);
+      const body = res.json();
+      expect(body.decision_payload).toEqual(FREE_TEXT_PAYLOAD);
+    });
+
+    it("rejects a free-text/v1 payload with an empty prompt", async () => {
+      const res = await post({
+        id: "ft-empty",
+        title: "t",
+        decision_payload: { ...FREE_TEXT_PAYLOAD, prompt: "" },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/prompt/i);
+    });
+
+    it("rejects a free-text/v1 payload with a missing prompt", async () => {
+      const { prompt: _prompt, ...withoutPrompt } = FREE_TEXT_PAYLOAD;
+      void _prompt;
+      const res = await post({ id: "ft-missing", title: "t", decision_payload: withoutPrompt });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/prompt/i);
+    });
+
+    it("free-text/v1 items show up in GET /api/decisions", async () => {
+      await post({ id: "ft-2", title: "Free text", decision_payload: FREE_TEXT_PAYLOAD });
+      const get = await app.inject({ method: "GET", url: "/api/decisions" });
+      const body = get.json();
+      const found = body.find((i: { id: string }) => i.id === "ft-2");
+      expect(found).toBeDefined();
+      expect(found.decision_payload.version).toBe("dostal:free-text/v1");
+    });
+  });
+
+  describe("rating/v1 payloads (s5-freetext-rating-ranking-answer-shapes)", () => {
+    const RATING_PAYLOAD = {
+      version: "dostal:rating/v1" as const,
+      title: "Rate the migration",
+      context: "How did the cutover go?",
+      prompt: "Rate 1-5",
+      scale: { min: 1, max: 5, labels: { 1: "Poor", 5: "Excellent" } },
+    };
+
+    it("accepts and stores a rating/v1 payload", async () => {
+      const res = await post({ id: "rt-1", title: "Rating", decision_payload: RATING_PAYLOAD });
+      expect(res.statusCode).toBe(201);
+      const body = res.json();
+      expect(body.decision_payload).toEqual(RATING_PAYLOAD);
+    });
+
+    it("rejects a rating/v1 payload with an empty prompt", async () => {
+      const res = await post({
+        id: "rt-empty-prompt",
+        title: "t",
+        decision_payload: { ...RATING_PAYLOAD, prompt: "" },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/prompt/i);
+    });
+
+    it("rejects a rating/v1 payload with invalid scale bounds (min >= max)", async () => {
+      const res = await post({
+        id: "rt-bad-scale",
+        title: "t",
+        decision_payload: { ...RATING_PAYLOAD, scale: { min: 5, max: 1 } },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/scale/i);
+    });
+
+    it("rejects a rating/v1 payload with a missing scale", async () => {
+      const { scale: _scale, ...withoutScale } = RATING_PAYLOAD;
+      void _scale;
+      const res = await post({ id: "rt-no-scale", title: "t", decision_payload: withoutScale });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/scale/i);
+    });
+
+    it("rating/v1 items show up in GET /api/decisions", async () => {
+      await post({ id: "rt-2", title: "Rating", decision_payload: RATING_PAYLOAD });
+      const get = await app.inject({ method: "GET", url: "/api/decisions" });
+      const body = get.json();
+      const found = body.find((i: { id: string }) => i.id === "rt-2");
+      expect(found).toBeDefined();
+      expect(found.decision_payload.version).toBe("dostal:rating/v1");
+    });
+  });
+
+  describe("ranking/v1 payloads (s5-freetext-rating-ranking-answer-shapes)", () => {
+    const RANKING_PAYLOAD = {
+      version: "dostal:ranking/v1" as const,
+      title: "Rank the launch priorities",
+      context: "Order matters for the roadmap.",
+      prompt: "Drag to rank",
+      items: [
+        { id: "perf", label: "Performance" },
+        { id: "a11y", label: "Accessibility" },
+      ],
+    };
+
+    it("accepts and stores a ranking/v1 payload", async () => {
+      const res = await post({ id: "rk-1", title: "Ranking", decision_payload: RANKING_PAYLOAD });
+      expect(res.statusCode).toBe(201);
+      const body = res.json();
+      expect(body.decision_payload).toEqual(RANKING_PAYLOAD);
+    });
+
+    it("rejects a ranking/v1 payload with an empty items list", async () => {
+      const res = await post({
+        id: "rk-empty",
+        title: "t",
+        decision_payload: { ...RANKING_PAYLOAD, items: [] },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/items/i);
+    });
+
+    it("rejects a ranking/v1 payload whose item entry is missing a label", async () => {
+      const res = await post({
+        id: "rk-bad-item",
+        title: "t",
+        decision_payload: { ...RANKING_PAYLOAD, items: [{ id: "perf" }] },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/items/i);
+    });
+
+    it("ranking/v1 items show up in GET /api/decisions", async () => {
+      await post({ id: "rk-2", title: "Ranking", decision_payload: RANKING_PAYLOAD });
+      const get = await app.inject({ method: "GET", url: "/api/decisions" });
+      const body = get.json();
+      const found = body.find((i: { id: string }) => i.id === "rk-2");
+      expect(found).toBeDefined();
+      expect(found.decision_payload.version).toBe("dostal:ranking/v1");
+    });
+  });
+
   it("round-trips research[] losslessly: POST with research[] then GET returns research[] intact", async () => {
     const payloadWithResearch = {
       ...VALID_PAYLOAD,
