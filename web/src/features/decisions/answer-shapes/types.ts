@@ -48,6 +48,41 @@ export interface FeatureSelectionPayload {
   research?: ResearchSection[];
 }
 
+/**
+ * dostal:edit-proposal/v1 (s4-edit-and-cba-answer-shapes) — a diff-styled
+ * proposed-change view. `original`/`proposed` are plain text; the renderer
+ * computes the line diff itself rather than trusting a caller-supplied diff
+ * blob.
+ */
+export interface EditProposalPayload {
+  version: "dostal:edit-proposal/v1";
+  title: string;
+  context: string;
+  original: string;
+  proposed: string;
+  research?: ResearchSection[];
+}
+
+/**
+ * dostal:cba/v1 (s4-edit-and-cba-answer-shapes) — user-confirmed minimal
+ * schema, rendered as a structured comparison table only (NOT a
+ * computation/recommendation engine).
+ */
+export interface CbaOption {
+  option: string;
+  cost: string;
+  benefit: string;
+  notes?: string;
+}
+
+export interface CbaPayload {
+  version: "dostal:cba/v1";
+  title: string;
+  context: string;
+  options: CbaOption[];
+  research?: ResearchSection[];
+}
+
 export type Verdict =
   | { kind: "accepted" }
   | { kind: "option_chosen"; optionId: string }

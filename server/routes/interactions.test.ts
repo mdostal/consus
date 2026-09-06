@@ -11,6 +11,13 @@ function insertDecision(db: Database.Database, id: string, title: string, source
   ).run(id, title, sourceBody, now, now);
 }
 
+function insertDecisionWithPayload(db: Database.Database, id: string, title: string, payload: unknown) {
+  const now = new Date().toISOString();
+  db.prepare(
+    "INSERT INTO items (id, type, title, status, created_at, updated_at, decision_payload) VALUES (?, 'decision_request', ?, 'open', ?, ?, ?)",
+  ).run(id, title, now, now, JSON.stringify(payload));
+}
+
 type CapturedCall = { url: string; init: RequestInit };
 
 function makeFakeFetch(calls: CapturedCall[], rejectWith?: Error): typeof globalThis.fetch {
@@ -231,5 +238,53 @@ describe("POST /api/decisions/:id/verdict", () => {
       .prepare("SELECT new_value FROM audit_log WHERE item_id = ? AND field = 'verdict'")
       .get("dec-fs") as { new_value: string } | undefined;
     expect(JSON.parse(auditRow!.new_value)).toEqual({ kind: "features_selected", selected: ["auth", "dark-mode"] });
+  });
+
+  describe("s4-edit-and-cba-answer-shapes: new payload types round-trip the same way", () => {
+    it("records an accepted verdict on an edit-proposal/v1 item and marks it done", async () => {
+      insertDecisionWithPayload(db, "edit-verdict-1", "Amend the report", {
+        version: "dostal:edit-proposal/v1",
+        title: "Amend the report",
+        context: "ctx",
+        original: "a\nb",
+        proposed: "a\nb, edited",
+      });
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/decisions/edit-verdict-1/verdict",
+        payload: { verdict: { kind: "accepted" } },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ ok: true, status: "done" });
+      const row = db.prepare("SELECT status, decided_at FROM items WHERE id = 'edit-verdict-1'").get() as {
+        status: string;
+        decided_at: string;
+      };
+      expect(row.status).toBe("done");
+      expect(row.decided_at).toBeTruthy();
+    });
+
+    it("records a rejected_iteration_requested verdict on a cba/v1 item and reopens it", async () => {
+      insertDecisionWithPayload(db, "cba-verdict-1", "Buy vs build", {
+        version: "dostal:cba/v1",
+        title: "Buy vs build",
+        context: "ctx",
+        options: [
+          { option: "Buy", cost: "$50k", benefit: "Fast" },
+          { option: "Build", cost: "2mo", benefit: "Control" },
+        ],
+      });
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/decisions/cba-verdict-1/verdict",
+        payload: { verdict: { kind: "rejected_iteration_requested", commentary: "need more data" } },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ ok: true, status: "in_progress", decided_at: null });
+      const row = db.prepare("SELECT decided_at FROM items WHERE id = 'cba-verdict-1'").get() as {
+        decided_at: null;
+      };
+      expect(row.decided_at).toBeNull();
+    });
   });
 });

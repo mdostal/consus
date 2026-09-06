@@ -306,4 +306,35 @@ describe("decision-request/v1 parser", () => {
       expect(payload.features[1].default).toBe(true);
     });
   });
+
+  describe("EditProposalPayload (s4-edit-and-cba-answer-shapes)", () => {
+    it("validates a well-formed edit-proposal/v1 payload is accepted by the type", () => {
+      const payload = {
+        version: "dostal:edit-proposal/v1" as const,
+        title: "Amend the weekly ops report",
+        context: "Tighten the summary paragraph.",
+        original: "line one\nline two\nline three",
+        proposed: "line one\nline two, tightened\nline three",
+      };
+      expect(payload.version).toBe("dostal:edit-proposal/v1");
+      expect(payload.original).not.toBe(payload.proposed);
+    });
+  });
+
+  describe("CbaPayload (s4-edit-and-cba-answer-shapes)", () => {
+    it("validates a well-formed cba/v1 payload is accepted by the type", () => {
+      const payload = {
+        version: "dostal:cba/v1" as const,
+        title: "Buy vs build the reporting pipeline",
+        context: "Compare the two paths before committing.",
+        options: [
+          { option: "Buy", cost: "$50k/yr", benefit: "Fast to ship", notes: "Vendor lock-in risk" },
+          { option: "Build", cost: "2 eng-months", benefit: "Full control" },
+        ],
+      };
+      expect(payload.version).toBe("dostal:cba/v1");
+      expect(payload.options).toHaveLength(2);
+      expect(payload.options[1].notes).toBeUndefined();
+    });
+  });
 });
