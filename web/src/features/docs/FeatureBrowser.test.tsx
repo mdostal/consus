@@ -73,3 +73,56 @@ describe("FeatureBrowser", () => {
     expect(screen.getByText(/no overview docs indexed yet/i)).toBeInTheDocument();
   });
 });
+
+describe("FeatureBrowser — design topic surfacing (s3 of consus-phase28-interaction-completeness)", () => {
+  const FEATURES_WITH_DESIGN: Feature[] = [
+    {
+      epic: "checkout-flow",
+      docCount: 2,
+      docs: [
+        {
+          repo: "consus",
+          file_path: ".pHive/epics/checkout-flow/docs/architecture.md",
+          content_hash: "abc",
+          last_scanned_at: "2026-07-25T00:00:00Z",
+        },
+        {
+          repo: "consus",
+          file_path: ".pHive/design/checkout-flow/brief.md",
+          content_hash: "def",
+          last_scanned_at: "2026-07-25T00:00:00Z",
+        },
+      ],
+    },
+    {
+      epic: "no-design-feature",
+      docCount: 1,
+      docs: [
+        {
+          repo: "consus",
+          file_path: ".pHive/epics/no-design-feature/docs/prd.md",
+          content_hash: "ghi",
+          last_scanned_at: "2026-07-25T00:00:00Z",
+        },
+      ],
+    },
+  ];
+
+  it("shows a Design badge on a feature row whose docs include a .pHive/design/ topic, not as a separate nav item", () => {
+    render(
+      <FeatureBrowser features={FEATURES_WITH_DESIGN} overview={[]} onSelectFeature={vi.fn()} onOpenDoc={vi.fn()} />,
+    );
+
+    const checkoutRow = screen.getByText("checkout-flow").closest("li")!;
+    expect(within(checkoutRow).getByText("Design")).toBeInTheDocument();
+
+    const otherRow = screen.getByText("no-design-feature").closest("li")!;
+    expect(within(otherRow).queryByText("Design")).not.toBeInTheDocument();
+
+    // Still exactly two top-level sections (Features, Overview) — no third
+    // "Design" nav item was introduced.
+    expect(screen.getByRole("heading", { name: "Features" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Overview" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^design$/i })).not.toBeInTheDocument();
+  });
+});

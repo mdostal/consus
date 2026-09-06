@@ -1,6 +1,14 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
-import type { DecisionPayload, FeatureSelectionPayload } from "../decision-contract/parser.js";
+import type {
+  CbaPayload,
+  DecisionPayload,
+  EditProposalPayload,
+  FeatureSelectionPayload,
+  FreeTextPayload,
+  RankingPayload,
+  RatingPayload,
+} from "../decision-contract/parser.js";
 import { classifyItem } from "../decision-contract/classifier.js";
 
 export interface DecisionRoutesOptions {
@@ -26,7 +34,14 @@ interface CreateDecisionBody {
   id?: string;
   title?: string;
   source_repo?: string;
-  decision_payload?: DecisionPayload | FeatureSelectionPayload;
+  decision_payload?:
+    | DecisionPayload
+    | FeatureSelectionPayload
+    | EditProposalPayload
+    | CbaPayload
+    | FreeTextPayload
+    | RatingPayload
+    | RankingPayload;
   survey_id?: string;
 }
 
@@ -37,15 +52,72 @@ function validateDecisionPayload(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") {
     return "decision_payload is required";
   }
-  const p = payload as { version?: string; features?: unknown[]; options?: Array<{ id: string }>; recommended?: string };
+  const p = payload as {
+    version?: string;
+    features?: unknown[];
+    options?: Array<{ id?: string; option?: unknown; cost?: unknown; benefit?: unknown }>;
+    recommended?: string;
+    original?: unknown;
+    proposed?: unknown;
+    prompt?: unknown;
+    scale?: { min?: unknown; max?: unknown; labels?: unknown };
+    items?: Array<{ id?: unknown; label?: unknown }>;
+  };
+  if (p.version === "dostal:free-text/v1") {
+    if (typeof p.prompt !== "string" || !p.prompt.trim()) {
+      return "decision_payload.prompt must be a non-empty string";
+    }
+    return null;
+  }
+  if (p.version === "dostal:rating/v1") {
+    if (typeof p.prompt !== "string" || !p.prompt.trim()) {
+      return "decision_payload.prompt must be a non-empty string";
+    }
+    const scale = p.scale;
+    if (!scale || typeof scale.min !== "number" || typeof scale.max !== "number" || scale.min >= scale.max) {
+      return "decision_payload.scale must have numeric min/max with min less than max";
+    }
+    return null;
+  }
+  if (p.version === "dostal:ranking/v1") {
+    if (typeof p.prompt !== "string" || !p.prompt.trim()) {
+      return "decision_payload.prompt must be a non-empty string";
+    }
+    if (!Array.isArray(p.items) || p.items.length < 1) {
+      return "decision_payload.items must have at least 1 entry";
+    }
+    const malformed = p.items.some((item) => typeof item.id !== "string" || typeof item.label !== "string");
+    if (malformed) {
+      return "decision_payload.items entries must each have id and label strings";
+    }
+    return null;
+  }
   if (p.version === "dostal:feature-selection/v1") {
     if (!Array.isArray(p.features) || p.features.length < 1) {
       return "decision_payload.features must have at least 1 entry";
     }
     return null;
   }
+  if (p.version === "dostal:edit-proposal/v1") {
+    if (typeof p.original !== "string" || typeof p.proposed !== "string") {
+      return "decision_payload.original and decision_payload.proposed must both be strings";
+    }
+    return null;
+  }
+  if (p.version === "dostal:cba/v1") {
+    if (!Array.isArray(p.options) || p.options.length < 1) {
+      return "decision_payload.options must have at least 1 entry";
+    }
+    const malformed = p.options.some(
+      (o) => typeof o.option !== "string" || typeof o.cost !== "string" || typeof o.benefit !== "string",
+    );
+    if (malformed) {
+      return "decision_payload.options entries must each have option, cost, and benefit strings";
+    }
+    return null;
+  }
   if (p.version !== "dostal:decision-request/v1") {
-    return `decision_payload.version must be "dostal:decision-request/v1" or "dostal:feature-selection/v1"`;
+    return `decision_payload.version must be one of "dostal:decision-request/v1", "dostal:feature-selection/v1", "dostal:edit-proposal/v1", "dostal:cba/v1", "dostal:free-text/v1", "dostal:rating/v1", "dostal:ranking/v1"`;
   }
   if (!Array.isArray(p.options) || p.options.length < 2) {
     return "decision_payload.options must have at least 2 entries";

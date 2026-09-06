@@ -1,0 +1,108 @@
+id: s5-freetext-rating-ranking-answer-shapes
+epic: consus-phase28-interaction-completeness
+title: Three new answer shapes -- free-text, rating, ranking
+status: pending
+complexity: medium
+methodology: classic
+depends_on: [s4-edit-and-cba-answer-shapes]
+
+description: |
+  Confirmed this session: free-text/open-ended response, numeric/rating-scale
+  response, and ranking/drag-order response are all genuinely absent as
+  interaction shapes today -- Consus can only render accept/choose-one/mix/
+  reject and a feature checklist. This story adds all three, user-confirmed
+  as a widened scope (originally free-text+rating; ranking added), using
+  the exact same parser-validates -> AnswerControl-dispatches -> verdict-
+  recorded pattern proven twice already (decision-request/v1,
+  feature-selection/v1) and extended once more in s4 (edit-proposal/v1,
+  cba/v1).
+
+  Depends on s4 (not functionally, but both stories touch the same shared
+  files -- parser.ts, answer-shapes/types.ts, AnswerControl.tsx -- so this
+  is sequenced after s4 to avoid two agents editing the same dispatch
+  switch concurrently; there is no design reason s5's payloads must exist
+  after s4's).
+
+  Three new payload/verdict pairs:
+  - dostal:free-text/v1: { prompt: string } payload, verdict { kind:
+    "text_response"; text: string }.
+  - dostal:rating/v1: { prompt: string; scale: { min: number; max: number;
+    labels?: Record<number, string> } } payload, verdict { kind: "rated";
+    value: number }.
+  - dostal:ranking/v1: { prompt: string; items: { id: string; label:
+    string }[] } payload, verdict { kind: "ranked"; order: string[] }
+    (item ids in the user's chosen order, via drag-and-drop).
+
+acceptance_criteria:
+  - "Given a dostal:free-text/v1 decision, AnswerControl renders a text input/textarea and records a text_response verdict with the entered text"
+  - "Given a dostal:rating/v1 decision, AnswerControl renders a numeric/star rating control respecting the payload's min/max/labels and records a rated verdict with the chosen value"
+  - "Given a dostal:ranking/v1 decision, AnswerControl renders a drag-to-reorder list of the payload's items and records a ranked verdict with the final item-id order"
+  - "Given each of the three, the parser rejects malformed payloads (empty prompt, invalid scale bounds, empty items list) with the same validation rigor as existing payload types"
+  - "Given all existing payload types (decision-request/v1, feature-selection/v1, and s4's edit-proposal/v1, cba/v1 if landed), their tests pass completely unmodified"
+
+steps:
+  - id: research
+    description: Re-confirm the current state of parser.ts/types.ts/AnswerControl.tsx after s4 has landed (or, if run before s4 merges, coordinate the dispatch switch's shared edit region).
+    agent: researcher
+  - id: implement
+    description: Define the three new payload types in parser.ts (validation), add AnswerControl.tsx dispatch branches, build three renderer components (text input, rating control, drag-to-reorder list), wire verdict recording for each.
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Parser validation tests, AnswerControl dispatch tests, renderer component tests (including drag-reorder interaction), and route round-trip tests for all three new payload types.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm all four prior payload types' tests are unaffected, confirm the ranking control's drag interaction is genuinely tested (not just the resulting data shape).
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase28-interaction-completeness.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: server/decision-contract/parser.ts
+      purpose: "The payload-type pattern this story extends a fifth and sixth and seventh time"
+    - path: web/src/features/decisions/answer-shapes/AnswerControl.tsx
+      purpose: "The dispatch switch this story adds three more branches to -- coordinate with s4's edits since both touch this file"
+    - path: web/src/features/decisions/answer-shapes/FeatureChecklist.tsx
+      purpose: "Prior-art renderer pattern to replicate structurally for the three new renderer components"
+
+files_to_modify:
+  - file: server/decision-contract/parser.ts
+    change: Add FreeTextPayload, RatingPayload, RankingPayload types + validation
+  - file: web/src/features/decisions/answer-shapes/types.ts
+    change: Add the three new payload/verdict types
+  - file: web/src/features/decisions/answer-shapes/AnswerControl.tsx
+    change: Add dispatch branches for the three new payload versions
+  - file: web/src/features/decisions/answer-shapes/FreeTextResponse.tsx
+    change: New renderer -- text input/textarea
+  - file: web/src/features/decisions/answer-shapes/RatingScale.tsx
+    change: New renderer -- numeric/star rating control
+  - file: web/src/features/decisions/answer-shapes/RankingList.tsx
+    change: New renderer -- drag-to-reorder list
+
+design_decisions:
+  - decision: Sequenced after s4 via depends_on rather than marked parallel
+    rationale: "Both stories edit the same shared dispatch switch (AnswerControl.tsx) and payload-type file (parser.ts) -- avoids a guaranteed merge conflict between two concurrently-dispatched agents; no functional dependency exists otherwise"
+  - decision: Ranking uses drag-and-drop rather than up/down buttons
+    rationale: "Matches the 'ranking/drag-order' framing used throughout this epic's research and scope-selection; up/down-button reordering would also satisfy the acceptance criteria if drag-and-drop proves impractical in review"
+
+risks:
+  - severity: low
+    description: Drag-to-reorder interactions are harder to unit test than simple form controls
+    mitigation: Test the resulting verdict data shape directly (simulate the reorder via the component's exposed handler) rather than requiring a full drag-simulation library if one isn't already a project dependency
+
+cross_cutting:
+  - concern: documentation
+    action: "Update docs/api-reference.md's payload-version list to include free-text/v1, rating/v1, ranking/v1"
+
+references:
+  - path: .pHive/epics/consus-phase28-interaction-completeness/docs/research-brief.md
+    relevant_excerpt: |
+      Confirmed absent: free-text/open-ended answer, numeric/rating-scale
+      answer, ranking/drag-order answer, deadlines/expiry, bulk verdict
+      actions across a survey.

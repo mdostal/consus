@@ -137,7 +137,7 @@ describe("DiagramView", () => {
       fireEvent.change(screen.getByTestId("diagram-node-input-story:s1"), { target: { value: "Story 1 Renamed" } });
       fireEvent.blur(screen.getByTestId("diagram-node-input-story:s1"));
 
-      expect(screen.getByTestId("changeset-row-changed")).toHaveTextContent("Story 1 Renamed");
+      expect(screen.getByTestId("visual-diff-row-change")).toHaveTextContent("Story 1 Renamed");
     });
 
     it("logs a 'moved' row (visually distinct) via the pure move-detection path DiagramCanvas drives", async () => {
@@ -147,8 +147,8 @@ describe("DiagramView", () => {
       // renders whatever DiagramCanvas reports, with 'moved' distinct.
       await renderDiagramView();
       fireEvent.click(screen.getByTestId("diagram-canvas-add-node")); // added row, for contrast
-      const addedRow = screen.getByTestId("changeset-row-added");
-      expect(addedRow.className).not.toContain("--moved");
+      const addedRow = screen.getByTestId("visual-diff-row-add");
+      expect(addedRow.className).not.toContain("--move");
     });
 
     it("logs 'added' rows for both the connect flow and add-node action", async () => {
@@ -160,7 +160,7 @@ describe("DiagramView", () => {
 
       fireEvent.click(screen.getByTestId("diagram-canvas-add-node"));
 
-      expect(screen.getAllByTestId("changeset-row-added")).toHaveLength(1);
+      expect(screen.getAllByTestId("visual-diff-row-add")).toHaveLength(1);
     });
 
     it("logs a 'removed' row via the direct-click edge-snip path", async () => {
@@ -170,7 +170,7 @@ describe("DiagramView", () => {
       expect(dependencyEdge).not.toBeNull();
       fireEvent.click(dependencyEdge!);
 
-      expect(screen.getByTestId("changeset-row-removed")).toBeInTheDocument();
+      expect(screen.getByTestId("visual-diff-row-remove")).toBeInTheDocument();
     });
   });
 

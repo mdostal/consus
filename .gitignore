@@ -80,6 +80,8 @@ app/src-tauri/gen/
 !.pHive/epics/consus-phase26-desktop-app/**
 !.pHive/epics/consus-phase27-feature-doc-review-ui/
 !.pHive/epics/consus-phase27-feature-doc-review-ui/**
+!.pHive/epics/consus-phase28-interaction-completeness/
+!.pHive/epics/consus-phase28-interaction-completeness/**
 
 # Hive runtime/session bookkeeping — not project state
 .pHive/agent-complete/

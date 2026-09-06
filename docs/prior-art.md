@@ -72,10 +72,10 @@ Order matters; first match wins; most items fall to `default` and that's fine.
 
 | Type | Label / kicker | Primary interaction |
 |---|---|---|
-| `cba` | "CBA approval" · COST–BENEFIT ANALYSIS | Renders the CBA table + chart; Approve→build / Request changes / Send to quorum. |
+| `cba` | "CBA approval" · COST–BENEFIT ANALYSIS | Renders the CBA table + chart; Approve→build / Request changes / Send to quorum. **Consus: implemented as `dostal:cba/v1` (`server/decision-contract/parser.ts`, rendered by `web/src/features/decisions/answer-shapes/CbaTable.tsx`) — a structured comparison table only, deliberately without the chart/computation.** |
 | `choose` | "Choose 1 of N" · CHOOSE AN OPTION | Option cards, pick one; Select this option / Compose hybrid → send. |
 | `survey` | "Multi-select" · FEATURE/STYLE SURVEY | Checklist, pick any; Send selections. |
-| `edit` | "Edit + diff" · REVIEW & AMEND | Inline green-add/red-strike **line-diff editor**; Send edits back / Approve as-is. |
+| `edit` | "Edit + diff" · REVIEW & AMEND | Inline green-add/red-strike **line-diff editor**; Send edits back / Approve as-is. **Consus: implemented as `dostal:edit-proposal/v1` (`server/decision-contract/parser.ts`, rendered by `web/src/features/decisions/answer-shapes/EditProposalView.tsx`).** |
 | `quorum` | "Your decision" · agent input below | Human decides with agent votes shown; routes to votem when policy says quorum. (Tiebreak framing was deliberately killed — see below.) |
 | `doc` | "Read the doc" · approve as-is or discuss | Renders a finished deliverable doc; Approve as-is / Request changes. |
 | `default` | "Decision" · ARTIFACT · YOUR CALL | Plain artifact view + real action verbs. |

@@ -1,0 +1,60 @@
+name: consus-phase28-interaction-completeness
+title: Decision/survey interaction completeness, wireframe visibility, rendered diffs
+description: >
+  Deep-dive gap analysis against VISION.md and the original ask, grounded in
+  a live research pass (docs/research-brief.md) that also caught and fixed a
+  real dev/main divergence: main had accrued a mature decisions/survey
+  feature stream (SurveyView, survey grouping, feature-selection/v1,
+  attachments, research sections) via direct-to-main PRs that never flowed
+  through dev, now reconciled. This epic closes four confirmed, independent
+  gaps, each reusing an existing proven mechanism: attachment image preview
+  (backend already correct, frontend never renders it), rendered visual
+  diffs for docs+diagrams (data already computed everywhere, never
+  displayed), .pHive/design/ wireframe scanning (mirrors phase27's
+  overview-scan pattern), and completed/new answer shapes (edit, cba,
+  free-text, rating, ranking) via the same parser->AnswerControl->verdict
+  pattern already proven twice. True sequential/gated survey stepping and
+  Consus-native quorum are explicitly deferred (see design-discussion.md
+  §3) -- quorum in particular is scoped as a future external middle-layer
+  approval API, not an in-app feature, per explicit user direction.
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: classic
+version_bump: minor
+sidecar_retention: committed
+
+git_flow:
+  base_branch: dev
+  branch_strategy: per-epic
+
+planning_team:
+  matched_tags: [interaction-design, decision-board, diagram-editor, doc-scanning]
+  roster: [orchestrator]
+  per_tag_reasoning:
+    interaction-design: "Grounded in a live, file-cited research pass (fork agent) over the real classifier/parser/AnswerControl/DiagramCanvas/attachments code before any design work -- single-pass design discussion + direct story decomposition, proportionate to a medium-scope set of independent vertical slices."
+  confidence: high
+  gate_decisions:
+    hv_planning: skipped
+    structured_outline: skipped
+    reason: "Medium scope -- four independently-scoped vertical slices, each reusing an existing mechanism, no cross-slice sequencing. The slices in design-discussion.md §2 already are the vertical plan."
+
+stories:
+  - id: s1-attachment-image-preview
+    title: Render inline image previews for image-mime attachments
+    complexity: low
+    depends_on: []
+  - id: s2-rendered-visual-diff
+    title: Shared visual diff renderer for doc line-diffs and diagram changesets
+    complexity: medium
+    depends_on: []
+  - id: s3-design-wireframe-scanning
+    title: Scan .pHive/design/ wireframes and surface them in FeatureBrowser
+    complexity: medium
+    depends_on: []
+  - id: s4-edit-and-cba-answer-shapes
+    title: Real renderers for the classifier's existing edit/cba labels
+    complexity: medium
+    depends_on: []
+  - id: s5-freetext-rating-ranking-answer-shapes
+    title: Three new answer shapes -- free-text, rating, ranking
+    complexity: medium
+    depends_on: [s4-edit-and-cba-answer-shapes]

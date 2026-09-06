@@ -1316,6 +1316,21 @@ body {
   color: var(--consus-ink-muted);
   white-space: nowrap;
 }
+/* s3 (consus-phase28-interaction-completeness): folded-in indicator that a
+ * feature has an associated .pHive/design/ topic (wireframes/brief) — never
+ * a separate nav item, just a small badge on the existing feature row. */
+.feature-browser__design-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: calc(999px * var(--consus-radius-scale, 1));
+  color: var(--consus-accent);
+  border: 1px solid color-mix(in srgb, var(--consus-accent) 45%, transparent);
+  background: color-mix(in srgb, var(--consus-accent) 10%, transparent);
+  white-space: nowrap;
+}
 /* The Overview section is deliberately visually distinct from the
  * per-feature list above — a muted, quieter card style, since it holds
  * repo-meta docs (README/VISION/docs/**) rather than epics. */
@@ -1375,6 +1390,19 @@ body {
 }
 .feature-detail-view__doc-head .feature-detail-view__doc-path {
   flex: 1;
+}
+.feature-detail-view__design-badge {
+  margin-left: 8px;
+  font-family: var(--consus-font-ui);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: calc(999px * var(--consus-radius-scale, 1));
+  color: var(--consus-accent);
+  border: 1px solid color-mix(in srgb, var(--consus-accent) 45%, transparent);
+  background: color-mix(in srgb, var(--consus-accent) 10%, transparent);
 }
 .feature-detail-view__doc-review-actions {
   display: flex;
@@ -2025,67 +2053,121 @@ body {
   font-size: 12.5px;
   color: var(--consus-ink-muted);
 }
-.diagram-changeset__list {
+
+/* ============================================================= */
+/* VisualDiff (consus-phase28/s2) — the one shared diff-render      */
+/* language for both the doc line-diff preview (DocRenderer.tsx)    */
+/* and the diagram changeset panel (DiagramChangeset.tsx), so an     */
+/* added doc line and an added diagram node share one visual         */
+/* vocabulary instead of two independently maintained ones.          */
+/* "move" (diagrams only) is deliberately its own visual family      */
+/* (accent, not good/bad/warn) — a text-based diagram format has no  */
+/* notion of node position, so a pure move is a materially different */
+/* kind of change from a structural add/remove/change edit           */
+/* (design-discussion.md decision #3, consus-phase18). */
+/* ============================================================= */
+.visual-diff {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  font-family: var(--consus-font-mono);
 }
-.diagram-changeset__row {
+.visual-diff__row {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
   padding: 6px 8px;
   border-radius: calc(6px * var(--consus-radius-scale, 1));
   border-left: 3px solid var(--consus-line);
   font-size: 12px;
 }
-.diagram-changeset__kind {
+.visual-diff__glyph {
+  font-weight: 700;
+  width: 1em;
+  text-align: center;
+  flex: none;
+}
+.visual-diff__kind {
   font-weight: 700;
   text-transform: uppercase;
   font-size: 10px;
   letter-spacing: 0.06em;
+  flex: none;
 }
-.diagram-changeset__subject {
+.visual-diff__label {
   color: var(--consus-ink);
+  white-space: pre-wrap;
 }
-.diagram-changeset__detail {
+.visual-diff__detail {
   color: var(--consus-ink-muted);
   font-size: 11.5px;
+  flex-basis: 100%;
 }
-.diagram-changeset__row--added {
+.visual-diff__empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--consus-ink-muted);
+}
+.visual-diff__row--add {
   border-left-color: var(--consus-good);
   background: color-mix(in srgb, var(--consus-good) 10%, transparent);
 }
-.diagram-changeset__row--added .diagram-changeset__kind {
+.visual-diff__row--add .visual-diff__glyph,
+.visual-diff__row--add .visual-diff__kind {
   color: var(--consus-good);
 }
-.diagram-changeset__row--removed {
+.visual-diff__row--remove {
   border-left-color: var(--consus-bad);
   background: color-mix(in srgb, var(--consus-bad) 10%, transparent);
 }
-.diagram-changeset__row--removed .diagram-changeset__kind {
+.visual-diff__row--remove .visual-diff__glyph,
+.visual-diff__row--remove .visual-diff__kind {
   color: var(--consus-bad);
 }
-.diagram-changeset__row--changed {
+.visual-diff__row--change {
   border-left-color: var(--consus-warn);
   background: color-mix(in srgb, var(--consus-warn) 10%, transparent);
 }
-.diagram-changeset__row--changed .diagram-changeset__kind {
+.visual-diff__row--change .visual-diff__glyph,
+.visual-diff__row--change .visual-diff__kind {
   color: var(--consus-warn);
 }
-/* "moved" is deliberately its own visual family (accent, not
- * good/bad/warn) — a text-based diagram format has no notion of node
- * position, so a pure move is a materially different kind of change from
- * a structural add/remove/relabel edit (design-discussion.md decision #3). */
-.diagram-changeset__row--moved {
+.visual-diff__row--move {
   border-left-color: var(--consus-accent);
   background: color-mix(in srgb, var(--consus-accent) 10%, transparent);
 }
-.diagram-changeset__row--moved .diagram-changeset__kind {
+.visual-diff__row--move .visual-diff__glyph,
+.visual-diff__row--move .visual-diff__kind {
   color: var(--consus-accent);
+}
+.visual-diff__row--context {
+  color: var(--consus-ink-muted);
+}
+
+/* The doc-side integration point (DocRenderer.tsx) — a live diff preview
+ * inside the per-section edit form, above the Cancel/Fire actions. */
+.doc-renderer__diff-preview {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg-subtle);
+}
+.doc-renderer__diff-preview-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--consus-ink-muted);
+}
+.doc-renderer__diff-preview-empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--consus-ink-muted);
 }
 
 /* Per-tab dirty dot + global pending count (s2, consus-phase18). */

@@ -3,6 +3,7 @@ import { DocRenderer } from "./DocRenderer";
 import { DocDiffCheck } from "./DocDiffCheck";
 import type { AuditTrailEntry } from "../audit/AuditPanel";
 import type { FeatureDoc } from "./FeatureBrowser";
+import { designAssetUrl, isDesignDoc, resolveDesignImageSrc } from "./designAssets";
 
 type DocLoadState =
   | { status: "loading" }
@@ -224,7 +225,14 @@ export function FeatureDetailView({ epic, docs, onBack, branch }: FeatureDetailV
         return (
           <section key={key} className="feature-detail-view__doc" data-testid={`feature-doc-${doc.file_path}`}>
             <div className="feature-detail-view__doc-head">
-              <h3 className="feature-detail-view__doc-path">{doc.file_path}</h3>
+              <h3 className="feature-detail-view__doc-path">
+                {doc.file_path}
+                {isDesignDoc(doc.file_path) ? (
+                  <span className="feature-detail-view__design-badge" title=".pHive/design/ wireframe doc">
+                    Design
+                  </span>
+                ) : null}
+              </h3>
               {state && state.status === "done" ? (
                 <div className="feature-detail-view__doc-review-actions">
                   <button type="button" onClick={() => approve(key, state.itemId)}>
@@ -280,6 +288,11 @@ export function FeatureDetailView({ epic, docs, onBack, branch }: FeatureDetailV
                 pendingProposal={rev.pendingProposalId !== null}
                 proposalFailureReason={rev.proposalFailureReason}
                 auditEntries={rev.auditEntries}
+                resolveImageSrc={
+                  isDesignDoc(doc.file_path)
+                    ? (src) => designAssetUrl(doc.repo, resolveDesignImageSrc(doc.file_path, src))
+                    : undefined
+                }
               />
             )}
           </section>

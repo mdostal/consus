@@ -105,7 +105,7 @@ describe("ArchitectureDiagramView", () => {
       fireEvent.click(screen.getByTestId("diagram-node-label-src"));
       fireEvent.click(screen.getByTestId("diagram-node-label-server"));
 
-      expect(screen.getByTestId("changeset-row-added")).toHaveTextContent("src -> server");
+      expect(screen.getByTestId("visual-diff-row-add")).toHaveTextContent("src -> server");
     });
 
     it("path 1: direct click on a connector removes it and logs a 'removed' row", async () => {
@@ -115,7 +115,7 @@ describe("ArchitectureDiagramView", () => {
       expect(edge).not.toBeNull();
       fireEvent.click(edge!);
 
-      expect(screen.getByTestId("changeset-row-removed")).toBeInTheDocument();
+      expect(screen.getByTestId("visual-diff-row-remove")).toBeInTheDocument();
       expect(edge).not.toBeInTheDocument();
     });
 
@@ -128,7 +128,7 @@ describe("ArchitectureDiagramView", () => {
 
       fireEvent.click(screen.getByTestId("diagram-canvas-delete-selected"));
 
-      expect(screen.getByTestId("changeset-row-removed")).toBeInTheDocument();
+      expect(screen.getByTestId("visual-diff-row-remove")).toBeInTheDocument();
       expect(edge).not.toBeInTheDocument();
     });
   });

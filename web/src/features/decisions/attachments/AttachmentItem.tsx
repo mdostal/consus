@@ -26,10 +26,29 @@ function fileExtensionLabel(fileName: string): string {
 
 export function AttachmentItem({ attachment, onDelete, isDeleting }: AttachmentItemProps) {
   const [confirming, setConfirming] = useState(false);
+  const [previewFailed, setPreviewFailed] = useState(false);
+
+  // GET /api/attachments/:id already serves image/* mime types with
+  // Content-Disposition: inline (server/routes/attachments.ts
+  // INLINE_SAFE_TYPES) — reuse that same URL for a thumbnail rather than
+  // the generic extension pill. Any load failure (404, corrupt data) falls
+  // back to the pill via onError, same as every other mime type.
+  const isImage = attachment.mime_type.startsWith("image/");
+  const showPreview = isImage && !previewFailed;
 
   return (
     <li className="attachments__item" data-testid={`attachment-${attachment.id}`}>
-      <span className="attachments__type-pill">{fileExtensionLabel(attachment.file_name)}</span>
+      {showPreview ? (
+        <img
+          className="attachments__thumbnail"
+          src={`/api/attachments/${attachment.id}`}
+          alt={attachment.file_name}
+          style={{ flex: "none", width: 40, height: 40, objectFit: "cover", borderRadius: 6 }}
+          onError={() => setPreviewFailed(true)}
+        />
+      ) : (
+        <span className="attachments__type-pill">{fileExtensionLabel(attachment.file_name)}</span>
+      )}
 
       <div className="attachments__item-meta">
         <span className="attachments__item-name" title={attachment.file_name}>

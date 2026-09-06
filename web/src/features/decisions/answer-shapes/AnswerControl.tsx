@@ -1,9 +1,30 @@
 import { useState } from "react";
-import type { DecisionPayload, FeatureSelectionPayload, Verdict } from "./types";
+import type {
+  CbaPayload,
+  DecisionPayload,
+  EditProposalPayload,
+  FeatureSelectionPayload,
+  FreeTextPayload,
+  RankingPayload,
+  RatingPayload,
+  Verdict,
+} from "./types";
 import { FeatureChecklist } from "./FeatureChecklist";
+import { EditProposalView } from "./EditProposalView";
+import { CbaTable } from "./CbaTable";
+import { FreeTextResponse } from "./FreeTextResponse";
+import { RatingScale } from "./RatingScale";
+import { RankingList } from "./RankingList";
 
 export interface AnswerControlProps {
-  payload: DecisionPayload | FeatureSelectionPayload;
+  payload:
+    | DecisionPayload
+    | FeatureSelectionPayload
+    | EditProposalPayload
+    | CbaPayload
+    | FreeTextPayload
+    | RatingPayload
+    | RankingPayload;
   onVerdict: (verdict: Verdict) => void;
 }
 
@@ -15,15 +36,31 @@ export interface AnswerControlProps {
  * Never a lone generic "Approve" button standing in for an actual decision.
  */
 export function AnswerControl({ payload, onVerdict }: AnswerControlProps) {
-  if (payload.version === "dostal:feature-selection/v1") {
-    return <FeatureChecklist payload={payload} onVerdict={onVerdict} />;
-  }
+  // Hooks must run unconditionally on every render (Rules of Hooks) --
+  // declared before every payload-version early return below, not after
+  // any of them, so this component's hook order never depends on which
+  // payload version it's rendering.
   const [mixSelected, setMixSelected] = useState<string[]>([]);
   const [mixWhy, setMixWhy] = useState("");
   const [rejectCommentary, setRejectCommentary] = useState("");
 
   if (payload.version === "dostal:feature-selection/v1") {
     return <FeatureChecklist payload={payload} onVerdict={onVerdict} />;
+  }
+  if (payload.version === "dostal:edit-proposal/v1") {
+    return <EditProposalView payload={payload} onVerdict={onVerdict} />;
+  }
+  if (payload.version === "dostal:cba/v1") {
+    return <CbaTable payload={payload} onVerdict={onVerdict} />;
+  }
+  if (payload.version === "dostal:free-text/v1") {
+    return <FreeTextResponse payload={payload} onVerdict={onVerdict} />;
+  }
+  if (payload.version === "dostal:rating/v1") {
+    return <RatingScale payload={payload} onVerdict={onVerdict} />;
+  }
+  if (payload.version === "dostal:ranking/v1") {
+    return <RankingList payload={payload} onVerdict={onVerdict} />;
   }
 
   function toggleMix(id: string) {

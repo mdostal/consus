@@ -35,6 +35,30 @@ export const SCAN_ROOTS = [join(".pHive", "planning"), join(".pHive", "epics")];
 export const OVERVIEW_ROOT_FILES = ["README.md", "VISION.md"];
 export const OVERVIEW_ROOT_DIR = "docs";
 
+/**
+ * Design/wireframe docs (s3 of consus-phase28-interaction-completeness): the
+ * Hive `/design` skill's output directory, `.pHive/design/<topic>/`,
+ * registered per-topic in `.pHive/design/index.yaml`
+ * (hive/references/wireframe-protocol.md). Every markdown artifact under a
+ * topic directory (brief.md, accessibility-constraints.md, etc. — the
+ * topic's `.f0`/`.png` wireframe files are naturally excluded already, since
+ * DOC_EXTENSIONS only matches .md/.html) is indexed tagged `phase: "design"`
+ * — a new reserved value distinct from "planning"/"overview" — and
+ * `epic: <topic name>`, derived straight from the directory name exactly
+ * like `.pHive/epics/<epic>/**` already does below in deriveEpicAndPhase.
+ * That intentionally lets a design topic whose name matches a real feature
+ * epic fold into that feature's existing doc group (server/routes/docs.ts's
+ * GET /api/docs/features already includes every row with a non-null epic in
+ * its owning feature's bucket, regardless of phase — no route change
+ * needed).
+ *
+ * Deliberately kept OUT of SCAN_ROOTS itself, same rationale as
+ * OVERVIEW_ROOT_DIR above: SCAN_ROOTS also backs ./git-ref.ts's
+ * isUnderScanRoots() or ref-aware git plumbing, and design docs weren't part
+ * of its (already-tested) contract.
+ */
+export const DESIGN_ROOT = join(".pHive", "design");
+
 function walk(dir: string): string[] {
   let out: string[] = [];
   let entries: import("node:fs").Dirent[];
@@ -79,6 +103,28 @@ function walkOverviewFiles(repoPath: string): string[] {
     existsSync(absPath),
   );
   return rootFiles.concat(walk(join(repoPath, OVERVIEW_ROOT_DIR)));
+}
+
+/**
+ * Finds every .md/.html artifact under .pHive/design/**, if that directory
+ * exists at all. Reuses walk() unchanged (the same directory-walk
+ * convention as .pHive/epics/** and the overview docs/** tree above) — a
+ * repo with no .pHive/design/ directory yields no files, no error, matching
+ * this story's "purely additive, zero regression" acceptance criterion.
+ */
+function walkDesignFiles(repoPath: string): string[] {
+  return walk(join(repoPath, DESIGN_ROOT));
+}
+
+/**
+ * Derives a design doc's epic tag from its path: `.pHive/design/<topic>/...`
+ * -> `<topic>`. Returns null for a stray file directly under .pHive/design/
+ * itself (no topic segment) rather than guessing.
+ */
+function deriveDesignTopic(relPath: string): string | null {
+  const parts = relPath.split(sep);
+  // parts[0] === ".pHive", parts[1] === "design"
+  return parts.length >= 4 ? parts[2] : null;
 }
 
 function hashContent(content: string): string {
@@ -128,6 +174,28 @@ export function scanRepo(db: Database.Database, { repoName, repoPath }: ScanOpti
       repo: repoName,
       epic: null,
       phase: "overview",
+      file_path: relPath,
+      content_hash: hashContent(content),
+      last_scanned_at: now,
+    });
+  }
+
+  // Design/wireframe docs (.pHive/design/<topic>/**, s3 of
+  // consus-phase28-interaction-completeness) — always phase: "design", with
+  // epic derived from the topic directory name (see deriveDesignTopic
+  // above). A file directly under .pHive/design/ with no topic segment is
+  // skipped rather than indexed with a null/guessed epic.
+  for (const absPath of walkDesignFiles(repoPath)) {
+    const relPath = relative(repoPath, absPath);
+    const epic = deriveDesignTopic(relPath);
+    if (epic === null) continue;
+
+    const content = readFileSync(absPath, "utf-8");
+
+    upsert.run({
+      repo: repoName,
+      epic,
+      phase: "design",
       file_path: relPath,
       content_hash: hashContent(content),
       last_scanned_at: now,

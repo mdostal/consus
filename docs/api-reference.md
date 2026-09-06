@@ -155,8 +155,23 @@ supplies — it does not compose or classify the payload itself.
 
 **Request body:** `{ "id": string, "title": string, "source_repo"?: string, "decision_payload": DecisionPayload }`.
 `id` is caller-supplied and required (never server-generated). `decision_payload` must already be
-a valid `dostal:decision-request/v1` object: `version` exactly `"dostal:decision-request/v1"`,
-`options` with at least 2 entries, `recommended` matching one of `options[].id`.
+a valid object of one of seven supported `version`s (`server/decision-contract/parser.ts`):
+- `"dostal:decision-request/v1"` — `options` with at least 2 entries, `recommended` matching one
+  of `options[].id`.
+- `"dostal:feature-selection/v1"` — `features` with at least 1 entry.
+- `"dostal:edit-proposal/v1"` (s4-edit-and-cba-answer-shapes) — `original` and `proposed` plain-text
+  strings; the diff is computed by the renderer, not shipped in the payload.
+- `"dostal:cba/v1"` (s4-edit-and-cba-answer-shapes) — `options` with at least 1 entry, each
+  `{ option: string, cost: string, benefit: string, notes?: string }`; renders as a structured
+  comparison table only (no computation/recommendation engine).
+- `"dostal:free-text/v1"` (s5-freetext-rating-ranking-answer-shapes) — `prompt`, a non-empty string;
+  renders as a single open-ended text response control.
+- `"dostal:rating/v1"` (s5-freetext-rating-ranking-answer-shapes) — `prompt` (non-empty string) and
+  `scale: { min: number, max: number, labels?: Record<number, string> }` with `min` less than `max`;
+  renders as a numeric rating scale, one button per value, using `labels[value]` where given.
+- `"dostal:ranking/v1"` (s5-freetext-rating-ranking-answer-shapes) — `prompt` (non-empty string) and
+  `items` with at least 1 entry, each `{ id: string, label: string }`; renders as a drag-to-reorder
+  list (with an up/down-button fallback).
 
 **Response 201:** the created item, same shape `GET /api/decisions` returns for it (`id`, `type`,
 `title`, `status`, `source_repo`, `decided_at`, `decision_payload` parsed, `decision_type`,
@@ -190,6 +205,10 @@ summarizing the verdict.
 { "kind": "option_chosen", "optionId": "A" }
 { "kind": "mix", "optionIds": ["A", "B"], "why": "..." }
 { "kind": "rejected_iteration_requested", "commentary": "..." }
+{ "kind": "features_selected", "selected": ["dark-mode", "oauth"] }
+{ "kind": "text_response", "text": "..." }
+{ "kind": "rated", "value": 4 }
+{ "kind": "ranked", "order": ["item-a", "item-b"] }
 ```
 
 **Response 200:** `{ "ok": true, "status": "done"|"in_progress", "decided_at": string|null }`.
@@ -255,6 +274,37 @@ Cross-repo doc search — matches on file path and on live doc content (not just
 snapshot). Omit `project` to search every configured repo; **400** if `q` is omitted. An empty
 `scopedRepos` list (an unrecognized `project`) returns `{ "query": "...", "results": [] }`, not
 an error.
+
+### Scan roots (what `doc_index` is actually populated from)
+The doc scanner (`server/adapters/doc-scanner/index.ts`) walks four sources on every
+`POST /api/projects/:project/ingest`: `.pHive/planning/**` (`phase: "planning"`, `epic: null`),
+`.pHive/epics/<epic>/<phase>/**` (`epic`/`phase` derived from the path), repo-root
+`README.md`/`VISION.md`/`docs/**` (`phase: "overview"`, `epic: null`), and — as of
+`consus-phase28-interaction-completeness` — `.pHive/design/<topic>/**` (`phase: "design"`,
+`epic: <topic>`, the topic directory name). The last of these is the Hive `/design` skill's
+wireframe output directory, registered per-topic in `.pHive/design/index.yaml`
+(`hive/references/wireframe-protocol.md`); only its `.md`/`.html` artifacts (e.g. `brief.md`,
+`accessibility-constraints.md`) are indexed as docs — the `.f0`/`.png` wireframe files themselves
+are served separately, see `GET /api/design-assets` below. A design topic whose name matches a
+real feature's epic folds into that feature's existing doc group in
+`GET /api/docs/features` (below), rather than appearing as a separate bucket. A repo with no
+`.pHive/design/` directory is entirely unaffected — this scan root is purely additive.
+
+## Design Assets
+
+### `GET /api/design-assets?repo=<name>&path=<repo-relative path>`
+Serves an image asset (a wireframe rendition, e.g. `v1.png`) from a repo's `.pHive/design/`
+tree — the one gap `GET /api/attachments/:id` doesn't cover, since attachments are keyed by an
+opaque id in a DB table while design images are keyed by their repo-relative path on disk. Mirrors
+`server/routes/attachments.ts`'s safety posture: an extension-based mime allowlist (`.png`,
+`.jpg`/`.jpeg`, `.gif` — image types only, narrower than attachments' full allowlist), a
+Content-Type always derived server-side from the extension (never trusted from any client input),
+and `X-Content-Type-Options: nosniff`. `path` must resolve inside `<repo>/.pHive/design/` —
+anything else (including a `../` traversal attempt) is rejected with **400**, not served.
+
+**Response 200:** the raw image bytes, `Content-Type` set from the extension,
+`Content-Disposition: inline`. **404** for an unconfigured `repo` or a `path` that doesn't exist
+on disk. **400** for a disallowed extension or a `path` escaping `.pHive/design/`.
 
 ## Knowledgebase
 
