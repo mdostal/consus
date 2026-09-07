@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-09-06
+
 ### Added
 
 - **`consus-rich-decisions`:** three structural gaps in `dostal:decision-request/v1` closed via a
