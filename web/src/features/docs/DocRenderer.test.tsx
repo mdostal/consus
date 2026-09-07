@@ -28,6 +28,44 @@ describe("DocRenderer", () => {
   });
 });
 
+describe("DocRenderer — resolveImageSrc (s3 of consus-phase28-interaction-completeness)", () => {
+  it("rewrites a markdown image's src through resolveImageSrc when supplied", () => {
+    render(
+      <DocRenderer
+        format="md"
+        content={"![a wireframe](v1.png)"}
+        resolveImageSrc={(src) => `/api/design-assets?repo=consus&path=${encodeURIComponent(`.pHive/design/topic/${src}`)}`}
+      />,
+    );
+
+    const img = screen.getByRole("img", { name: "a wireframe" });
+    expect(img).toHaveAttribute(
+      "src",
+      "/api/design-assets?repo=consus&path=" + encodeURIComponent(".pHive/design/topic/v1.png"),
+    );
+  });
+
+  it("renders the literal markdown src unchanged when resolveImageSrc is not supplied (every pre-existing caller)", () => {
+    render(<DocRenderer format="md" content={"![a wireframe](v1.png)"} />);
+
+    const img = screen.getByRole("img", { name: "a wireframe" });
+    expect(img).toHaveAttribute("src", "v1.png");
+  });
+
+  it("does not touch html-format docs even when resolveImageSrc is supplied", () => {
+    render(
+      <DocRenderer
+        format="html"
+        content={'<img src="v1.png" alt="a wireframe" />'}
+        resolveImageSrc={(src) => `/rewritten/${src}`}
+      />,
+    );
+
+    const img = screen.getByRole("img", { name: "a wireframe" });
+    expect(img).toHaveAttribute("src", "v1.png");
+  });
+});
+
 describe("DocRenderer — propose a change (s5/p8-02)", () => {
   it("shows a pending indicator while a proposal is in flight", () => {
     render(<DocRenderer format="md" content="hello" onProposeChange={vi.fn()} pendingProposal />);
@@ -220,6 +258,44 @@ describe("DocRenderer — auto-diff fire action, single-section doc (p8-02)", ()
       />,
     );
     expect(screen.getByText(/failed to spawn minerva/i)).toBeInTheDocument();
+  });
+});
+
+describe("DocRenderer — visual diff preview (consus-phase28/s2)", () => {
+  it("shows an explicit 'no changes yet' state right after entering edit mode, before any edit is made", () => {
+    render(<DocRenderer format="md" content="# Original content" onProposeChange={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
+
+    expect(screen.getByTestId("doc-diff-preview-empty-0")).toHaveTextContent(/no changes yet/i);
+    expect(screen.queryByTestId("visual-diff")).not.toBeInTheDocument();
+  });
+
+  it("renders colored add/remove rows via the shared VisualDiff component once the draft actually differs", () => {
+    render(<DocRenderer format="md" content="# Original content" onProposeChange={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
+    fireEvent.change(screen.getByTestId("doc-edit-textarea-0"), {
+      target: { value: "# Original content\nExtra line added" },
+    });
+
+    expect(screen.queryByTestId("doc-diff-preview-empty-0")).not.toBeInTheDocument();
+    expect(screen.getByTestId("visual-diff")).toBeInTheDocument();
+    expect(screen.getByTestId("visual-diff-row-context")).toHaveTextContent("# Original content");
+    expect(screen.getByTestId("visual-diff-row-add")).toHaveTextContent("Extra line added");
+  });
+
+  it("reverts to the 'no changes yet' state once an edit is undone back to the original content", () => {
+    render(<DocRenderer format="md" content="# Original content" onProposeChange={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
+    fireEvent.change(screen.getByTestId("doc-edit-textarea-0"), { target: { value: "changed" } });
+    expect(screen.getByTestId("visual-diff")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("doc-edit-textarea-0"), { target: { value: "# Original content" } });
+
+    expect(screen.queryByTestId("visual-diff")).not.toBeInTheDocument();
+    expect(screen.getByTestId("doc-diff-preview-empty-0")).toBeInTheDocument();
   });
 });
 

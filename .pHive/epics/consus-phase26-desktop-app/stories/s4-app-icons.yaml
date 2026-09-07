@@ -1,0 +1,88 @@
+id: s4-app-icons
+epic: consus-phase26-desktop-app
+title: Produce a minimal app icon set (tray + Dock)
+status: pending
+complexity: low
+methodology: classic
+depends_on: [s1-desktop-app-scaffold-and-state]
+
+description: |
+  Consus has no icon or logo asset anywhere in the repo today (confirmed
+  this session: `find web -iname "*icon*" -o -iname "*logo*"` returned
+  nothing, no .icns/.ico anywhere outside node_modules). This story
+  produces the minimal real icon set Tauri's bundler requires — not a
+  full brand-system pass (`/plugin-hive:brand-system` is explicitly out
+  of scope here; this is a tray icon and a Dock icon, not a product
+  identity exercise).
+
+  Required outputs, matching Heimdall's icons/ directory shape exactly
+  (tauri.conf.json's bundle.icon list): 32x32.png, 128x128.png,
+  128x128@2x.png, icon.icns, icon.ico. Use the openai-image MCP tool (or
+  a simple deterministic vector mark generated and rasterized, whichever
+  produces a clean result at tray-icon size — 16-22px effective — where
+  detail legibility matters most) to produce one square source mark,
+  then derive every required size/format from it.
+
+acceptance_criteria:
+  - "Given app/src-tauri/icons/, all five files required by tauri.conf.json's bundle.icon list exist and are valid images at their stated dimensions"
+  - "Given the 32x32.png rendered at actual tray-icon size (menu bar, ~16-22pt effective on a Retina display), the mark is legible — not a shrunk detailed logo that turns to mud"
+  - "Given tauri.conf.json (from s1), its bundle.icon array points at these five real files, not placeholders"
+  - "Given a debug build (cargo tauri build --debug), the Dock icon and tray icon both show the new mark, not Tauri's default icon"
+
+steps:
+  - id: research
+    description: Look at Heimdall's and Portunus's icons/ directories for the exact required file set and dimensions this Tauri version expects.
+    agent: researcher
+  - id: implement
+    description: Produce one square source mark and derive all required sizes/formats; wire into tauri.conf.json's bundle.icon list.
+    agent: developer
+    depends_on: [research]
+  - id: review
+    description: Visually confirm legibility at actual tray size (not just "it's a PNG that exists"), confirm all five required files are present and correctly referenced.
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Commit and push to feat/consus-phase26-desktop-app.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: app/src-tauri/tauri.conf.json
+      purpose: s1 creates this with a bundle.icon list — this story fills in the real files it points at
+
+files_to_modify:
+  - file: app/src-tauri/icons/32x32.png
+    change: New file
+  - file: app/src-tauri/icons/128x128.png
+    change: New file
+  - file: app/src-tauri/icons/128x128@2x.png
+    change: New file
+  - file: app/src-tauri/icons/icon.icns
+    change: New file
+  - file: app/src-tauri/icons/icon.ico
+    change: New file
+
+code_examples:
+  - title: "Heimdall's real tauri.conf.json bundle.icon list (same shape to replicate)"
+    file: /Users/mdostal/Documents/work/pantheon/heimdall/app/src-tauri/tauri.conf.json
+    snippet: |
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.icns",
+        "icons/icon.ico"
+      ]
+
+design_decisions:
+  - decision: "Minimal mark, not a full brand-system pass"
+    rationale: "Named explicitly as a real gap in the design discussion (§3) rather than silently invented — the operator has not been asked to make a branding decision for Consus; this story produces the smallest real deliverable that unblocks packaging, not a design exercise."
+
+risks:
+  - severity: low
+    description: "A detailed mark that looks fine at 128px turning illegible at actual 16-22pt tray size"
+    mitigation: "Acceptance criteria explicitly requires checking legibility at real tray size, not just file existence"
+
+cross_cutting: []

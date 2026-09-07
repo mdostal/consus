@@ -1,0 +1,76 @@
+id: s1-attachment-image-preview
+epic: consus-phase28-interaction-completeness
+title: Render inline image previews for image-mime attachments
+status: pending
+complexity: low
+methodology: classic
+depends_on: []
+
+parallel_allowed: true
+parallel_rationale: bounded-slice
+
+description: |
+  Confirmed this session: server/routes/attachments.ts already sets
+  INLINE_SAFE_TYPES (including image/png, image/jpeg, image/gif) and serves
+  those mime types with Content-Disposition: inline -- the backend is
+  already correct. web/src/features/decisions/attachments/AttachmentItem.tsx
+  never uses this: it renders only a generic file-extension pill plus a
+  Download link, for every mime type including images. This story is a
+  pure frontend addition against an existing, already-correct endpoint --
+  no server change is in scope.
+
+acceptance_criteria:
+  - "Given an attachment with mime type image/png, image/jpeg, image/gif, or image/webp, AttachmentItem renders an <img> preview sourced from the existing inline-serving endpoint"
+  - "Given an attachment with any non-image mime type, the existing pill+download rendering is completely unchanged"
+  - "Given an image attachment fails to load (404, corrupt data), the component falls back to the existing pill+download rendering rather than showing a broken image icon"
+  - "Given the image preview, it is reasonably sized (does not overflow the attachments panel) and does not block the existing download action"
+
+steps:
+  - id: research
+    description: Re-confirm INLINE_SAFE_TYPES and the inline-serve route in server/routes/attachments.ts, and AttachmentItem.tsx's current rendering, as they stand now.
+    agent: researcher
+  - id: implement
+    description: Add an image/* branch to AttachmentItem.tsx that renders an <img> against the existing inline-serve URL, with onError fallback to the existing pill+download rendering.
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Add/update AttachmentItem.test.tsx covering image mime types (renders <img>), non-image mime types (unchanged pill+download), and the onError fallback path.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm no server-side change was made, confirm existing AttachmentsPanel/AttachmentList/AttachmentUpload tests still pass unmodified.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase28-interaction-completeness.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: server/routes/attachments.ts
+      purpose: "INLINE_SAFE_TYPES (line 57) and the inline-serve route -- confirms the backend already sets Content-Disposition: inline for image mime types; read but do not modify"
+    - path: web/src/features/decisions/attachments/AttachmentItem.tsx
+      purpose: "Current rendering -- generic extension pill + Download link only, no <img> anywhere in the file; this is the file this story modifies"
+
+files_to_modify:
+  - file: web/src/features/decisions/attachments/AttachmentItem.tsx
+    change: Add an <img> preview branch for image/* mime types, sourced from the existing inline-serve endpoint, with error fallback to current rendering
+
+design_decisions:
+  - decision: No server-side change
+    rationale: "server/routes/attachments.ts already serves images correctly (INLINE_SAFE_TYPES + Content-Disposition: inline, confirmed by direct read) -- this is purely a frontend gap"
+
+risks:
+  - severity: low
+    description: A very large image could visually dominate the attachments panel
+    mitigation: Apply a max-height/max-width constraint consistent with the panel's existing layout
+
+references:
+  - path: server/routes/attachments.ts
+    relevant_excerpt: |
+      const INLINE_SAFE_TYPES = new Set([
+        "image/png", "image/jpeg", "image/gif", "image/webp", ...
+      ]);
+      // serves matching mime types with Content-Disposition: inline

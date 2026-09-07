@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { marked } from "marked";
+import { marked, Renderer } from "marked";
 import { AuditPanel, type AuditTrailEntry } from "../audit/AuditPanel";
+import { VisualDiff, parseLineDiff } from "../diff/VisualDiff";
 import { computeLineDiff } from "./textDiff";
 import { splitIntoSections } from "./sections";
 import "../../theme/tokens.css";
@@ -20,6 +21,15 @@ export interface DocRendererProps {
   /** s5: history for this doc's item (audit_log + proposals), via the
    *  shared AuditPanel. Omit to keep the panel hidden. */
   auditEntries?: AuditTrailEntry[];
+  /** s3 (consus-phase28-interaction-completeness): rewrites a markdown
+   *  image's `src` before rendering — the seam FeatureDetailView uses to
+   *  point a design topic's wireframe references (e.g. `![](v1.png)`) at
+   *  GET /api/design-assets instead of a bare relative URL the browser
+   *  could never resolve. Omit (the default, every pre-existing caller) to
+   *  render images with their literal markdown src, unchanged. Only
+   *  consulted when `format === "md"` — html docs are passed through
+   *  verbatim as before. */
+  resolveImageSrc?: (src: string) => string;
 }
 
 interface SectionState {
@@ -59,6 +69,15 @@ function initialSectionState(section: string): SectionState {
  * never touches any other section's in-progress edit. The view-mode
  * rendering below is unchanged — it still runs marked.parse over the full
  * joined `content` string, exactly as before this story.
+ *
+ * consus-phase28/s2: computeLineDiff's output was computed here purely to
+ * embed in onProposeChange's payload — never rendered anywhere, so an
+ * operator fired a change without ever seeing what it actually changed.
+ * The edit form now shows that same diff (via the shared VisualDiff
+ * component, VisualDiff.tsx) as a live colored add/remove preview while a
+ * section is being edited; an identical draft shows an explicit "no
+ * changes yet" state instead. This is purely a rendering addition — the
+ * diff string handed to onProposeChange (fire, below) is unchanged.
  */
 export function DocRenderer({
   format,
@@ -67,11 +86,24 @@ export function DocRenderer({
   pendingProposal,
   proposalFailureReason,
   auditEntries,
+  resolveImageSrc,
 }: DocRendererProps) {
-  const html = useMemo(() => (format === "md" ? (marked.parse(content, { async: false }) as string) : content), [
-    format,
-    content,
-  ]);
+  const html = useMemo(() => {
+    if (format !== "md") return content;
+
+    // resolveImageSrc rewrites only the `href` of an <img> — title/text are
+    // passed through to the default renderer's own image() untouched, so
+    // alt text/title behavior is identical to the no-resolver case.
+    if (!resolveImageSrc) {
+      return marked.parse(content, { async: false }) as string;
+    }
+
+    const renderer = new Renderer();
+    const defaultImage = renderer.image.bind(renderer);
+    renderer.image = (token) => defaultImage({ ...token, href: resolveImageSrc(token.href) });
+
+    return marked.parse(content, { async: false, renderer }) as string;
+  }, [format, content, resolveImageSrc]);
 
   const sections = useMemo(() => splitIntoSections(content), [content]);
   const [sectionStates, setSectionStates] = useState<SectionState[]>(() => sections.map(initialSectionState));
@@ -148,6 +180,18 @@ export function DocRenderer({
                         placeholder="e.g. removed load balancers for direct traffic through..."
                       />
                     </label>
+                  ) : null}
+                  {onProposeChange ? (
+                    <div className="doc-renderer__diff-preview" data-testid={`doc-diff-preview-${index}`}>
+                      <h5 className="doc-renderer__diff-preview-title">Preview</h5>
+                      {hasChanges ? (
+                        <VisualDiff entries={parseLineDiff(computeLineDiff(section, state.draft))} />
+                      ) : (
+                        <p className="doc-renderer__diff-preview-empty" data-testid={`doc-diff-preview-empty-${index}`}>
+                          No changes yet.
+                        </p>
+                      )}
+                    </div>
                   ) : null}
                   <div className="doc-renderer__edit-actions">
                     <button type="button" onClick={() => cancelEdit(index)}>

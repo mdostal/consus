@@ -1,0 +1,75 @@
+id: s1-repo-overview-doc-scanning
+epic: consus-phase27-feature-doc-review-ui
+title: Scan repo-level README/VISION/docs as a distinct "overview" bucket
+status: pending
+complexity: low
+methodology: classic
+depends_on: []
+
+description: |
+  Confirmed this session: server/adapters/doc-scanner/index.ts's
+  SCAN_ROOTS is exactly [".pHive/planning", ".pHive/epics"] — repo-root
+  README.md, VISION.md, and docs/**/*.md are never scanned into
+  doc_index at all. This story adds a third scan root covering those
+  files, tagged with a new reserved phase value "overview" and epic:
+  null, so they form a real, queryable bucket (WHERE phase = 'overview')
+  distinct from epic-scoped docs and from the existing "planning" phase
+  bucket (which covers .pHive/planning/*, a different, already-existing
+  thing — do not conflate the two).
+
+acceptance_criteria:
+  - "Given a registered repo with a README.md at its root, running the doc scan indexes it into doc_index with epic=NULL, phase='overview'"
+  - "Given the same repo has a docs/ directory with nested .md files, all of them are indexed the same way (recursive, matching the existing epic-scan's directory-walk convention)"
+  - "Given VISION.md exists at repo root, it is indexed the same way"
+  - "Given the existing .pHive/planning/* and .pHive/epics/* scan roots, their behavior and phase tagging is completely unchanged — this is purely additive"
+  - "Given this repo (consus) itself as the scanned target, a real scan run actually finds and indexes its own README.md, VISION.md, and docs/*.md files — verified by querying doc_index directly after running the scan, not just reading the code"
+
+steps:
+  - id: research
+    description: Re-confirm SCAN_ROOTS and deriveEpicAndPhase() in server/adapters/doc-scanner/index.ts as they stand now.
+    agent: researcher
+  - id: implement
+    description: Add the repo-root scan root, tag matched files phase="overview"/epic=null, keep existing scan roots' behavior byte-identical.
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Add/run automated tests for the new scan root; also run a real scan against this repo and query doc_index live to confirm README.md/VISION.md/docs/*.md actually appear.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm existing scan roots are unaffected (diff their query results before/after), confirm no double-counting if a file could theoretically match two roots.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase27-feature-doc-review-ui.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: server/adapters/doc-scanner/index.ts
+      purpose: "SCAN_ROOTS (line 21) and deriveEpicAndPhase() (lines 43-51) — the exact functions this story extends, confirmed by direct read this session"
+    - path: server/db/migrate.ts
+      purpose: "doc_index schema (lines 47-56) — epic/phase columns already exist, no migration needed, just a new phase value"
+
+files_to_modify:
+  - file: server/adapters/doc-scanner/index.ts
+    change: Add repo-root README.md/VISION.md/docs/**/*.md as a third scan root, tagged phase="overview", epic=null
+
+design_decisions:
+  - decision: "New reserved phase value 'overview', not reusing 'planning'"
+    rationale: "'planning' already means .pHive/planning/* specifically — confirmed by reading deriveEpicAndPhase() this session; conflating the two would make the existing planning-docs view show unrelated repo-meta content mixed in."
+
+risks:
+  - severity: low
+    description: "A repo without README.md/VISION.md/docs/ (edge case) should not error the scan"
+    mitigation: "Follow the existing tolerant-existsSync convention already used elsewhere in this codebase (e.g. project-registry.ts, server/index.ts's WEB_ROOT check)"
+
+references:
+  - path: server/adapters/doc-scanner/index.ts
+    relevant_excerpt: |
+      const SCAN_ROOTS = [".pHive/planning", ".pHive/epics"];
+      function deriveEpicAndPhase(relPath: string): { epic: string | null; phase: string | null } { ... }
+
+cross_cutting: []

@@ -1,0 +1,77 @@
+id: s6-background-updater
+epic: consus-phase26-desktop-app
+title: Background update checker against GitHub releases
+status: pending
+complexity: low
+methodology: classic
+depends_on: [s3-tray-menu-and-lifecycle]
+
+description: |
+  Port Heimdall's updater.rs to Consus: a background version check against
+  GitHub releases, wired to the tray menu's "Check for Updates…" item
+  (already present as a menu item from s3, unwired until this story).
+  Consus already has a real semver tag convention on this repo — v0.4.0
+  through the current v0.12.0, confirmed via `git tag --list` this
+  session — so this ports directly with no invented convention needed,
+  unlike an earlier open question in this design that assumed it might
+  need one.
+
+  Pure version-comparison logic (the part Heimdall's own dev-dependencies
+  section notes it unit-tests) should get the same real unit-test
+  coverage here, not just a live smoke check.
+
+acceptance_criteria:
+  - "Given the app is running, a background checker periodically queries GitHub releases for mdostal/consus and compares the latest tag against the running app's own version"
+  - "Given a newer version is available, the tray menu or a notification surfaces it (mirror Heimdall's exact UX choice here — check its real behavior rather than inventing a new one)"
+  - "Given 'Check for Updates…' is clicked from the tray menu, it triggers an immediate check rather than waiting for the next background interval"
+  - "Given the pure version-comparison function (current vs. latest semver), it has real unit tests (cargo test) covering equal/older/newer/malformed-tag cases — not just a live smoke check against the real GitHub API"
+
+steps:
+  - id: research
+    description: Read Heimdall's real updater.rs in full; confirm Consus's GitHub releases are reachable at the same API shape (github.com/mdostal/consus/releases).
+    agent: researcher
+  - id: implement
+    description: Port updater.rs (background checker, semver comparison, tray menu wiring for "Check for Updates…").
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Run cargo test for the version-comparison unit tests; live-verify the tray menu item triggers an immediate check.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm the GitHub repo slug is mdostal/consus (not accidentally left as mdostal/heimdall from the port), confirm unit tests cover the malformed-tag edge case.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase26-desktop-app.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: app/src-tauri/src/tray.rs
+      purpose: "s3 already added the 'Check for Updates…' menu item and its event id — this story wires the handler"
+
+files_to_modify:
+  - file: app/src-tauri/src/updater.rs
+    change: "New file — ported from Heimdall's updater.rs, repo slug changed to mdostal/consus"
+  - file: app/src-tauri/src/tray.rs
+    change: "Wire the 'check_updates' menu event id (already present from s3) to updater::check_now()"
+
+code_examples:
+  - title: "Heimdall's real tray wiring for the updater (already present as a stub from s3, port the handler)"
+    file: /Users/mdostal/Documents/work/pantheon/heimdall/app/src-tauri/src/tray.rs
+    snippet: |
+      "check_updates" => updater::check_now(app),
+
+design_decisions:
+  - decision: "Reuse Consus's existing v{semver} tag convention unmodified"
+    rationale: "Confirmed real and already in use (v0.4.0 through v0.12.0, via git tag --list this session) — no new release convention needs inventing, resolving what was an open question at design time."
+
+risks:
+  - severity: low
+    description: "Repo slug copy-paste error (mdostal/heimdall left in from the port instead of mdostal/consus), silently checking the wrong project's releases forever"
+    mitigation: "Explicit review-step check for this exact mistake"
+
+cross_cutting: []

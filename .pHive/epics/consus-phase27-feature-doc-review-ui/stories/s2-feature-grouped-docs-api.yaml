@@ -1,0 +1,78 @@
+id: s2-feature-grouped-docs-api
+epic: consus-phase27-feature-doc-review-ui
+title: "GET /api/docs/features — reshape doc_index into per-epic + overview groups"
+status: pending
+complexity: low
+methodology: classic
+depends_on: [s1-repo-overview-doc-scanning]
+
+description: |
+  New read endpoint that reshapes the same doc_index data GET /api/docs
+  already returns (server/routes/docs.ts:42-61's queryDocIndex loop) into
+  the grouping the UI actually needs: one entry per feature (epic) with
+  its doc count and doc list, plus a separate "overview" bucket sourced
+  from s1's new phase='overview' rows. This is a reshape of an existing
+  query, not a new data source — confirmed this session that doc_index
+  already carries everything needed.
+
+acceptance_criteria:
+  - "Given GET /api/docs/features?project=<repo>, the response shape is { features: [{epic, docCount, docs: [...]}], overview: [...doc rows with phase='overview'] }"
+  - "Given a repo with docs across multiple epics, features[] has one entry per distinct non-null epic value, each with its own docs array (same per-doc fields GET /api/docs already returns: file_path, content_hash, last_scanned_at)"
+  - "Given no project query param, results are scoped across every currently-registered repo (same scoping convention as the existing GET /api/docs endpoint's project= param, confirmed in server/routes/docs.ts:42-44)"
+  - "Given this repo's own real data (post s1), calling this endpoint against consus returns a real, non-empty overview[] array containing README.md/VISION.md — verified with a real curl call against a running dev server, not just a mocked test"
+
+steps:
+  - id: research
+    description: Re-read GET /api/docs's existing grouping logic (server/routes/docs.ts:42-61) and queryDocIndex to confirm the exact reshape needed.
+    agent: researcher
+  - id: implement
+    description: Add GET /api/docs/features, reusing queryDocIndex and the same scoping convention as the existing GET /api/docs.
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Automated tests for the new endpoint's shape and scoping; a live curl check against a running dev server using this repo's real post-s1 data.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm the reshape doesn't duplicate or drop any doc_index rows compared to the existing GET /api/docs output for the same repo.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase27-feature-doc-review-ui.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: server/routes/docs.ts
+      purpose: "GET /api/docs (lines 42-61) — the existing grouping logic and project= scoping convention this new endpoint mirrors"
+
+files_to_modify:
+  - file: server/routes/docs.ts
+    change: Add GET /api/docs/features handler
+
+code_examples:
+  - title: "Existing GET /api/docs grouping logic to mirror (server/routes/docs.ts, already read this session)"
+    file: server/routes/docs.ts
+    snippet: |
+      app.get<{ Querystring: { project?: string } }>("/api/docs", async (request) => {
+        const { project } = request.query;
+        const scopedRepos = project ? Object.keys(repos).filter((r) => r === project) : Object.keys(repos);
+        const grouped: GroupedDocs = {};
+        for (const repo of scopedRepos) {
+          grouped[repo] = {};
+          for (const row of queryDocIndex(db, repo)) {
+            const phase = row.phase ?? "unphased";
+            grouped[repo][phase] ??= [];
+            grouped[repo][phase].push({ epic: row.epic, file_path: row.file_path, ... });
+          }
+        }
+        return grouped;
+      });
+
+design_decisions:
+  - decision: "New endpoint, not a breaking reshape of the existing GET /api/docs"
+    rationale: "GET /api/docs's current shape may already be relied on elsewhere (or by external harnesses per Consus's agent-facing skill contract) — additive is safer than reshaping in place."
+
+cross_cutting: []

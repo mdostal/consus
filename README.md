@@ -92,6 +92,22 @@ curl localhost:8722/api/decisions   # open, undecided decision-request items
 
 The full HTTP contract lives in [`docs/api-reference.md`](docs/api-reference.md) — a harness author can use Consus from that doc alone.
 
+## Desktop app
+
+Consus also ships as a native macOS app (Tauri) — a menu-bar-resident window around the same server, with its own app-local SQLite/config under `~/Library/Application Support/com.mdostal.consus/` (fully separate from any `.pHive/consus.sqlite` used by the CLI/dev flow, so the app always starts with an empty project list on first run).
+
+```bash
+cd app/src-tauri
+cargo tauri build     # release build; stages a self-contained copy of
+                       # dist-server/ + dist-web/ via build-resources.sh,
+                       # then bundles it into the .app — no dependency on
+                       # this checkout's own path once installed
+```
+
+The built app lands at `app/src-tauri/target/release/bundle/macos/Consus.app` — copy it to `/Applications/` to install. It runs the sidecar (`node dist-server/index.js`) as a plain OS process against a freshly picked free port, health-checks `GET /health` before showing the window, and lives in the menu bar tray (single-instance, close-to-tray, optional launch-at-login).
+
+For iterative development, `cargo tauri dev` / `cargo tauri build --debug` fall back to this checkout's own `npm run build` output instead of a staged bundle.
+
 ## Status
 
 **v0.11.0.** The server (now serving its own built dashboard, not just the JSON API), SQLite store, on-demand doc scanner + multi-repo scan-all, decision contract + classifier, KB store (with draft/submit separation and versioning), the generic proposal/harness mechanism, an editable diagram canvas (React Flow) for both the epic/story cascade and the architecture diagram, a real light/dark/system theme control, three switchable visual skins, a `⌘K` command palette, and agent-harness support for both Claude Code and Codex CLI (`npm run agent:init`) are all **live and tested**. See `CHANGELOG.md` for the full release history.

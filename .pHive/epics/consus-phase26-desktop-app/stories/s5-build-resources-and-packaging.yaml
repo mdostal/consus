@@ -1,0 +1,103 @@
+id: s5-build-resources-and-packaging
+epic: consus-phase26-desktop-app
+title: Stage production build into the .app bundle; verify a real cargo tauri build
+status: pending
+complexity: medium
+methodology: classic
+depends_on: [s2-sidecar-process-management, s4-app-icons]
+
+description: |
+  Port Heimdall's build-resources.sh to Consus, adapted for a real
+  difference between the two projects: Heimdall's build is plain `tsc`
+  output with no separate frontend artifact (its dashboard is served
+  directly by the same compiled process); Consus has a genuinely
+  separate frontend build (`vite build` -> dist-web/, per Consus's own
+  `npm run build:web`) that must ALSO be staged alongside dist-server/,
+  since server/index.ts's WEB_ROOT resolution expects dist-web/ to sit
+  as a sibling of dist-server/index.js at runtime (confirmed by reading
+  server/index.ts this session: `join(dirname(fileURLToPath(import.meta.url)), "../dist-web")`).
+
+  Staging steps: `npm run build` (produces both dist-server/ and
+  dist-web/), copy both into src-tauri/resources/consus/, plus
+  package.json + package-lock.json, then `npm ci --omit=dev` INSIDE the
+  staging directory (never the live checkout's own node_modules) so
+  devDependencies (vitest, tsx, typescript itself) never ship in the
+  app — same discipline Heimdall's script already documents and
+  enforces.
+
+  This story's real deliverable is a genuinely working, installable
+  Consus.app — end to end, launched fresh, sidecar healthy, window
+  showing the real Consus UI, tray functional. Everything else in the
+  epic is a component; this is the integration point.
+
+acceptance_criteria:
+  - "Given `bash app/src-tauri/build-resources.sh` runs from repo root, it produces src-tauri/resources/consus/ containing dist-server/, dist-web/, package.json, and a production-only node_modules/ (no vitest, tsx, or typescript present in the staged node_modules/)"
+  - "Given `cargo tauri build` runs (release, not --debug), it produces a real .app bundle in app/src-tauri/target/release/bundle/macos/"
+  - "Given that .app is copied to /Applications/ and launched fresh (first-run, no prior Application Support state), it: spawns the sidecar, health-checks successfully, shows the real Consus UI (not a placeholder or error state), and the tray icon/menu work exactly as s3 specifies"
+  - "Given the app's first-run project list is queried (via its own UI or API), it is empty — confirming s1's fresh-app-local-state decision held all the way through packaging, not just in the debug dev loop"
+  - "Given app/src-tauri/tauri.conf.json's version field, it exactly matches package.json's current version — verified as a real equality check, not eyeballed"
+
+steps:
+  - id: research
+    description: Confirm dist-web/ + dist-server/ sibling relationship one more time against the real built output (run npm run build and inspect the actual directory layout), re-read Heimdall's build-resources.sh in full.
+    agent: researcher
+  - id: implement
+    description: Write build-resources.sh (adapted for the two-artifact dist-server+dist-web staging), wire it as tauri.conf.json's beforeBuildCommand (s1 already stubbed this field pointing at it).
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Run the full pipeline live — build-resources.sh, cargo tauri build, install to /Applications, launch fresh, verify every acceptance criterion against the real running app, not a simulated/mocked check.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm the staged node_modules genuinely excludes devDependencies (grep for vitest/tsx/typescript absence), confirm version lockstep, confirm no accidental path back to the live git checkout anywhere in the staged output.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase26-desktop-app.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: server/index.ts
+      purpose: "WEB_ROOT resolution — the exact reason dist-web/ MUST sit as a sibling of dist-server/index.js in the staged resource dir, confirmed by reading the actual import.meta.url-relative code"
+    - path: package.json
+      purpose: "npm run build script (build:web + build:server) this staging script shells out to; also the version field tauri.conf.json must match"
+
+files_to_modify:
+  - file: app/src-tauri/build-resources.sh
+    change: "New file — adapted from Heimdall's, staging both dist-server/ and dist-web/ (Heimdall only has one artifact; this is the real structural difference)"
+
+code_examples:
+  - title: "Heimdall's real build-resources.sh (single-artifact case — adapt for Consus's two artifacts)"
+    file: /Users/mdostal/Documents/work/pantheon/heimdall/app/src-tauri/build-resources.sh
+    snippet: |
+      cd "$(dirname "${BASH_SOURCE[0]}")/../.."  # repo root
+      REPO_ROOT="$(pwd)"
+      STAGE="$REPO_ROOT/app/src-tauri/resources/heimdall"
+      npm run build
+      rm -rf "$STAGE"; mkdir -p "$STAGE"
+      cp -R "$REPO_ROOT/dist" "$STAGE/dist"
+      cp "$REPO_ROOT/package.json" "$STAGE/package.json"
+      cp "$REPO_ROOT/package-lock.json" "$STAGE/package-lock.json"
+      (cd "$STAGE" && npm ci --omit=dev)
+      rm -f "$STAGE/package-lock.json"
+  - title: "Consus's real WEB_ROOT resolution (the reason dist-web must be a staged sibling)"
+    file: server/index.ts
+    snippet: |
+      const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../dist-web");
+
+design_decisions:
+  - decision: "Stage both dist-server/ and dist-web/ as siblings inside the resource dir, matching the exact relative-path relationship server/index.ts expects at runtime"
+    rationale: "This is the one place Consus's real architecture (separate Vite-built SPA + Fastify server) genuinely diverges from Heimdall's (single tsc-compiled process serving nothing on its own) — cannot copy Heimdall's script unmodified here."
+
+risks:
+  - severity: high
+    description: "Staging only dist-server/ (copy-pasting Heimdall's single-artifact script literally) would silently break WEB_ROOT resolution — the app would spawn a healthy sidecar (health check only touches /health + sqlite) but show a blank/404 UI, a failure mode the health check itself would NOT catch"
+    mitigation: "Acceptance criteria explicitly requires launching the packaged .app and visually confirming the real Consus UI renders, not just that /health returns 200"
+
+cross_cutting:
+  - concern: documentation
+    action: "Add the 'Desktop App' section to README.md here (build/install instructions) — the natural integration point once the app genuinely works end to end."

@@ -11,6 +11,13 @@ function insertDecision(db: Database.Database, id: string, title: string, source
   ).run(id, title, sourceBody, now, now);
 }
 
+function insertDecisionWithPayload(db: Database.Database, id: string, title: string, payload: unknown) {
+  const now = new Date().toISOString();
+  db.prepare(
+    "INSERT INTO items (id, type, title, status, created_at, updated_at, decision_payload) VALUES (?, 'decision_request', ?, 'open', ?, ?, ?)",
+  ).run(id, title, now, now, JSON.stringify(payload));
+}
+
 type CapturedCall = { url: string; init: RequestInit };
 
 function makeFakeFetch(calls: CapturedCall[], rejectWith?: Error): typeof globalThis.fetch {
@@ -231,5 +238,128 @@ describe("POST /api/decisions/:id/verdict", () => {
       .prepare("SELECT new_value FROM audit_log WHERE item_id = ? AND field = 'verdict'")
       .get("dec-fs") as { new_value: string } | undefined;
     expect(JSON.parse(auditRow!.new_value)).toEqual({ kind: "features_selected", selected: ["auth", "dark-mode"] });
+  });
+
+  describe("s4-edit-and-cba-answer-shapes: new payload types round-trip the same way", () => {
+    it("records an accepted verdict on an edit-proposal/v1 item and marks it done", async () => {
+      insertDecisionWithPayload(db, "edit-verdict-1", "Amend the report", {
+        version: "dostal:edit-proposal/v1",
+        title: "Amend the report",
+        context: "ctx",
+        original: "a\nb",
+        proposed: "a\nb, edited",
+      });
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/decisions/edit-verdict-1/verdict",
+        payload: { verdict: { kind: "accepted" } },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ ok: true, status: "done" });
+      const row = db.prepare("SELECT status, decided_at FROM items WHERE id = 'edit-verdict-1'").get() as {
+        status: string;
+        decided_at: string;
+      };
+      expect(row.status).toBe("done");
+      expect(row.decided_at).toBeTruthy();
+    });
+
+    it("records a rejected_iteration_requested verdict on a cba/v1 item and reopens it", async () => {
+      insertDecisionWithPayload(db, "cba-verdict-1", "Buy vs build", {
+        version: "dostal:cba/v1",
+        title: "Buy vs build",
+        context: "ctx",
+        options: [
+          { option: "Buy", cost: "$50k", benefit: "Fast" },
+          { option: "Build", cost: "2mo", benefit: "Control" },
+        ],
+      });
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/decisions/cba-verdict-1/verdict",
+        payload: { verdict: { kind: "rejected_iteration_requested", commentary: "need more data" } },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ ok: true, status: "in_progress", decided_at: null });
+      const row = db.prepare("SELECT decided_at FROM items WHERE id = 'cba-verdict-1'").get() as {
+        decided_at: null;
+      };
+      expect(row.decided_at).toBeNull();
+    });
+  });
+
+  describe("s5-freetext-rating-ranking-answer-shapes: new verdict kinds round-trip the same way", () => {
+    it("records a text_response verdict on a free-text/v1 item and marks it done", async () => {
+      insertDecisionWithPayload(db, "ft-verdict-1", "Anything else?", {
+        version: "dostal:free-text/v1",
+        title: "Anything else?",
+        context: "ctx",
+        prompt: "Share feedback",
+      });
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/decisions/ft-verdict-1/verdict",
+        payload: { verdict: { kind: "text_response", text: "Looks good" } },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ ok: true, status: "done" });
+      const row = db.prepare("SELECT status, decided_at FROM items WHERE id = 'ft-verdict-1'").get() as {
+        status: string;
+        decided_at: string;
+      };
+      expect(row.status).toBe("done");
+      expect(row.decided_at).toBeTruthy();
+      const auditRow = db
+        .prepare("SELECT new_value FROM audit_log WHERE item_id = ? AND field = 'verdict'")
+        .get("ft-verdict-1") as { new_value: string };
+      expect(JSON.parse(auditRow.new_value)).toEqual({ kind: "text_response", text: "Looks good" });
+    });
+
+    it("records a rated verdict on a rating/v1 item and marks it done", async () => {
+      insertDecisionWithPayload(db, "rt-verdict-1", "Rate the migration", {
+        version: "dostal:rating/v1",
+        title: "Rate the migration",
+        context: "ctx",
+        prompt: "Rate 1-5",
+        scale: { min: 1, max: 5 },
+      });
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/decisions/rt-verdict-1/verdict",
+        payload: { verdict: { kind: "rated", value: 4 } },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ ok: true, status: "done" });
+      const row = db.prepare("SELECT status, decided_at FROM items WHERE id = 'rt-verdict-1'").get() as {
+        status: string;
+        decided_at: string;
+      };
+      expect(row.status).toBe("done");
+      expect(row.decided_at).toBeTruthy();
+    });
+
+    it("records a ranked verdict on a ranking/v1 item and marks it done", async () => {
+      insertDecisionWithPayload(db, "rk-verdict-1", "Rank the priorities", {
+        version: "dostal:ranking/v1",
+        title: "Rank the priorities",
+        context: "ctx",
+        prompt: "Drag to rank",
+        items: [
+          { id: "perf", label: "Performance" },
+          { id: "a11y", label: "Accessibility" },
+        ],
+      });
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/decisions/rk-verdict-1/verdict",
+        payload: { verdict: { kind: "ranked", order: ["a11y", "perf"] } },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ ok: true, status: "done" });
+      const auditRow = db
+        .prepare("SELECT new_value FROM audit_log WHERE item_id = ? AND field = 'verdict'")
+        .get("rk-verdict-1") as { new_value: string };
+      expect(JSON.parse(auditRow.new_value)).toEqual({ kind: "ranked", order: ["a11y", "perf"] });
+    });
   });
 });

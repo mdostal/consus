@@ -1,0 +1,103 @@
+id: s3-tray-menu-and-lifecycle
+epic: consus-phase26-desktop-app
+title: Tray menu, single-instance guard, close-to-tray, autostart
+status: pending
+complexity: medium
+methodology: classic
+depends_on: [s2-sidecar-process-management]
+
+description: |
+  Port Heimdall's tray.rs and the single-instance/autostart/close-to-tray
+  wiring in lib.rs to Consus, verbatim in structure (menu labels only
+  change: "Open Consus" instead of "Open Heimdall"). This is the last
+  piece needed for the app to behave like a real menu-bar app rather than
+  a one-shot window: second launch focuses the existing window instead of
+  spawning a second sidecar (which would collide on s1's shared sqlite
+  file), closing the window hides it rather than quitting (sidecar keeps
+  running, tray stays), and "Launch at Login" is a real toggle.
+
+acceptance_criteria:
+  - "Given the app is already running, launching it again (Dock double-click or `open -a Consus`) focuses the existing window rather than spawning a second sidecar process — verified live via ps showing exactly one node child process after two launches"
+  - "Given the main window is closed (red traffic-light button), the sidecar process is still running (verified via ps) and the tray icon is still present"
+  - "Given the tray menu, it shows exactly: Open Consus, Check for Updates… (wired in s6, present as a menu item now even if s6 isn't built yet — mirror Heimdall's ordering), Launch at Login (checkbox), Quit"
+  - "Given Launch at Login is toggled on, a LaunchAgent is registered (tauri-plugin-autostart, macOS launcher) and the checkbox reflects the actual current state on next tray-menu open, not just the last click"
+  - "Given Quit is chosen from the tray menu (not just Cmd+Q, which s2 already covers), the sidecar is killed and the app fully exits"
+
+steps:
+  - id: research
+    description: Re-read Heimdall's tray.rs and the single-instance plugin registration ordering requirement (documented in Heimdall's own lib.rs comment as a hard requirement — must be registered first).
+    agent: researcher
+  - id: implement
+    description: Port tray.rs (menu items, click handlers), register tauri-plugin-single-instance first in the builder chain, wire window CloseRequested to api.prevent_close() + hide(), register tauri-plugin-autostart.
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Live-verify all five acceptance criteria against a real running debug build, not just code review — this story is entirely about observable runtime behavior.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm single-instance plugin is registered before any other plugin (Heimdall's own comment flags this as a hard Tauri requirement, not a stylistic preference), confirm close-to-tray never actually terminates the sidecar.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase26-desktop-app.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: app/src-tauri/src/lib.rs
+      purpose: s2 already has the sidecar spawn and RunEvent quit handler here — this story adds the plugin registrations and window-close interception around it
+
+files_to_modify:
+  - file: app/src-tauri/src/tray.rs
+    change: "New file — ported from Heimdall's tray.rs: menu build, click handlers, show_main_window()"
+  - file: app/src-tauri/src/lib.rs
+    change: "Register tauri_plugin_single_instance FIRST, tauri_plugin_autostart, wire window.on_window_event for CloseRequested -> hide"
+
+code_examples:
+  - title: "Heimdall's real plugin registration ordering (single-instance MUST be first)"
+    file: /Users/mdostal/Documents/work/pantheon/heimdall/app/src-tauri/src/lib.rs
+    snippet: |
+      let builder = tauri::Builder::default()
+          // Must be registered first (documented Tauri requirement) -- a
+          // second launch focuses the existing window instead of spawning a
+          // second sidecar and colliding on the port/DB file.
+          .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+              tray::show_main_window(app);
+          }))
+          .plugin(tauri_plugin_autostart::init(
+              tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+              None,
+          ))
+  - title: "Heimdall's real close-to-tray window event handler"
+    file: /Users/mdostal/Documents/work/pantheon/heimdall/app/src-tauri/src/lib.rs
+    snippet: |
+      window.on_window_event(move |event| {
+          if let WindowEvent::CloseRequested { api, .. } = event {
+              api.prevent_close();
+              let _ = window_for_close.hide();
+          }
+      });
+  - title: "Heimdall's real tray menu build"
+    file: /Users/mdostal/Documents/work/pantheon/heimdall/app/src-tauri/src/tray.rs
+    snippet: |
+      let open_item = MenuItem::with_id(app, "open", "Open Heimdall", true, None::<&str>)?;
+      let autostart_item = CheckMenuItemBuilder::with_id("autostart", "Launch at Login")
+          .checked(app.autolaunch().is_enabled().unwrap_or(false))
+          .build(app)?;
+      let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+
+design_decisions:
+  - decision: "Single-instance plugin registered first in the builder chain, no exceptions"
+    rationale: "Heimdall's own code comment documents this as a hard Tauri requirement, not a preference — a second sidecar launch would collide on s1's shared app-local sqlite file."
+
+risks:
+  - severity: medium
+    description: "Close-to-tray silently swallowing the window-close gesture in a way that confuses first-time users expecting normal quit-on-close behavior"
+    mitigation: "Matches the exact UX convention Heimdall and Portunus already establish on this machine — consistent with the operator's explicit 'full parity' decision this session, not a new pattern to learn"
+
+cross_cutting:
+  - concern: documentation
+    action: "README.md desktop-app section (added in s5) should mention close-to-tray behavior explicitly so it isn't a surprise."

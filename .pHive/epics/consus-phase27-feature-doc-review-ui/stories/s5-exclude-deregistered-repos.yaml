@@ -1,0 +1,71 @@
+id: s5-exclude-deregistered-repos
+epic: consus-phase27-feature-doc-review-ui
+title: Exclude doc_index rows for repos no longer in the project registry from the feature view
+status: pending
+complexity: low
+methodology: classic
+depends_on: [s2-feature-grouped-docs-api]
+
+description: |
+  Real data-hygiene bug found during this epic's research pass (not the
+  original ask, but discovered while grounding the design against this
+  operator's actual data): a live query of .pHive/consus.sqlite found 76
+  docs across 29 epics tagged repo="Portunus" sitting in doc_index, even
+  though "Portunus" is not present in the current
+  .pHive/consus-projects.json registry (only consus, heimdall, mnemosyne
+  are registered) — leftover from some earlier scan, now orphaned.
+
+  Without this story, s3's new feature browser would surface 29 dead
+  "features" pointing at a repo Consus can no longer read docs from
+  (repos not in the registry have no resolvable path), which is a worse
+  UX than today's flat list ever exposed since nothing currently groups
+  by epic count prominently enough to notice.
+
+acceptance_criteria:
+  - "Given GET /api/docs/features (from s2), its response only ever includes repos currently present in the active project registry — verified against this repo's own real, currently-orphaned Portunus data, not a synthetic test case"
+  - "Given a repo is later re-registered, its docs reappear in the feature view without needing a re-scan (the orphan filter is a query-time exclusion, not a destructive delete of the underlying doc_index rows)"
+  - "Given the existing GET /api/docs endpoint (unchanged by this epic), its own behavior toward orphaned repos is explicitly noted (even if left as-is) rather than silently diverging from the new endpoint without documentation"
+
+steps:
+  - id: research
+    description: Confirm the live orphaned-Portunus-data finding still holds (re-query doc_index vs. the current consus-projects.json) and check whether GET /api/docs already has any implicit exclusion behavior worth matching.
+    agent: researcher
+  - id: implement
+    description: Add a registry-membership filter to GET /api/docs/features's query (query-time exclusion, not a destructive prune of doc_index).
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Test against this repo's own real orphaned data to confirm Portunus rows are excluded from the new endpoint's response.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm this is non-destructive (no DELETE against doc_index), confirm GET /api/docs's own divergent behavior (if any) is at least noted.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase27-feature-doc-review-ui.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: server/routes/docs.ts
+      purpose: "s2's new GET /api/docs/features handler — this story adds the registry-membership filter to it"
+    - path: .pHive/consus-projects.json
+      purpose: "The active project registry — real source of truth for which repos should surface in the feature view; confirmed this session it currently lists only consus/heimdall/mnemosyne"
+
+files_to_modify:
+  - file: server/routes/docs.ts
+    change: Add registry-membership filter to GET /api/docs/features
+
+design_decisions:
+  - decision: "Query-time exclusion, not a destructive prune of doc_index"
+    rationale: "Deleting orphaned rows is a one-way decision this small story shouldn't make unilaterally — if a repo is later re-registered, its previously-scanned docs should still be there rather than requiring a full re-scan."
+
+risks:
+  - severity: low
+    description: "None significant — additive filter only"
+    mitigation: "n/a"
+
+cross_cutting: []

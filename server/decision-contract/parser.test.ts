@@ -257,6 +257,9 @@ describe("decision-request/v1 parser", () => {
       [{ kind: "mix" as const, optionIds: ["A", "B"], why: "combine" }, "done"],
       [{ kind: "rejected_iteration_requested" as const, commentary: "redo" }, "in_progress"],
       [{ kind: "features_selected" as const, selected: ["dark-mode", "oauth"] }, "done"],
+      [{ kind: "text_response" as const, text: "Looks good" }, "done"],
+      [{ kind: "rated" as const, value: 4 }, "done"],
+      [{ kind: "ranked" as const, order: ["a", "b"] }, "done"],
     ] as const)("maps %o to status %s", (verdict, expected) => {
       expect(verdictStatus(verdict)).toBe(expected);
     });
@@ -288,6 +291,22 @@ describe("decision-request/v1 parser", () => {
         "Selected features: dark-mode, oauth, 2fa",
       );
     });
+
+    it("summarizes a text_response verdict", () => {
+      expect(verdictSummary({ kind: "text_response", text: "Looks good to me" })).toBe(
+        "Responded: Looks good to me",
+      );
+    });
+
+    it("summarizes a rated verdict", () => {
+      expect(verdictSummary({ kind: "rated", value: 4 })).toBe("Rated 4.");
+    });
+
+    it("summarizes a ranked verdict listing the order", () => {
+      expect(verdictSummary({ kind: "ranked", order: ["perf", "a11y", "i18n"] })).toBe(
+        "Ranked: perf > a11y > i18n",
+      );
+    });
   });
 
   describe("FeatureSelectionPayload", () => {
@@ -304,6 +323,95 @@ describe("decision-request/v1 parser", () => {
       expect(payload.version).toBe("dostal:feature-selection/v1");
       expect(payload.features).toHaveLength(2);
       expect(payload.features[1].default).toBe(true);
+    });
+  });
+
+  describe("EditProposalPayload (s4-edit-and-cba-answer-shapes)", () => {
+    it("validates a well-formed edit-proposal/v1 payload is accepted by the type", () => {
+      const payload = {
+        version: "dostal:edit-proposal/v1" as const,
+        title: "Amend the weekly ops report",
+        context: "Tighten the summary paragraph.",
+        original: "line one\nline two\nline three",
+        proposed: "line one\nline two, tightened\nline three",
+      };
+      expect(payload.version).toBe("dostal:edit-proposal/v1");
+      expect(payload.original).not.toBe(payload.proposed);
+    });
+  });
+
+  describe("CbaPayload (s4-edit-and-cba-answer-shapes)", () => {
+    it("validates a well-formed cba/v1 payload is accepted by the type", () => {
+      const payload = {
+        version: "dostal:cba/v1" as const,
+        title: "Buy vs build the reporting pipeline",
+        context: "Compare the two paths before committing.",
+        options: [
+          { option: "Buy", cost: "$50k/yr", benefit: "Fast to ship", notes: "Vendor lock-in risk" },
+          { option: "Build", cost: "2 eng-months", benefit: "Full control" },
+        ],
+      };
+      expect(payload.version).toBe("dostal:cba/v1");
+      expect(payload.options).toHaveLength(2);
+      expect(payload.options[1].notes).toBeUndefined();
+    });
+  });
+
+  describe("FreeTextPayload (s5-freetext-rating-ranking-answer-shapes)", () => {
+    it("validates a well-formed free-text/v1 payload is accepted by the type", () => {
+      const payload = {
+        version: "dostal:free-text/v1" as const,
+        title: "Anything else?",
+        context: "Wrapping up the retro.",
+        prompt: "Share any additional feedback",
+      };
+      expect(payload.version).toBe("dostal:free-text/v1");
+      expect(payload.prompt).toBe("Share any additional feedback");
+    });
+  });
+
+  describe("RatingPayload (s5-freetext-rating-ranking-answer-shapes)", () => {
+    it("validates a well-formed rating/v1 payload with labels is accepted by the type", () => {
+      const payload = {
+        version: "dostal:rating/v1" as const,
+        title: "Rate the migration",
+        context: "How did the cutover go?",
+        prompt: "Rate 1-5",
+        scale: { min: 1, max: 5, labels: { 1: "Poor", 5: "Excellent" } },
+      };
+      expect(payload.version).toBe("dostal:rating/v1");
+      expect(payload.scale.min).toBe(1);
+      expect(payload.scale.max).toBe(5);
+      expect(payload.scale.labels?.[1]).toBe("Poor");
+    });
+
+    it("validates a well-formed rating/v1 payload without labels is accepted by the type", () => {
+      const payload = {
+        version: "dostal:rating/v1" as const,
+        title: "Rate the migration",
+        context: "How did the cutover go?",
+        prompt: "Rate 1-5",
+        scale: { min: 1, max: 5 },
+      };
+      expect(payload.scale.labels).toBeUndefined();
+    });
+  });
+
+  describe("RankingPayload (s5-freetext-rating-ranking-answer-shapes)", () => {
+    it("validates a well-formed ranking/v1 payload is accepted by the type", () => {
+      const payload = {
+        version: "dostal:ranking/v1" as const,
+        title: "Rank the launch priorities",
+        context: "Order matters for the roadmap.",
+        prompt: "Drag to rank",
+        items: [
+          { id: "perf", label: "Performance" },
+          { id: "a11y", label: "Accessibility" },
+        ],
+      };
+      expect(payload.version).toBe("dostal:ranking/v1");
+      expect(payload.items).toHaveLength(2);
+      expect(payload.items[0].id).toBe("perf");
     });
   });
 });

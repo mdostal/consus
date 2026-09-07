@@ -1,0 +1,104 @@
+id: s3-design-wireframe-scanning
+epic: consus-phase28-interaction-completeness
+title: Scan .pHive/design/ wireframes and surface them in FeatureBrowser
+status: pending
+complexity: medium
+methodology: classic
+depends_on: []
+
+parallel_allowed: true
+parallel_rationale: bounded-slice
+
+description: |
+  Confirmed this session: server/adapters/doc-scanner/index.ts's SCAN_ROOTS
+  is [".pHive/planning", ".pHive/epics"] plus the phase27 OVERVIEW_ROOT_*
+  addition (README/VISION/docs/) -- the Hive /design skill's wireframe
+  output directory (.pHive/design/<topic>/, registered in
+  .pHive/design/index.yaml per hive/references/wireframe-protocol.md) is
+  never scanned. Separately, no route in this app serves arbitrary
+  repo-relative image assets, so even a wireframe PNG referenced from a
+  design doc would 404 today.
+
+  This story mirrors phase27's OVERVIEW_ROOT_* pattern exactly: add
+  .pHive/design/ as a fourth scan root, tagged with a new reserved value
+  distinguishing it from "planning"/"epics"/"overview" (e.g. phase="design",
+  epic=<topic name from index.yaml> so it still groups sensibly per feature
+  when a design topic corresponds to a feature). Add one new image-serving
+  route modeled directly on the attachments route's existing
+  INLINE_SAFE_TYPES + path-safety pattern (do not invent a new
+  access-control scheme). Surface scanned design topics inside the existing
+  FeatureBrowser/FeatureDetailView UI from phase27 (user-confirmed: fold in,
+  not a separate nav item), reusing DocRenderer for markdown and the new
+  image route for any PNGs/wireframes the topic's docs reference.
+
+acceptance_criteria:
+  - "Given a .pHive/design/<topic>/ directory with an index.yaml and markdown artifacts, running the doc scan indexes those artifacts into doc_index the same way epics/overview docs are indexed"
+  - "Given a design doc references a PNG/wireframe image (markdown image syntax or an explicit attachment-style reference), the new image-serving route resolves it -- confirmed by an actual HTTP fetch in a test, not just code inspection"
+  - "Given the new image route, it applies the same path-safety posture as the existing attachments route (no path traversal outside .pHive/design/, mime allowlist) -- confirmed by a negative test attempting traversal"
+  - "Given FeatureBrowser, a feature with an associated .pHive/design/ topic shows that topic's wireframes/docs alongside its existing code docs -- not as a separate top-level nav item"
+  - "Given no .pHive/design/ directory exists in a repo (the common case today), the scan and UI behave exactly as before this story -- purely additive, zero regression for repos without design artifacts"
+
+steps:
+  - id: research
+    description: Re-confirm SCAN_ROOTS/OVERVIEW_ROOT_* in doc-scanner/index.ts, the .pHive/design/index.yaml registry shape from hive/references/wireframe-protocol.md, and the attachments route's exact path-safety implementation to mirror.
+    agent: researcher
+  - id: implement
+    description: Add the .pHive/design/ scan root with appropriate epic/phase tagging, add the new image-serving route mirroring attachments' safety posture, and integrate design topics into FeatureBrowser/FeatureDetailView.
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Add scanner tests for the new root (including the no-design-dir no-op case), route tests for the image endpoint including a path-traversal negative test, and FeatureBrowser integration tests for design-topic surfacing.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm existing scan roots (planning/epics/overview) are byte-identical in behavior, confirm the new image route's security posture genuinely matches attachments.ts rather than diverging.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase28-interaction-completeness.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: server/adapters/doc-scanner/index.ts
+      purpose: "SCAN_ROOTS and OVERVIEW_ROOT_* (added in phase27) -- the exact pattern this story extends a third/fourth time"
+    - path: server/routes/attachments.ts
+      purpose: "INLINE_SAFE_TYPES + path-safety pattern to mirror for the new design-image route -- do not invent a new access-control scheme"
+    - path: web/src/features/docs/FeatureBrowser.tsx
+      purpose: "phase27's feature list UI -- this story's integration point for surfacing design topics per-feature"
+    - path: web/src/features/docs/FeatureDetailView.tsx
+      purpose: "phase27's per-feature doc detail view, reusing DocRenderer -- this story's integration point for rendering a design topic's docs+images alongside code docs"
+
+files_to_modify:
+  - file: server/adapters/doc-scanner/index.ts
+    change: Add .pHive/design/ as a new scan root, tagged distinctly from planning/epics/overview
+  - file: server/routes/design-assets.ts
+    change: New route serving images from .pHive/design/, mirroring attachments.ts's INLINE_SAFE_TYPES + path-safety pattern
+  - file: web/src/features/docs/FeatureBrowser.tsx
+    change: Surface a feature's associated design topic (if any) alongside its existing docs
+  - file: web/src/features/docs/FeatureDetailView.tsx
+    change: Render a design topic's markdown + images alongside the feature's code docs
+
+design_decisions:
+  - decision: Fold into FeatureBrowser rather than a separate nav item
+    rationale: "User-confirmed choice, matches phase27's 'one place to review everything about a feature' goal"
+  - decision: New image route mirrors attachments.ts exactly rather than reusing it directly
+    rationale: "Attachments are keyed by attachment id in a DB table; design images are keyed by repo-relative path under .pHive/design/ -- different addressing scheme, same safety posture"
+
+risks:
+  - severity: medium
+    description: A new file-serving route that doesn't mirror attachments.ts's path-safety carefully could introduce a path-traversal vulnerability
+    mitigation: Explicit negative test for traversal attempts; code review specifically diffs the new route's safety checks against attachments.ts's
+
+cross_cutting:
+  - concern: documentation
+    action: "Update docs/api-reference.md to document the new design-asset serving route and the .pHive/design/ scan root"
+
+references:
+  - path: .pHive/epics/consus-phase27-feature-doc-review-ui/stories/s1-repo-overview-doc-scanning.yaml
+    relevant_excerpt: |
+      Add the repo-root scan root, tag matched files phase="overview"/
+      epic=null, keep existing scan roots' behavior byte-identical.
+      (This story repeats that exact pattern for .pHive/design/.)

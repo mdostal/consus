@@ -9,7 +9,7 @@ describe("DiagramChangeset", () => {
     expect(screen.getByText(/no pending changes yet/i)).toBeInTheDocument();
   });
 
-  it("renders one row per change, typed by kind", () => {
+  it("renders one row per change, typed by kind, via the shared VisualDiff renderer", () => {
     const changes: DiagramChange[] = [
       { id: "1", kind: "added", entity: "node", entityId: "n1", label: "Story Three" },
       { id: "2", kind: "removed", entity: "edge", entityId: "e1", label: "A -> B" },
@@ -18,10 +18,13 @@ describe("DiagramChangeset", () => {
     ];
     render(<DiagramChangeset changes={changes} />);
 
-    expect(screen.getByTestId("changeset-row-added")).toHaveTextContent("Story Three");
-    expect(screen.getByTestId("changeset-row-removed")).toHaveTextContent("A -> B");
-    expect(screen.getByTestId("changeset-row-changed")).toHaveTextContent("label changed");
-    expect(screen.getByTestId("changeset-row-moved")).toHaveTextContent("moved to (10, 20)");
+    // consus-phase28/s2: rows now come from the shared VisualDiff component
+    // (visual-diff-row-<kind>, in VisualDiff's own "add"/"remove"/"change"/
+    // "move" vocabulary) rather than a diagram-only rendering path.
+    expect(screen.getByTestId("visual-diff-row-add")).toHaveTextContent("Story Three");
+    expect(screen.getByTestId("visual-diff-row-remove")).toHaveTextContent("A -> B");
+    expect(screen.getByTestId("visual-diff-row-change")).toHaveTextContent("label changed");
+    expect(screen.getByTestId("visual-diff-row-move")).toHaveTextContent("moved to (10, 20)");
   });
 
   it("gives 'moved' rows a distinct CSS modifier class from every other kind", () => {
@@ -31,11 +34,17 @@ describe("DiagramChangeset", () => {
     ];
     render(<DiagramChangeset changes={changes} />);
 
-    const addedRow = screen.getByTestId("changeset-row-added");
-    const movedRow = screen.getByTestId("changeset-row-moved");
-    expect(movedRow.className).toContain("diagram-changeset__row--moved");
+    const addedRow = screen.getByTestId("visual-diff-row-add");
+    const movedRow = screen.getByTestId("visual-diff-row-move");
+    expect(movedRow.className).toContain("visual-diff__row--move");
     expect(movedRow.className).not.toBe(addedRow.className);
-    expect(addedRow.className).not.toContain("--moved");
+    expect(addedRow.className).not.toContain("--move");
+  });
+
+  it("delegates to the shared VisualDiff component (visual-diff), not a diagram-only rendering path", () => {
+    const changes: DiagramChange[] = [{ id: "1", kind: "added", entity: "node", entityId: "n1", label: "X" }];
+    render(<DiagramChangeset changes={changes} />);
+    expect(screen.getByTestId("visual-diff")).toBeInTheDocument();
   });
 
   it("shows a running count in the title once there are changes", () => {

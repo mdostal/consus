@@ -1,0 +1,76 @@
+id: s4-doc-review-actions
+epic: consus-phase27-feature-doc-review-ui
+title: Wire approve/deny/request-change into per-doc rendering (reuse existing proposals mechanism)
+status: pending
+complexity: medium
+methodology: classic
+depends_on: [s3-feature-browser-ui]
+
+description: |
+  This is the epic's central deliverable — the actual "review ALL the
+  docs for that feature and approve, deny, change, etc and fire that
+  back" capability named in the request. Confirmed this session: the
+  mechanism this needs already exists and already works — POST
+  /api/proposals backed by the proposals table (status CHECK IN
+  ('pending','applied','failed')), already wired end-to-end for diagrams
+  (ArchitectureDiagramView, App.tsx:630-703) and events
+  (EventProposeComposer, App.tsx:1173-1194). Docs already get an items
+  row on open via docItemIdFor (server/routes/docs.ts:102-108) — nothing
+  currently acts on it. App.tsx's own comment (line ~782) says plainly:
+  docs are "Read-only here (no propose-change wiring)." This story wires
+  the SAME mechanism into s3's FeatureDetailView, per doc.
+
+acceptance_criteria:
+  - "Given a doc inside s3's FeatureDetailView, it has visible approve/deny/request-change controls, matching the interaction pattern ArchitectureDiagramView already uses (read that component's real UI before building this, don't invent a new pattern)"
+  - "Given 'approve' is clicked on a doc, a real POST /api/proposals call fires using that doc's existing items row (via docItemIdFor), and the proposal lands in the proposals table with status='pending' initially — verified via a real API call + DB query, not just a UI click that silently no-ops"
+  - "Given 'deny' or 'request-change' (with operator-entered text) is used, the same real POST /api/proposals flow fires with the appropriate payload — confirmed by reading EventProposeComposer's real payload shape and matching it, not guessing"
+  - "Given the harness dispatch mechanism (CONSUS_HARNESS_COMMAND, per server/harness/transport.ts) is configured, a doc-review proposal genuinely fires back through it the same way diagram/event proposals already do — verified with a real StdioHarnessTransport test double, not just asserted"
+  - "Given this same doc is viewed again after a proposal is submitted, its pending/applied/failed status is visibly reflected in the UI (not silently lost)"
+
+steps:
+  - id: research
+    description: Read ArchitectureDiagramView's and EventProposeComposer's real proposal-submission code in full (App.tsx:630-703 and :1173-1194) plus POST /api/proposals's handler, to confirm the exact payload shape and UI pattern to replicate.
+    agent: researcher
+  - id: implement
+    description: Add approve/deny/request-change controls to FeatureDetailView's per-doc rendering, wired to POST /api/proposals using each doc's docItemIdFor-derived item id, matching the existing pattern exactly.
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Test the full real flow — submit a proposal, confirm it lands in the proposals table, confirm status reflects back in the UI, confirm harness dispatch fires (via a test double, not a live external harness).
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm this reuses the existing mechanism rather than duplicating proposal-submission logic; confirm the UI pattern is genuinely consistent with the diagram/event proposal UIs, not a divergent one-off.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase27-feature-doc-review-ui.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: web/src/App.tsx
+      purpose: "Lines 630-703 (ArchitectureDiagramView) and 1173-1194 (EventProposeComposer) — the two real, working proposal-submission UI patterns this story must match, not reinvent; line ~782's comment is the exact gap this story closes"
+    - path: server/routes/proposals.ts
+      purpose: "POST /api/proposals — the existing backend endpoint this story's UI calls, unchanged"
+    - path: server/routes/docs.ts
+      purpose: "docItemIdFor (lines 36-39, 102-108) — the existing per-doc item id every doc already gets on open"
+
+files_to_modify:
+  - file: web/src/features/docs/FeatureDetailView.tsx
+    change: Add approve/deny/request-change controls per doc, wired to POST /api/proposals
+
+design_decisions:
+  - decision: "Reuse the exact existing proposal UI pattern from diagrams/events rather than designing a new one"
+    rationale: "Two working precedents already exist in this same codebase — consistency for the operator, and zero new backend risk since the mechanism is already proven live."
+
+risks:
+  - severity: medium
+    description: "Silently building a new, parallel approve/deny code path instead of genuinely reusing POST /api/proposals — the failure mode the design discussion explicitly named as this epic's central risk"
+    mitigation: "Acceptance criteria explicitly requires a real POST /api/proposals call landing a real proposals-table row, verified by DB query, not a UI-only mock"
+
+cross_cutting:
+  - concern: documentation
+    action: "docs/api-reference.md likely needs a note that docs are no longer read-only (mirrors how diagrams/events proposal wiring is presumably already documented there — check and match)."

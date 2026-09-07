@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-09-06
+
 ### Added
 
 - **`consus-rich-decisions`:** three structural gaps in `dostal:decision-request/v1` closed via a
@@ -41,6 +43,86 @@
   `DirectoryBrowser` component — navigate from the home directory, breadcrumb back up, select any
   directory regardless of whether it's repo-flagged. All three path-filling methods (manual entry,
   discovered-candidates select, browser) are additive; none is a hard requirement.
+- **`Consus.app` — a native macOS desktop shell** (`consus-phase26-desktop-app`, 6 dependency-tracked
+  stories, planned and built by directly reading Heimdall's real, shipped `app/src-tauri/`
+  implementation and adapting it, not reinventing it): a Tauri v2 app that spawns Consus's own
+  compiled server as a background sidecar (spawn/health-check-via-`GET /health`/idempotent kill
+  across every quit path, login-shell `PATH` capture, an OS-assigned free port), a menu-bar tray
+  (Open Consus / Check for Updates… / Launch at Login / Quit), a single-instance guard so a second
+  launch focuses the existing window instead of colliding on the shared app-local sqlite file,
+  close-to-tray window behavior, a minimal app icon set, a real `cargo tauri build` release
+  packaging pipeline that stages both `dist-server/` and `dist-web/` into the bundle (the one place
+  Consus's real two-artifact build genuinely diverges from Heimdall's single-artifact one), and a
+  background update checker against this repo's own GitHub releases. Runs with its own fresh,
+  empty state under `~/Library/Application Support/com.mdostal.consus/` — never the operator's live
+  decisions data — so the operator registers projects themselves on first launch.
+- **Feature-scoped doc browsing and review** (`consus-phase27-feature-doc-review-ui`, 5
+  dependency-tracked stories, grounded in a live research pass over the real schema/UI/data
+  before design): the flat repo→phase doc list is replaced by two real groupings — per-feature
+  (a `FeatureBrowser` list + `FeatureDetailView` showing every doc for one epic together,
+  reusing the existing `DocRenderer`) and per-overview (`README.md`/`VISION.md`/root `docs/*.md`,
+  now scanned into `doc_index` for the first time as a distinct `phase: "overview"` bucket — they
+  were never indexed at all before this). Docs can now be approved, denied, or have a change
+  proposed directly from the feature view, firing back through the same `POST /api/proposals`
+  mechanism already proven for diagrams and events — closing a real gap (`App.tsx`'s own prior
+  comment: docs were "Read-only here (no propose-change wiring)"). Also fixes a real data-hygiene
+  bug found during research: `GET /api/docs/features` now excludes repos no longer in the active
+  project registry (found live: 76 orphaned docs across 29 epics from a deregistered repo).
+
+- **Decision/survey interaction completeness, wireframe visibility, and rendered diffs**
+  (`consus-phase28-interaction-completeness`, 5 dependency-tracked stories, grounded in a deep-dive
+  research pass against `VISION.md` that also caught and fixed a real `dev`/`main` divergence — see
+  below):
+  - **Attachment image previews** — `AttachmentItem` now renders an inline `<img>` thumbnail for
+    `image/*` attachments (the server already served them with `Content-Disposition: inline`; the
+    frontend never used it), falling back to the existing extension pill on load failure.
+  - **Rendered visual diffs** — a single shared `VisualDiff` component (`web/src/features/diff/`)
+    renders add/remove/change/move rows with one consistent visual language, used both for a doc
+    section's live colored diff preview while editing (`DocRenderer`) and for the diagram
+    changeset panel (`DiagramChangeset`, covering both `DiagramView` and `ArchitectureDiagramView`).
+    Both flows already computed diff data purely to embed in `POST /api/proposals`; neither had ever
+    rendered it visually before this.
+  - **`.pHive/design/` wireframe scanning** — a fourth doc-scanner root (mirroring phase27's
+    overview-scan pattern) indexes a repo's Hive `/design`-skill wireframe topics into `doc_index`
+    (`phase: "design"`), folding into `FeatureBrowser`/`FeatureDetailView` as a "Design" badge
+    rather than a separate nav item. A new `GET /api/design-assets` route (mirroring
+    `attachments.ts`'s safety posture: extension allowlist, server-derived Content-Type, path
+    resolution that rejects both deep traversal and the sibling-directory-prefix gap) serves the
+    wireframe images a design doc references — previously invisible to Consus entirely.
+  - **Five new/completed decision answer shapes** — the classifier already emitted `edit`/`cba`
+    labels with no renderer (falling back to the generic options UI); added real ones
+    (`dostal:edit-proposal/v1` diff-styled proposed-change view, `dostal:cba/v1` structured
+    cost/benefit table). Also added three previously-missing interaction types:
+    `dostal:free-text/v1` (open-ended response), `dostal:rating/v1` (numeric scale), and
+    `dostal:ranking/v1` (drag-to-reorder, with an accessible up/down-button fallback). All five
+    follow the same parser-validates → `AnswerControl`-dispatches → verdict-recorded pattern
+    already proven by `decision-request/v1` and `feature-selection/v1`.
+  - True sequential/gated survey stepping and a Consus-native quorum/agent-voting answer shape were
+    explicitly scoped out — quorum in particular is intended as a future thin external
+    approval-middleware API another system calls into, not an in-app feature.
+  - **Pre-flight PR reconciliation:** found that `main` had accrued a mature decisions/survey
+    feature stream (`SurveyView`, survey grouping, `feature-selection/v1`, attachments, research
+    sections) via a series of direct-to-main PRs that never flowed back through `dev`, while `dev`'s
+    own tip held an independent, functionally-redundant reimplementation of the same
+    `FeatureChecklist` feature built against stale code. Reconciled via a real merge (`main` → a
+    branch → `dev`, no rebase, main's versions kept as the verified superset), plus retargeted and
+    merged a stray PR that had been wrongly opened straight against `main`. The merge itself
+    introduced two silent semantic breaks (two independent fixes for the same bug landing on
+    non-conflicting lines: a variable referenced before its declaration in `routes/projects.ts`, and
+    a duplicated early-return in `AnswerControl.tsx` that was a genuine conditional-hooks-call
+    violation) — both caught via full build+test and fixed directly.
+
+### Changed
+
+- **`consus-phase26-desktop-app` release finalization.** Applied the epic's planned `minor` version
+  bump (`0.12.0` → `0.13.0`) and kept `package.json`, `app/src-tauri/tauri.conf.json`, and
+  `app/src-tauri/Cargo.toml` in lockstep.
+- **`consus-phase27-feature-doc-review-ui` release finalization.** Applied the epic's planned
+  `minor` version bump (`0.13.0` → `0.14.0`) and kept `package.json`, `app/src-tauri/tauri.conf.json`,
+  and `app/src-tauri/Cargo.toml` in lockstep.
+- **`consus-phase28-interaction-completeness` release finalization.** Applied the epic's planned
+  `minor` version bump (`0.14.0` → `0.15.0`) and kept `package.json`, `app/src-tauri/tauri.conf.json`,
+  and `app/src-tauri/Cargo.toml` in lockstep.
 
 ## [0.12.0] - 2026-08-19
 
