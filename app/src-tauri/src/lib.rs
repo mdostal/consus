@@ -11,32 +11,56 @@ use tauri_plugin_dialog::DialogExt;
 
 /// Native folder picker for "Open in Finder..." (AddProjectForm.tsx).
 ///
-/// Root cause, confirmed live: `blocking_pick_folder()` (both this
-/// command's first version, and `@tauri-apps/plugin-dialog`'s own `open()`
-/// JS command, which calls the same blocking API internally --
-/// tauri-plugin-dialog's commands.rs) is a genuinely blocking call. Its own
-/// doc comment says exactly why: "should be used when running on the main
-/// thread to avoid deadlocks with the event loop" -- calling it from a
-/// `#[tauri::command]` handler means AppKit's modal panel needs the very
-/// event loop the call is blocking to ever display or resolve. Reproduced
-/// directly: clicking the button never produced a new window in the
-/// system-wide window list (CGWindowListCopyWindowInfo) and, worse, froze
-/// the rest of the webview's accessibility tree -- silently hung, no
-/// dialog, no error, matching the exact "doesn't quite work" report.
+/// Three independent, stacked root causes, each confirmed live before being
+/// fixed (found by isolating the real click -> React onClick -> invoke() ->
+/// IPC path with actual DOM `.click()` / raw `window.__TAURI_INTERNALS__
+/// .invoke()` injection into the webview, since external OS-level
+/// synthetic clicks proved unreliable to land on this button in testing):
 ///
-/// Fixed by using the non-blocking, callback-based `pick_folder()` instead,
-/// bridged back to this async command's return value via a oneshot
-/// channel -- the documented-correct pattern for invoking this from a
-/// command handler.
+/// 1. **Blocking call on the wrong thread.** `blocking_pick_folder()`
+///    (both this command's first version, and `@tauri-apps/plugin-dialog`'s
+///    own `open()` JS command, which calls the same blocking API
+///    internally -- tauri-plugin-dialog's commands.rs) is a genuinely
+///    blocking call whose own doc comment says exactly why it's wrong
+///    here: "should be used when running on the main thread to avoid
+///    deadlocks with the event loop." Fixed by switching to the
+///    non-blocking, callback-based `pick_folder()`, explicitly dispatched
+///    via `AppHandle::run_on_main_thread` (Tauri's documented answer for
+///    "must run on the main thread" native-API calls), bridged back to
+///    this async command's return value via a oneshot channel.
+/// 2. **Missing ACL permission for this app's own command.** Tauri v2
+///    gates app-defined commands through the same permission system as
+///    plugin commands -- `invoke()` rejected outright with "pick_repo_folder
+///    not allowed. Plugin not found" until build.rs declared it via
+///    `AppManifest::commands(&["pick_repo_folder"])`, generating an
+///    `allow-pick-repo-folder` permission referenced (bare, no namespace
+///    prefix) from capabilities/default.json.
+/// 3. **Capability doesn't cover this app's real runtime origin.** Even
+///    with (2) fixed, `invoke()` still rejected: "allowed on: [windows:
+///    main, URL: local]" while the actual webview was at
+///    `http://127.0.0.1:<port>` -- this app deliberately navigates the
+///    window there once the sidecar is healthy (see the `navigate()` call
+///    below), so it is never on Tauri's bundled "local" asset origin by
+///    the time an operator can click anything. Every capability-gated API
+///    in this app was silently inert post-navigation until
+///    capabilities/default.json declared `"remote": {"urls":
+///    ["http://127.0.0.1:*"]}`.
 #[tauri::command]
 async fn pick_repo_folder(app: tauri::AppHandle) -> Option<String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
-    app.dialog()
-        .file()
-        .set_title("Choose a repo to add to Consus")
-        .pick_folder(move |folder| {
-            let _ = tx.send(folder);
-        });
+    let app_for_main_thread = app.clone();
+    if let Err(e) = app.run_on_main_thread(move || {
+        app_for_main_thread
+            .dialog()
+            .file()
+            .set_title("Choose a repo to add to Consus")
+            .pick_folder(move |folder| {
+                let _ = tx.send(folder);
+            });
+    }) {
+        log::error!("pick_repo_folder: run_on_main_thread failed: {e}");
+        return None;
+    }
     rx.await.ok().flatten().and_then(|p| p.into_path().ok()).map(|p| p.display().to_string())
 }
 
