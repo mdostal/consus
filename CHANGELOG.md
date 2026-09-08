@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.15.5] - 2026-09-08
+
+### Fixed
+
+- **Native folder picker was still fully blocked after the previous fix** — found three
+  independent, stacked causes by injecting real DOM clicks and raw IPC calls directly into the
+  webview: (1) the non-blocking `pick_folder()` call still needed to run on the main thread via
+  `AppHandle::run_on_main_thread`, not a command-handler thread; (2) Tauri v2 gates the app's own
+  commands through the same ACL as plugin commands — `invoke()` was rejected outright until
+  `build.rs` declared the command via `AppManifest`; (3) the capability only covered Tauri's
+  bundled local origin, but this app navigates to `http://127.0.0.1:<port>` once the sidecar is
+  healthy, so every capability-gated API was silently inert post-navigation — fixed by adding a
+  `remote` URL scope to the capability. Verified end-to-end: a real native panel now appears.
+
 ## [0.15.4] - 2026-09-08
 
 ### Fixed
