@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.15.4] - 2026-09-08
+
+### Fixed
+
+- **"Open in Finder…" silently hung instead of showing a dialog** — root cause: the native
+  folder picker called `blocking_pick_folder()`, whose own doc comment warns it deadlocks the
+  event loop when called off the main thread (exactly what a Tauri command handler does). Fixed
+  by switching to the non-blocking `pick_folder(callback)` API bridged to the command's async
+  return via a oneshot channel — confirmed a real native panel now appears. Also drops the
+  now-unused `@tauri-apps/plugin-dialog` package and `dialog:allow-open` capability grant, since
+  the picker now calls this app's own command directly instead of the plugin's JS API.
+
 ## [0.15.3] - 2026-09-07
 
 ### Fixed

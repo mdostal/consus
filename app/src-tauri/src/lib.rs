@@ -7,6 +7,38 @@ use std::process::Child;
 use std::sync::Mutex;
 
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri_plugin_dialog::DialogExt;
+
+/// Native folder picker for "Open in Finder..." (AddProjectForm.tsx).
+///
+/// Root cause, confirmed live: `blocking_pick_folder()` (both this
+/// command's first version, and `@tauri-apps/plugin-dialog`'s own `open()`
+/// JS command, which calls the same blocking API internally --
+/// tauri-plugin-dialog's commands.rs) is a genuinely blocking call. Its own
+/// doc comment says exactly why: "should be used when running on the main
+/// thread to avoid deadlocks with the event loop" -- calling it from a
+/// `#[tauri::command]` handler means AppKit's modal panel needs the very
+/// event loop the call is blocking to ever display or resolve. Reproduced
+/// directly: clicking the button never produced a new window in the
+/// system-wide window list (CGWindowListCopyWindowInfo) and, worse, froze
+/// the rest of the webview's accessibility tree -- silently hung, no
+/// dialog, no error, matching the exact "doesn't quite work" report.
+///
+/// Fixed by using the non-blocking, callback-based `pick_folder()` instead,
+/// bridged back to this async command's return value via a oneshot
+/// channel -- the documented-correct pattern for invoking this from a
+/// command handler.
+#[tauri::command]
+async fn pick_repo_folder(app: tauri::AppHandle) -> Option<String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("Choose a repo to add to Consus")
+        .pick_folder(move |folder| {
+            let _ = tx.send(folder);
+        });
+    rx.await.ok().flatten().and_then(|p| p.into_path().ok()).map(|p| p.display().to_string())
+}
 
 /// Resolves (and creates if absent) this app's app-local state directory:
 /// `~/Library/Application Support/com.mdostal.consus/`.
@@ -80,6 +112,7 @@ pub fn run() {
             None,
         ))
         .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![pick_repo_folder])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

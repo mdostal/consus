@@ -2,16 +2,17 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { AddProjectForm } from "./AddProjectForm";
 
-// consus-phase28 follow-up: isTauri() and the native dialog are both
-// module-level imports (see AddProjectForm.tsx) — mocked here so tests can
-// toggle "running inside the desktop app" per-test via vi.mocked(isTauri),
-// and assert on what the native picker does without an actual Tauri
-// runtime (which doesn't exist under vitest/jsdom).
-vi.mock("@tauri-apps/api/core", () => ({ isTauri: vi.fn(() => false) }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
+// consus-phase28 follow-up: isTauri() and invoke() are both module-level
+// imports (see AddProjectForm.tsx) — mocked here so tests can toggle
+// "running inside the desktop app" per-test via vi.mocked(isTauri), and
+// assert on what the native picker does without an actual Tauri runtime
+// (which doesn't exist under vitest/jsdom). invoke() calls the app's own
+// `pick_repo_folder` command (lib.rs), not @tauri-apps/plugin-dialog's
+// open() directly — see AddProjectForm.tsx's browseNative() docstring for
+// why (the plugin's own parented panel silently never became visible).
+vi.mock("@tauri-apps/api/core", () => ({ isTauri: vi.fn(() => false), invoke: vi.fn() }));
 
-import { isTauri } from "@tauri-apps/api/core";
-import { open as openNativeDialog } from "@tauri-apps/plugin-dialog";
+import { isTauri, invoke } from "@tauri-apps/api/core";
 
 /** AddProjectForm now fetches GET /api/projects/discover on mount (s5) and,
  *  once "Browse…" is clicked, DirectoryBrowser fetches GET /api/fs/list too
@@ -234,7 +235,7 @@ describe("AddProjectForm", () => {
   describe("native folder picker (consus-phase28 follow-up)", () => {
     afterEach(() => {
       vi.mocked(isTauri).mockReturnValue(false);
-      vi.mocked(openNativeDialog).mockReset();
+      vi.mocked(invoke).mockReset();
     });
 
     it("does not render 'Open in Finder…' outside the desktop app (isTauri() false)", () => {
@@ -244,23 +245,23 @@ describe("AddProjectForm", () => {
       expect(screen.queryByRole("button", { name: "Open in Finder…" })).not.toBeInTheDocument();
     });
 
-    it("renders 'Open in Finder…' inside the desktop app and fills path+name from the native dialog's result", async () => {
+    it("renders 'Open in Finder…' inside the desktop app and fills path+name from pick_repo_folder's result", async () => {
       vi.stubGlobal("fetch", mockFetchRouter(NO_CANDIDATES));
       vi.mocked(isTauri).mockReturnValue(true);
-      vi.mocked(openNativeDialog).mockResolvedValue("/Users/me/code/my-repo");
+      vi.mocked(invoke).mockResolvedValue("/Users/me/code/my-repo");
 
       render(<AddProjectForm onSubmit={vi.fn()} submitting={false} />);
       fireEvent.click(screen.getByRole("button", { name: "Open in Finder…" }));
 
       await waitFor(() => expect((screen.getByLabelText("Repo path") as HTMLInputElement).value).toBe("/Users/me/code/my-repo"));
       expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("my-repo");
-      expect(openNativeDialog).toHaveBeenCalledWith(expect.objectContaining({ directory: true }));
+      expect(invoke).toHaveBeenCalledWith("pick_repo_folder");
     });
 
-    it("surfaces an error instead of crashing if the native dialog rejects", async () => {
+    it("surfaces an error instead of crashing if the native command rejects", async () => {
       vi.stubGlobal("fetch", mockFetchRouter(NO_CANDIDATES));
       vi.mocked(isTauri).mockReturnValue(true);
-      vi.mocked(openNativeDialog).mockRejectedValue(new Error("dialog unavailable"));
+      vi.mocked(invoke).mockRejectedValue(new Error("dialog unavailable"));
 
       render(<AddProjectForm onSubmit={vi.fn()} submitting={false} />);
       fireEvent.click(screen.getByRole("button", { name: "Open in Finder…" }));
@@ -271,12 +272,12 @@ describe("AddProjectForm", () => {
     it("does nothing if the operator cancels the native dialog (null result)", async () => {
       vi.stubGlobal("fetch", mockFetchRouter(NO_CANDIDATES));
       vi.mocked(isTauri).mockReturnValue(true);
-      vi.mocked(openNativeDialog).mockResolvedValue(null);
+      vi.mocked(invoke).mockResolvedValue(null);
 
       render(<AddProjectForm onSubmit={vi.fn()} submitting={false} />);
       fireEvent.click(screen.getByRole("button", { name: "Open in Finder…" }));
 
-      await waitFor(() => expect(openNativeDialog).toHaveBeenCalled());
+      await waitFor(() => expect(invoke).toHaveBeenCalled());
       expect((screen.getByLabelText("Repo path") as HTMLInputElement).value).toBe("");
     });
   });

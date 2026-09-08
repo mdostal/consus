@@ -520,7 +520,7 @@ dependencies = [
 
 [[package]]
 name = "consus-desktop"
-version = "0.15.3"
+version = "0.15.4"
 dependencies = [
  "log",
  "semver",
@@ -530,6 +530,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-log",
  "tauri-plugin-single-instance",
+ "tokio",
  "ureq",
  "wait-timeout",
 ]
