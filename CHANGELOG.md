@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-09-07
+
+### Fixed
+
+- **First-run onboarding dead end** — found live on a freshly-installed `Consus.app`: the
+  onboarding screen's only action was a button hardcoded to `POST /api/projects/consus/ingest`,
+  a pre-`consus-phase25-project-registration-ux` dev-mode assumption. A packaged install starts
+  with an empty project registry, so the button 404'd with no recourse. Now branches on whether
+  any project is registered: zero projects renders the existing `AddProjectForm` (type a path,
+  pick a discovered candidate, or browse the filesystem interactively) instead of assuming a
+  project named "consus" exists; the one-already-registered case keeps the one-click ingest flow,
+  scoped to that project's real name instead of a hardcoded literal.
+
 ## [0.15.0] - 2026-09-06
 
 ### Added
