@@ -42,7 +42,7 @@ export function AttachmentsPanel({ itemId }: AttachmentsPanelProps) {
   const loadAttachments = useCallback(async () => {
     setListError(null);
     try {
-      const res = await fetch(`/api/items/${itemId}/attachments`);
+      const res = await fetch(`/api/items/${encodeURIComponent(itemId)}/attachments`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setAttachments(await res.json());
     } catch (e) {
@@ -65,7 +65,7 @@ export function AttachmentsPanel({ itemId }: AttachmentsPanelProps) {
       formData.append("file", file);
       formData.append("actor", ACTOR);
 
-      const res = await fetch(`/api/items/${itemId}/attachments`, {
+      const res = await fetch(`/api/items/${encodeURIComponent(itemId)}/attachments`, {
         method: "POST",
         body: formData,
       });

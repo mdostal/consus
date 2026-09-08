@@ -35,7 +35,7 @@ function verdictLabel(v: Verdict): string {
 }
 
 async function postVerdict(itemId: string, verdict: Verdict): Promise<void> {
-  const res = await fetch(`/api/decisions/${itemId}/verdict`, {
+  const res = await fetch(`/api/decisions/${encodeURIComponent(itemId)}/verdict`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ verdict, actor: "Mathew" }),

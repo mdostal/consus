@@ -145,6 +145,39 @@ describe("SurveyView", () => {
     await waitFor(() => expect(onVerdictRecorded).toHaveBeenCalledOnce());
   });
 
+  // consus-phase28 follow-up: found live against a real repo. Every real
+  // decision id is shaped `decision:<repo>:<file_path>` (server/routes/
+  // decisions.ts) and a file_path almost always contains `/` — e.g.
+  // "decision:my-repo:docs/interview-prep/resignation-playbook.md". Posting
+  // a verdict with that id interpolated RAW into the URL template breaks
+  // Fastify's single-segment `/api/decisions/:id/verdict` route into extra
+  // path segments, 404ing on literally every decision derived from a doc
+  // in a subdirectory (i.e. nearly all of them). Reproduced directly via
+  // curl against a live server before fixing. This test locks in the fix
+  // (encodeURIComponent(itemId)) by asserting the exact URL fetched.
+  it("consus-phase28 follow-up: URL-encodes a decision id containing '/' and ':' before POSTing its verdict", async () => {
+    const memberWithRealisticId: SurveyDecisionItem = {
+      ...MEMBER_OPEN,
+      id: "decision:my-repo:docs/interview-prep/resignation-playbook.md",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([memberWithRealisticId]) })
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) });
+    globalThis.fetch = fetchMock;
+
+    render(<SurveyView surveyId="s-1" surveyTitle="Encoding Test" />);
+    await waitFor(() => screen.getByRole("button", { name: /accept/i }));
+
+    fireEvent.click(screen.getByRole("button", { name: /accept/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const [verdictUrl] = fetchMock.mock.calls[1];
+    expect(verdictUrl).toBe(
+      "/api/decisions/decision%3Amy-repo%3Adocs%2Finterview-prep%2Fresignation-playbook.md/verdict",
+    );
+  });
+
   it("shows an error message when verdict submission fails", async () => {
     globalThis.fetch = vi
       .fn()

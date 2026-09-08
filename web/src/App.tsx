@@ -92,7 +92,7 @@ function verdictLabel(v: Verdict): string {
 }
 
 async function postVerdict(itemId: string, verdict: Verdict): Promise<void> {
-  const res = await fetch(`/api/decisions/${itemId}/verdict`, {
+  const res = await fetch(`/api/decisions/${encodeURIComponent(itemId)}/verdict`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ verdict, actor: "Mathew" }),
@@ -119,7 +119,7 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
 
   const loadComments = useCallback(async () => {
     try {
-      const res = await fetch(`/api/items/${item.id}/comments`);
+      const res = await fetch(`/api/items/${encodeURIComponent(item.id)}/comments`);
       if (res.ok) setComments(await res.json());
     } catch {
       /* comments are best-effort */
@@ -128,7 +128,7 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
 
   const loadAuditTrail = useCallback(async () => {
     try {
-      const res = await fetch(`/api/items/${item.id}/audit-trail`);
+      const res = await fetch(`/api/items/${encodeURIComponent(item.id)}/audit-trail`);
       if (res.ok) setAuditEntries(await res.json());
     } catch {
       /* history is best-effort */
@@ -155,7 +155,7 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
 
   async function submitComment(body: string) {
     try {
-      await fetch(`/api/items/${item.id}/comments`, {
+      await fetch(`/api/items/${encodeURIComponent(item.id)}/comments`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ author: "Mathew", body }),

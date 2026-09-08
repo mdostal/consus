@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.15.3] - 2026-09-07
+
+### Fixed
+
+- **Recording a verdict 404'd on nearly every real decision** — found live: decision ids are
+  shaped `decision:<repo>:<file_path>`, and a file path almost always contains `/`. Several fetch
+  call sites (verdict submission, comments, audit trail, attachments) interpolated the raw,
+  un-encoded id into the URL, which breaks the server's single-segment route into extra path
+  segments and 404s. Fixed every site to `encodeURIComponent` the id first.
+
 ## [0.15.2] - 2026-09-07
 
 ### Fixed
