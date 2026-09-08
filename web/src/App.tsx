@@ -1480,15 +1480,47 @@ function EventsSection() {
  * ingested anywhere yet (no docs, no KB entries, no decisions) — a fresh
  * install otherwise just shows empty tabs with no explanation.
  */
-function OnboardingScreen({ onIngested }: { onIngested: () => void }) {
+/**
+ * consus-phase28 follow-up: this screen originally assumed exactly one
+ * project always exists — a repo-local, self-hosted-Consus dev-mode
+ * assumption baked in before consus-phase25-project-registration-ux added
+ * real multi-project registration. In that older world,
+ * loadProjectRegistry()'s fallback self-registered `{ consus: cwd() }`, so
+ * a hardcoded POST /api/projects/consus/ingest button was always valid.
+ * The packaged desktop app (consus-phase26-desktop-app) starts with a
+ * genuinely empty project registry — no "consus" project exists at all —
+ * so that button 404'd with no recourse: a real dead-end first-run screen,
+ * confirmed live against a fresh install (empty registry, hardcoded ingest
+ * target both present, the actual bug).
+ *
+ * Fixed by branching on whether any project is registered yet:
+ *  - Zero projects: this is a fresh install (or a repo with none
+ *    registered) — offer real project registration (AddProjectForm, which
+ *    already supports typing a path, picking a zero-config discovered
+ *    candidate, or browsing the filesystem interactively) rather than
+ *    assuming a project named "consus" exists.
+ *  - Exactly one project already registered (the original self-hosted
+ *    dev-mode shape) but its docs/KB are still empty: keep the one-click
+ *    ingest flow, now targeting that project's real name instead of a
+ *    hardcoded literal.
+ */
+function OnboardingScreen({
+  projects,
+  onIngested,
+}: {
+  projects: string[];
+  onIngested: () => void;
+}) {
   const [ingesting, setIngesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [addingProject, setAddingProject] = useState(false);
+  const [addProjectError, setAddProjectError] = useState<string | null>(null);
 
-  async function ingest() {
+  async function ingest(projectName: string) {
     setIngesting(true);
     setError(null);
     try {
-      const res = await fetch("/api/projects/consus/ingest", { method: "POST" });
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/ingest`, { method: "POST" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}) as { error?: string });
         throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -1501,23 +1533,56 @@ function OnboardingScreen({ onIngested }: { onIngested: () => void }) {
     }
   }
 
+  async function registerProject(name: string, path: string) {
+    setAddingProject(true);
+    setAddProjectError(null);
+    try {
+      const res = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, path }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      onIngested();
+    } catch (e) {
+      setAddProjectError((e as Error).message);
+    } finally {
+      setAddingProject(false);
+    }
+  }
+
   return (
     <div className="onboarding">
       <span className="onboarding__mark">◈</span>
       <h1>Consus</h1>
       <p className="onboarding__lede">
-        A knowledgebase, graph, and file editor for this repo's own decisions, docs, and
-        architecture — plus a surface to work through them with an agent harness.
+        A knowledgebase, graph, and file editor for any repo's decisions, docs, and architecture —
+        plus a surface to work through them with an agent harness.
       </p>
 
-      <section className="onboarding__step">
-        <h2>Ingest repo</h2>
-        <p>Pull this repo's generated docs, architecture, and diagrams into Consus's own store.</p>
-        <button type="button" onClick={ingest} disabled={ingesting}>
-          {ingesting ? "Ingesting…" : "Ingest repo to create initial knowledge base"}
-        </button>
-        {error ? <p className="dv__err">{error}</p> : null}
-      </section>
+      {projects.length === 0 ? (
+        <section className="onboarding__step">
+          <h2>Point Consus at a repo</h2>
+          <p>
+            No project is registered yet. Name it and point it at a repo path on disk — typed
+            directly, picked from a zero-config discovered candidate, or found by browsing the
+            filesystem — and it's scanned immediately.
+          </p>
+          <AddProjectForm onSubmit={registerProject} submitting={addingProject} error={addProjectError} />
+        </section>
+      ) : (
+        <section className="onboarding__step">
+          <h2>Ingest repo</h2>
+          <p>Pull {projects[0]}'s generated docs, architecture, and diagrams into Consus's own store.</p>
+          <button type="button" onClick={() => ingest(projects[0])} disabled={ingesting}>
+            {ingesting ? "Ingesting…" : "Ingest repo to create initial knowledge base"}
+          </button>
+          {error ? <p className="dv__err">{error}</p> : null}
+        </section>
+      )}
 
       <section className="onboarding__step">
         <h2>Install into harness</h2>
@@ -1564,6 +1629,7 @@ export function App() {
   const [decisions, setDecisions] = useState<DecisionItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [onboardingCheck, setOnboardingCheck] = useState<{ docsEmpty: boolean; kbEmpty: boolean } | null>(null);
+  const [onboardingProjects, setOnboardingProjects] = useState<string[]>([]);
   // s1 (consus-phase18): resolves/persists the operator's skin choice and
   // applies [data-skin] to the document root — mounted once, here, so the
   // skin backdrop/chrome below and the picker in the masthead always agree.
@@ -1580,12 +1646,19 @@ export function App() {
     Promise.all([
       fetch("/api/docs").then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))),
       fetch("/api/kb-entries").then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))),
+      // consus-phase28 follow-up: the onboarding screen needs to know
+      // whether ANY project is registered at all — a genuinely empty
+      // registry (a fresh desktop-app install) needs a real "register a
+      // project" flow, not the single-project self-host assumption the
+      // rest of this check was originally built around.
+      fetch("/api/projects").then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))),
     ])
-      .then(([docs, kbEntries]) => {
+      .then(([docs, kbEntries, projectsBody]) => {
         setOnboardingCheck({
           docsEmpty: docsAreEmpty(docs as GroupedDocs),
           kbEmpty: Array.isArray(kbEntries) ? kbEntries.length === 0 : true,
         });
+        setOnboardingProjects((projectsBody as { projects: string[] }).projects ?? []);
       })
       .catch(() => {
         // best-effort — a failed check must never block the app; assume not first-run
@@ -1621,6 +1694,7 @@ export function App() {
       <div className="consus">
         <SkinBackdrop skin={skin} />
         <OnboardingScreen
+          projects={onboardingProjects}
           onIngested={() => {
             reload();
             checkOnboarding();

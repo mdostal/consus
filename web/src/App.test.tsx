@@ -466,11 +466,15 @@ function firstRunFetchMock(overrides: {
   kbEntries?: unknown[];
   ingestOk?: boolean;
   docsAfterIngest?: unknown;
+  projects?: string[];
+  registerOk?: boolean;
 }) {
   const decisions = overrides.decisions ?? [];
   const docs = overrides.docs ?? DOCS_EMPTY;
   const kbEntries = overrides.kbEntries ?? [];
+  const projects = overrides.projects ?? ["consus"];
   let docsCallCount = 0;
+  let projectsCallCount = 0;
 
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
@@ -482,7 +486,24 @@ function firstRunFetchMock(overrides: {
       }
       return Promise.resolve({ ok: true, json: async () => ({ project: "consus", docsScanned: 1 }) });
     }
-    if (url.startsWith("/api/projects")) return Promise.resolve({ ok: true, json: async () => ({ projects: ["consus"] }) });
+    if (method === "POST" && url === "/api/projects") {
+      if (overrides.registerOk === false) {
+        return Promise.resolve({ ok: false, status: 400, json: async () => ({ error: "registration failed" }) });
+      }
+      projectsCallCount = 0; // next GET /api/projects/discover-independent poll reflects the new project
+      return Promise.resolve({ ok: true, json: async () => ({ project: "my-repo", docsScanned: 1 }) });
+    }
+    if (url.startsWith("/api/projects/discover")) {
+      return Promise.resolve({ ok: true, json: async () => ({ candidates: [] }) });
+    }
+    if (url.startsWith("/api/projects")) {
+      projectsCallCount += 1;
+      // Once registration succeeds, the next onboarding re-check should see
+      // the newly-registered project (matching AddProjectForm's real
+      // POST-then-rescan flow) — same shape as docsCallCount's before/after.
+      const list = projectsCallCount === 1 ? projects : (overrides.registerOk === false ? projects : ["my-repo"]);
+      return Promise.resolve({ ok: true, json: async () => ({ projects: list }) });
+    }
     if (url.startsWith("/api/docs")) {
       docsCallCount += 1;
       const body = docsCallCount === 1 ? docs : (overrides.docsAfterIngest ?? DOCS_WITH_ENTRY);
@@ -552,6 +573,43 @@ describe("App — first-run onboarding screen (phase6 s3)", () => {
     expect(screen.getByText("Interact with plugin-hive")).toBeInTheDocument();
     expect(screen.getByText(/claude code/i)).toBeInTheDocument();
     expect(screen.getByText(/codex cli/i)).toBeInTheDocument();
+  });
+
+  it("consus-phase28 follow-up: offers real project registration (not a hardcoded ingest button) when zero projects are registered", async () => {
+    vi.stubGlobal(
+      "fetch",
+      firstRunFetchMock({ decisions: [], docs: DOCS_EMPTY, kbEntries: [], projects: [] }),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText("Point Consus at a repo")).toBeInTheDocument();
+    expect(screen.getByLabelText("Repo path")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Browse…" })).toBeInTheDocument();
+    expect(screen.queryByText("Ingest repo to create initial knowledge base")).not.toBeInTheDocument();
+  });
+
+  it("consus-phase28 follow-up: transitions into the normal tab shell after registering the first project", async () => {
+    vi.stubGlobal(
+      "fetch",
+      firstRunFetchMock({
+        decisions: [],
+        docs: DOCS_EMPTY,
+        kbEntries: [],
+        projects: [],
+        docsAfterIngest: DOCS_WITH_ENTRY,
+      }),
+    );
+
+    render(<App />);
+    await screen.findByText("Point Consus at a repo");
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "my-repo" } });
+    fireEvent.change(screen.getByLabelText("Repo path"), { target: { value: "/Users/me/code/my-repo" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add project" }));
+
+    expect(await screen.findByRole("button", { name: "Decisions" })).toBeInTheDocument();
+    expect(screen.queryByText("Point Consus at a repo")).not.toBeInTheDocument();
   });
 });
 
