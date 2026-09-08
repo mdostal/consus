@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { isTauri } from "@tauri-apps/api/core";
-import { open as openNativeDialog } from "@tauri-apps/plugin-dialog";
+import { isTauri, invoke } from "@tauri-apps/api/core";
 import { DirectoryBrowser } from "./DirectoryBrowser";
 
 export interface AddProjectFormProps {
@@ -55,12 +54,22 @@ function deriveNameFromPath(path: string): string {
  * something the operator already typed) via deriveNameFromPath, editable
  * afterward like any other field.
  *
- * Also adds a native folder picker (Tauri's own dialog, feature-detected
- * via isTauri()) alongside the existing in-app DirectoryBrowser — the
- * desktop app's own filesystem picker, matching Finder's actual
- * open-panel UX (favorites sidebar, search, recents) rather than only the
- * bespoke tree view, which remains the fallback in plain-browser dev mode
- * (`npm run dev`) where no native dialog is available. */
+ * Also adds a native folder picker (feature-detected via isTauri())
+ * alongside the existing in-app DirectoryBrowser — the desktop app's own
+ * filesystem picker, matching Finder's actual open-panel UX (favorites
+ * sidebar, search, recents) rather than only the bespoke tree view, which
+ * remains the fallback in plain-browser dev mode (`npm run dev`) where no
+ * native dialog is available.
+ *
+ * The picker calls the app's own `pick_repo_folder` command (lib.rs) via
+ * `invoke()`, NOT `@tauri-apps/plugin-dialog`'s `open()` directly. Found
+ * live: the plugin's own `open` command attaches the panel to this app's
+ * window as a parent (`set_parent`, tauri-plugin-dialog's commands.rs) —
+ * with this app's dynamically-created "main" window, that panel gets
+ * created (confirmed via the system-wide window list) but never actually
+ * becomes visible, so it silently hung with no dialog and no error.
+ * `pick_repo_folder` calls `blocking_pick_folder()` with no parent,
+ * sidestepping that. */
 export function AddProjectForm({ onSubmit, submitting, error }: AddProjectFormProps) {
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
@@ -88,7 +97,7 @@ export function AddProjectForm({ onSubmit, submitting, error }: AddProjectFormPr
   async function browseNative() {
     setNativeDialogError(null);
     try {
-      const selected = await openNativeDialog({ directory: true, multiple: false, title: "Choose a repo to add to Consus" });
+      const selected = await invoke<string | null>("pick_repo_folder");
       if (typeof selected === "string") choosePath(selected);
     } catch (e) {
       setNativeDialogError((e as Error).message);

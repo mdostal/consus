@@ -24,6 +24,12 @@ tauri-plugin-log = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2.7.2"
+# "sync" only, for the oneshot channel bridging pick_repo_folder's
+# non-blocking pick_folder(callback) API back to an async command return
+# value -- see lib.rs's pick_repo_folder doc comment. tokio itself is
+# already a transitive dependency via tauri; this makes the direct usage
+# explicit rather than relying on the transitive edge.
+tokio = { version = "1", features = ["sync"] }
 semver = "1.0.28"
 ureq = "2"
 wait-timeout = "0.2"
