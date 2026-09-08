@@ -1270,9 +1270,14 @@ function buildDecisionsFetchMock(initialDecisions: DecisionItemLike[]) {
 
     if (method === "GET" && url.startsWith("/api/decisions")) return jsonOk(decisions);
 
+    // decodeURIComponent here mirrors what a real Fastify server does when
+    // resolving a route param — this mock only actually exercises the
+    // consus-phase28 encodeURIComponent(itemId) fix (App.tsx's postVerdict)
+    // because it decodes; a mock that compared the still-encoded segment
+    // directly against d.id would silently pass either way.
     const verdictMatch = /^\/api\/decisions\/([^/]+)\/verdict$/.exec(url);
     if (method === "POST" && verdictMatch) {
-      const id = verdictMatch[1];
+      const id = decodeURIComponent(verdictMatch[1]);
       decisions = decisions.map((d) => (d.id === id ? { ...d, decided_at: "2026-08-12T00:00:00Z" } : d));
       return jsonOk({ ok: true });
     }
