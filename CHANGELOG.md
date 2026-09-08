@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-09-07
+
+### Fixed
+
+- **Project registration silently did nothing** — found live: none of `AddProjectForm`'s
+  non-typed path sources (discovered-repo select, in-app directory browser) ever filled the
+  Name field, only path. The submit button stays disabled until both fields are non-empty, so
+  picking a repo and clicking "Add project" did nothing, with no visible explanation. Fixed by
+  auto-filling Name from the picked source (the candidate's own name, or a sanitized folder
+  basename) whenever Name is still empty, without ever overwriting a manually-typed name.
+
+### Added
+
+- **Native "Open in Finder…" folder picker** on the desktop app — Tauri's own dialog (already a
+  dependency since `consus-phase26-desktop-app`, now wired on the JS side), alongside the
+  existing in-app directory browser, which remains the fallback in plain-browser dev mode.
+
 ## [0.15.1] - 2026-09-07
 
 ### Fixed
