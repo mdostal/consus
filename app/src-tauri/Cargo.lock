@@ -520,7 +520,7 @@ dependencies = [
 
 [[package]]
 name = "consus-desktop"
-version = "0.15.3"
+version = "0.15.4"
 dependencies = [
  "log",
  "semver",
