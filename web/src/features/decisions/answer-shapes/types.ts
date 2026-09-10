@@ -167,6 +167,31 @@ export interface ConceptSelectionPayload {
   research?: ResearchSection[];
 }
 
+/**
+ * Every decision_payload shape a real `items` row can carry, in one place.
+ * Found live (consus-phase29-brand-decision-review, immediately after
+ * shipping the 8th payload type): App.tsx's own `DecisionItem` interface
+ * had been typed with just the bare `DecisionPayload` (decision-request/v1)
+ * this whole time, even after `feature-selection/v1` through
+ * `concept-selection/v1` were added over several phases — so
+ * `payload.options.find(...)` compiled fine but threw
+ * "Cannot read properties of undefined (reading 'find')" at runtime for
+ * every other payload type, the moment one actually reached that render
+ * path in a live session (a concept-selection decision, the first of its
+ * kind to ever be opened there). Use this type anywhere a decision item's
+ * payload is handled generically instead of re-typing the union or
+ * (as happened here) silently narrowing it back to one variant.
+ */
+export type AnyDecisionPayload =
+  | DecisionPayload
+  | FeatureSelectionPayload
+  | EditProposalPayload
+  | CbaPayload
+  | FreeTextPayload
+  | RatingPayload
+  | RankingPayload
+  | ConceptSelectionPayload;
+
 export type Verdict =
   | { kind: "accepted" }
   | { kind: "option_chosen"; optionId: string }
