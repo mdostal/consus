@@ -19,7 +19,7 @@ import { DocRenderer } from "./features/docs/DocRenderer";
 import { FullPageDocViewer } from "./features/docs/FullPageDocViewer";
 import { EventsList, type EventRow, type EventStatus } from "./features/events/EventsList";
 import { EventProposeComposer } from "./features/events/EventProposeComposer";
-import type { DecisionPayload, Verdict } from "./features/decisions/answer-shapes/types";
+import type { AnyDecisionPayload, DecisionPayload, Verdict } from "./features/decisions/answer-shapes/types";
 import { useSelectedDecisionId } from "./features/decisions/useSelectedDecisionId";
 import { DecisionListPane, type DecisionListItem, type SurveyListItem } from "./features/decisions/DecisionListPane";
 import { SurveyView } from "./features/decisions/SurveyView";
@@ -88,7 +88,7 @@ interface DecisionItem {
   decision_type?: string | null;
   triage_bucket?: string | null;
   decided_at: string | null;
-  decision_payload: (DecisionPayload & { previews?: Record<string, string> }) | null;
+  decision_payload: (AnyDecisionPayload & { previews?: Record<string, string> }) | null;
 }
 
 function verdictLabel(v: Verdict): string {
@@ -179,7 +179,15 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
     }
   }
 
-  const recommendedTitle = payload?.options.find((o) => o.id === payload.recommended)?.title;
+  // Only dostal:decision-request/v1 payloads carry options/recommended —
+  // every other payload type (feature-selection, edit-proposal, cba,
+  // free-text, rating, ranking, concept-selection) does not. Narrow on
+  // `version` before touching either field; see AnyDecisionPayload's doc
+  // comment in types.ts for the crash this replaces.
+  const isDecisionRequest = payload?.version === "dostal:decision-request/v1";
+  const recommendedTitle = isDecisionRequest
+    ? payload.options.find((o) => o.id === payload.recommended)?.title
+    : undefined;
   const isDecided = Boolean(item.decided_at);
 
   return (
@@ -200,7 +208,7 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
         <p className="dv__context">{item.source_body}</p>
       ) : null}
 
-      {payload?.previews ? (
+      {isDecisionRequest && payload.previews ? (
         <section>
           <h3 className="dv__section-title">Previews — the {payload.options.length} directions</h3>
           <div className="dv__gallery">
@@ -243,9 +251,15 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
         {payload ? (
           <>
             <p className="dv__hint">
-              Recommended: <b>{payload.recommended}</b> — {recommendedTitle}. Click <b>Choose</b> under an option to
-              pick it, <b>Accept</b> to take the recommendation, <b>Mix</b> to combine, or <b>Reject</b> to send it
-              back with notes.
+              {isDecisionRequest ? (
+                <>
+                  Recommended: <b>{payload.recommended}</b> — {recommendedTitle}. Click <b>Choose</b> under an
+                  option to pick it, <b>Accept</b> to take the recommendation, <b>Mix</b> to combine, or{" "}
+                  <b>Reject</b> to send it back with notes.
+                </>
+              ) : (
+                "Answer below."
+              )}
             </p>
             {recorded ? (
               <div className="dv__recorded">✓ Recorded: {verdictLabel(recorded)}</div>

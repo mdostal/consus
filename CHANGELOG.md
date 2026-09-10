@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-09-10
+
+### Fixed
+
+- **Live app crash: blank screen the instant a non-`decision-request/v1` decision was opened** —
+  found live, immediately after shipping `consus-phase29-brand-decision-review`'s new
+  `concept-selection/v1` payload: `App.tsx`'s own `DecisionItem` interface had been typed as only
+  the original `decision-request/v1` shape this whole time, silently surviving seven more payload
+  types added across earlier phases because none of them had ever actually reached this exact
+  render path in a live session until the newly-synthesized brand decision did. The unguarded
+  `payload.options.find(...)` then threw `TypeError: Cannot read properties of undefined (reading
+  'find')` with no error boundary, unmounting the whole React tree. Fixed by widening the type to a
+  proper `AnyDecisionPayload` union and adding real `isDecisionRequest` narrowing at all three
+  unsafe access points; added a regression test carrying a concept-selection payload with no
+  `options` field, the same shape that crashed live.
+
+## [0.16.0] - 2026-09-10
+
 ### Added
 
 - **Design/brand artifacts become real, decidable decisions in Consus** (`consus-phase29-brand-decision-review`,

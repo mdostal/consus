@@ -1222,7 +1222,7 @@ interface DecisionItemLike {
   status: string;
   source_repo: string | null;
   decided_at: string | null;
-  decision_payload: null;
+  decision_payload: unknown | null;
 }
 
 const DECISION_ONE: DecisionItemLike = {
@@ -1253,6 +1253,35 @@ const DECIDED_DECISION: DecisionItemLike = {
   source_repo: null,
   decided_at: "2026-08-01T00:00:00Z",
   decision_payload: null,
+};
+
+/** Regression fixture (consus-phase29-brand-decision-review hotfix) — a real
+ *  dostal:concept-selection/v1 payload, the same shape that crashed the live
+ *  app the moment it reached DecisionView: App.tsx's DecisionItem type had
+ *  been narrowly typed as decision-request/v1-only since long before this
+ *  payload type existed, so `payload.options.find(...)` compiled but threw
+ *  at runtime for any other payload version. This fixture has no `options`
+ *  field at all, matching the real crash trigger exactly. */
+const CONCEPT_SELECTION_DECISION: DecisionItemLike = {
+  id: "item-4",
+  type: "doc_ref",
+  title: "Consus brand: select the logo concept direction",
+  status: "open",
+  source_repo: "consus",
+  decided_at: null,
+  decision_payload: {
+    version: "dostal:concept-selection/v1",
+    title: "Consus brand: select the logo concept direction",
+    context: "Pick a logo concept.",
+    concepts: [
+      {
+        id: "monogram",
+        name: "Monogram",
+        description: "An open C wrapping the grain kernel.",
+        preview: { kind: "svg", markup: "<svg><circle r='1'/></svg>" },
+      },
+    ],
+  },
 };
 
 /** A stateful fetch mock for the Decisions tab — GET /api/decisions?all=1
@@ -1403,6 +1432,22 @@ describe("App — Decisions tab two-pane layout (phase16 s1)", () => {
     });
     expect(screen.getByRole("heading", { name: "Decision Two" })).toBeInTheDocument();
     expect(window.location.search).toBe("?selected=item-2");
+  });
+
+  it("renders a non-decision-request payload (e.g. concept-selection/v1) without crashing (regression, consus-phase29 hotfix)", async () => {
+    const { fn } = buildDecisionsFetchMock([DECISION_ONE, CONCEPT_SELECTION_DECISION]);
+    vi.stubGlobal("fetch", fn);
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Decision One" });
+
+    fireEvent.click(screen.getByRole("option", { name: /select the logo concept direction/ }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Consus brand: select the logo concept direction" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Answer below.")).toBeInTheDocument();
+    expect(screen.queryByTestId("recommended-badge")).not.toBeInTheDocument();
   });
 });
 
