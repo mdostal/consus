@@ -1,0 +1,142 @@
+id: s4-manifest-decision-synthesis
+epic: consus-phase29-brand-decision-review
+title: Manifest format, decision synthesis, and real backfill for the brand guide
+status: pending
+complexity: medium
+methodology: classic
+depends_on: [s2-concept-selection-answer-shape]
+
+description: |
+  Confirmed this session: no mechanism exists today for a doc-scanner-
+  indexed artifact to auto-become a real decision. The existing event
+  pipeline (detectEvents/doc_changed/decision_needed) produces reviewable
+  events (diff + composed prompt), not a decision with named options to
+  pick from. This is the concrete gap behind "we have the output already,
+  now i just need to make the decision" -- Consus has no concept of a
+  design artifact that carries its own decision yet.
+
+  This story:
+  1. Defines a manifest format, .pHive/brand/logo-concepts.yaml, whose
+     `concepts:` array conforms exactly to s2's ConceptSelectionPayload
+     concepts[] shape (id, name, description, preview.kind/markup).
+  2. Adds synthesis logic to the existing scan/ingest path: when such a
+     manifest exists and no decision item has been created for it yet
+     (keyed the same way every other doc-derived decision gets its id --
+     decision:<repo>:<manifest path>, the exact existing scheme, for the
+     same dedupe guarantee), build a real items row carrying a
+     dostal:concept-selection/v1 payload from the manifest's contents.
+     Idempotent -- re-scanning never recreates a decision that already
+     exists or is already decided.
+  3. **Backfills the real manifest** for the brand guide that already
+     exists on disk (.pHive/brand/brand-guide.html) -- the five actual
+     logo concepts, their real SVG markup, exactly as already built and
+     approved this session (verbatim source below). This is the concrete
+     acceptance the operator asked for directly: after this story ships,
+     re-scanning this repo creates a real, pending
+     dostal:concept-selection/v1 decision the operator can open in Consus
+     and record "monogram, selected" on -- today, not hypothetically.
+
+  Verbatim source for the backfill (from .pHive/brand/brand-guide.html,
+  concepts 1-5 -- copy the real SVG markup for each `<svg>...</svg>` block
+  exactly, do not regenerate or paraphrase it):
+
+    1. Pure Wordmark -- id: pure-wordmark
+       description: "Consus set in Fraunces Bold — the name alone carries the whole personality, for contexts where space is tight or the name itself is the point."
+       svg: the <svg viewBox="0 0 240 80" ...> block under "Concept 1: Pure Wordmark"
+
+    2. Wordmark + Symbol -- id: wordmark-symbol
+       description: "The grain-kernel glyph paired with the wordmark, for headers and marketing surfaces where name and mark should register together."
+       svg: the <svg viewBox="0 0 240 80" ...> block under "Concept 2: Wordmark + Symbol"
+
+    3. Monogram -- id: monogram
+       description: "An open \"C\" arc — the granary door, standing ajar — wrapped around the kernel glyph. More identity than a wordmark, less weight than a full badge."
+       svg: the FIXED version (arc-path, not the original circle+rect hack) --
+       <svg viewBox="0 0 120 120" width="110" height="110" role="img" aria-label="Consus monogram, an open C wrapping the grain kernel">
+         <path d="M 101.57,36 A 48,48 0 1 0 101.57,84" fill="none" stroke="#362B6B" stroke-width="9" stroke-linecap="round"/>
+         <g transform="translate(60,60) scale(0.62) translate(-60,-60)">
+           <path d="M60,14 C76,14 86,38 86,60 C86,82 76,106 60,106 C44,106 34,82 34,60 C34,38 44,14 60,14 Z" fill="#9C6316"/>
+           <path d="M60,26 Q68,60 60,94" fill="none" stroke="#FAF7F0" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
+           <circle cx="60" cy="76" r="8" fill="#FAF7F0"/>
+         </g>
+       </svg>
+
+    4. Abstract Mark -- id: abstract-mark
+       description: "The kernel alone — its crease and punched \"eye\" are the whole story. Holds up at 16px, which makes it the candidate for the dock icon, tray icon, and favicon."
+       svg: the <svg viewBox="0 0 120 120" ...> block under "Concept 4: Abstract Mark (selected)"
+       Note: this is the mark ALREADY flagged in the HTML as "Selected · app icon" -- that is a SEPARATE decision (which mark becomes the literal app icon file) from THIS story's decision (which brand-guide CONCEPT direction the operator picks, which was monogram, per the operator's own message). Do not conflate the two in the manifest -- carry both concepts faithfully as they exist in the source HTML.
+
+    5. Badge / Seal -- id: badge-seal
+       description: "The kernel ringed by arced \"CONSUS,\" like a Roman coin or wax seal — for a splash screen or About panel where the mythic register can run full ceremonial."
+       svg: the <svg viewBox="0 0 120 120" ...> block under "Concept 5: Badge / Seal" (includes the <defs><path id="sealArc".../></defs> + <textPath>)
+
+  Payload title/context for the synthesized decision:
+    title: "Consus brand: select the logo concept direction"
+    context: "Five logo concepts were produced for Consus's first real brand system, grounded in the name's own mythology (granary + secret counsel). Pick the direction to build on."
+
+acceptance_criteria:
+  - "Given .pHive/brand/logo-concepts.yaml exists with a valid concepts[] array, a real decision item is created (or already exists, idempotently) carrying a dostal:concept-selection/v1 payload built from it"
+  - "Given the decision already exists (already scanned once, or already decided), re-running the scan does NOT create a duplicate -- confirmed via the same decision:<repo>:<path> id scheme every other doc-derived decision already uses"
+  - "Given the real backfilled .pHive/brand/logo-concepts.yaml (this story's own deliverable), a real scan of this repo creates a real, pending concept-selection decision with all 5 concepts (pure-wordmark, wordmark-symbol, monogram, abstract-mark, badge-seal), each rendering its actual SVG markup from brand-guide.html verbatim -- confirmed by opening it in Consus's UI (via s3's Brand section) and visually confirming each concept renders correctly, not just that the API returns data"
+  - "Given the operator opens this decision in Consus and selects 'monogram', a concept_selected verdict with conceptId: monogram is recorded through the existing verdict route -- the actual end-to-end flow this whole epic exists for"
+  - "Given a malformed or missing .pHive/brand/logo-concepts.yaml, the scan/ingest path degrades gracefully (no crash, no decision created) -- same defensive posture as every other optional scan input in this codebase"
+
+steps:
+  - id: research
+    description: Re-confirm the existing decision:<repo>:<file_path> id scheme (where doc-derived decisions currently get their ids), the scan/ingest entrypoint that would be the right hook for this synthesis logic, and s2's finalized ConceptSelectionPayload TypeScript shape.
+    agent: researcher
+  - id: implement
+    description: Define the logo-concepts.yaml manifest schema (a short reference doc), add synthesis logic to the scan/ingest path with the idempotency key, and author the real .pHive/brand/logo-concepts.yaml backfill with the verbatim SVG markup from brand-guide.html per this story's description.
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Synthesis logic tests (creates on first scan, idempotent on re-scan, degrades gracefully on malformed/missing manifest), plus a real end-to-end test against the actual backfilled manifest confirming all 5 concepts round-trip correctly.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm the idempotency key genuinely prevents duplicate decisions, confirm the backfilled SVG markup matches brand-guide.html byte-for-byte (no accidental redrawing/paraphrasing), confirm graceful degradation on a malformed manifest.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase29-brand-decision-review.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: .pHive/brand/brand-guide.html
+      purpose: "Source of truth for the 5 concepts' real SVG markup -- copy verbatim, do not regenerate"
+    - path: server/routes/decisions.ts
+      purpose: "How a doc-derived decision currently gets its id (decision:<repo>:<file_path> scheme) -- reuse exactly for the manifest's idempotency key"
+
+files_to_modify:
+  - file: .pHive/brand/logo-concepts.yaml
+    change: New manifest -- the real backfilled 5 concepts with verbatim SVG markup from brand-guide.html
+  - file: server/adapters/doc-scanner/brand-manifest.ts
+    change: New small adapter -- reads logo-concepts.yaml, synthesizes a concept-selection/v1 decision idempotently
+  - file: docs/api-reference.md
+    change: Document the logo-concepts.yaml manifest format and the decision-synthesis behavior
+
+design_decisions:
+  - decision: Manifest lives under .pHive/brand/, named logo-concepts.yaml (not a generic name)
+    rationale: "This instance is logo-specific even though the payload shape it produces is generalized (s2) -- future design decisions of other kinds get their own appropriately-named manifest file, all producing the same concept-selection/v1 shape"
+  - decision: SVG markup copied verbatim, not regenerated
+    rationale: "The operator already reviewed and approved these exact concepts (including the monogram's arc-path fix) -- regenerating risks silently drifting from what was actually approved"
+
+risks:
+  - severity: medium
+    description: Auto-synthesizing a decision from a scanned manifest could double-create if the idempotency key is wrong
+    mitigation: Reuse the exact existing decision:<repo>:<file_path> id scheme already proven for doc-derived decisions -- same dedupe guarantee as every other scanned decision, per design-discussion.md's risk table
+
+cross_cutting:
+  - concern: documentation
+    action: "docs/api-reference.md update is already this story's own files_to_modify entry -- documents the logo-concepts.yaml manifest format and decision-synthesis behavior"
+
+references:
+  - path: .pHive/epics/consus-phase29-brand-decision-review/docs/design-discussion.md
+    relevant_excerpt: |
+      Also, as this slice's concrete acceptance: author the real manifest
+      for the brand guide that already exists on disk (the five concepts,
+      their real SVG markup already sitting in brand-guide.html) so the
+      operator's literal ask — decide right now, in Consus — is satisfied
+      by this epic shipping, not left as a hypothetical future capability.

@@ -1,0 +1,117 @@
+id: s2-concept-selection-answer-shape
+epic: consus-phase29-brand-decision-review
+title: New generalized answer shape -- pick one of N visual concepts
+status: pending
+complexity: medium
+methodology: classic
+depends_on: []
+
+parallel_allowed: true
+parallel_rationale: bounded-slice
+
+description: |
+  Confirmed this session: six decision_payload types are live end-to-end
+  (decision-request/v1, feature-selection/v1, edit-proposal/v1, cba/v1,
+  free-text/v1, rating/v1, ranking/v1) via the proven pattern -- parser.ts
+  validates, AnswerControl.tsx dispatches on payload.version to a dedicated
+  renderer, a verdict is recorded through the existing, completely
+  unchanged POST /api/decisions/:id/verdict route. None of the six render
+  an image/SVG per option -- every existing answer shape is text-only.
+
+  This story adds a SEVENTH payload type, dostal:concept-selection/v1:
+  deliberately generalized ("pick one of N named options, each with a
+  visual preview") rather than logo-specific, so any future design
+  decision (not just logo concepts) can reuse it without a new payload
+  type. Payload shape:
+
+    version: "dostal:concept-selection/v1"
+    title: string
+    context: string
+    concepts:
+      - id: string
+        name: string
+        description: string
+        preview:
+          kind: "svg"        # tagged union -- "image" is a clean additive
+          markup: string      # follow-up later (s4-adjacent open question),
+                               # NOT built in this story
+    research?: ResearchSection[]   # same optional field the other payload
+                                    # types already carry
+
+  Verdict: { kind: "concept_selected", conceptId: string }. New
+  ConceptSelection renderer component (same one-more-branch pattern as
+  every prior payload type) shows each concept's rendered SVG preview
+  (dangerouslySetInnerHTML scoped to this trusted, server-authored markup
+  only -- never end-user input; note this constraint explicitly in the
+  types.ts doc comment) side by side with a "Select" action per concept.
+
+acceptance_criteria:
+  - "Given a decision_payload with version dostal:concept-selection/v1 carrying 2+ concepts, AnswerControl renders each concept's name, description, and rendered SVG preview, with a Select action per concept -- not the generic options fallback"
+  - "Given the operator clicks Select on one concept, a concept_selected verdict with that concept's id is recorded through the existing, unmodified verdict route -- confirmed via a real round-trip test"
+  - "Given the parser, it rejects a malformed payload (empty concepts array, a concept missing id/name, an unrecognized preview.kind) with the same validation rigor as existing payload types"
+  - "Given all six existing payload types (decision-request/v1 through ranking/v1), their tests pass completely unmodified"
+  - "Given the preview field's kind is typed as a union (only 'svg' implemented now), adding an 'image' variant later requires no breaking change to this story's payload shape -- confirmed by the TypeScript discriminated-union structure, not just a comment"
+
+steps:
+  - id: research
+    description: Re-confirm the current state of parser.ts/types.ts/AnswerControl.tsx (all seven existing branches after phase28) and the exact dispatch-ordering convention (hooks before any early return, per the phase28 Rules-of-Hooks fix).
+    agent: researcher
+  - id: implement
+    description: Define ConceptSelectionPayload (dostal:concept-selection/v1) in parser.ts with a discriminated-union preview field, mirror in web types.ts, add an AnswerControl.tsx dispatch branch, build the ConceptSelection renderer component, wire concept_selected verdict recording.
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Parser validation tests (including malformed preview.kind), AnswerControl dispatch tests, ConceptSelection renderer tests (renders all concepts, Select fires the right verdict), and a route round-trip test for the new verdict kind.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm all six prior payload types' tests are unaffected, confirm hooks-before-early-return ordering is preserved in AnswerControl.tsx, confirm the preview union is genuinely extensible (not a stringly-typed escape hatch).
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase29-brand-decision-review.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: server/decision-contract/parser.ts
+      purpose: "The payload-type pattern this story extends a seventh time -- read the most recent addition (free-text/v1, rating/v1, or ranking/v1) as the closest template"
+    - path: web/src/features/decisions/answer-shapes/AnswerControl.tsx
+      purpose: "The dispatch switch -- hooks are declared BEFORE all seven early-return branches (a real Rules-of-Hooks fix landed mid-phase28); preserve that ordering when adding an eighth"
+    - path: web/src/features/decisions/answer-shapes/RankingList.tsx
+      purpose: "Most recent prior-art renderer pattern to replicate structurally"
+
+files_to_modify:
+  - file: server/decision-contract/parser.ts
+    change: Add ConceptSelectionPayload + ConceptPreview discriminated union + validation
+  - file: web/src/features/decisions/answer-shapes/types.ts
+    change: Add the new payload/verdict types
+  - file: web/src/features/decisions/answer-shapes/AnswerControl.tsx
+    change: Add dispatch branch for dostal:concept-selection/v1
+  - file: web/src/features/decisions/answer-shapes/ConceptSelection.tsx
+    change: New renderer -- per-concept name/description/SVG preview + Select action
+
+design_decisions:
+  - decision: Generalized name, not logo-specific
+    rationale: "User's explicit ask: 'this should generalize' -- the payload/component names avoid the word 'logo' entirely so any future N-visual-options decision reuses this without a new type"
+  - decision: preview is a discriminated union with only 'svg' implemented now
+    rationale: "Matches the real artifact (inline SVG concepts already in brand-guide.html); 'image' (reusing phase28's GET /api/design-assets pattern) is a clean additive follow-up per design-discussion.md's open question 2, not built here"
+
+risks:
+  - severity: low
+    description: dangerouslySetInnerHTML for SVG preview markup is a real (if narrow) injection surface if the source ever becomes less trusted
+    mitigation: Document explicitly in types.ts that preview.markup must only ever come from server/operator-authored content (the manifest s4 writes), never end-user input -- same posture note as design-discussion.md's risk table
+
+cross_cutting:
+  - concern: documentation
+    action: "Update docs/api-reference.md's payload-version list to include dostal:concept-selection/v1"
+
+references:
+  - path: .pHive/epics/consus-phase29-brand-decision-review/docs/design-discussion.md
+    relevant_excerpt: |
+      New `ConceptSelection` renderer dispatched from `AnswerControl.tsx`
+      (the same one-more-branch pattern used for all six prior payload
+      types), showing each concept's rendered SVG preview side by side
+      with a select action.

@@ -1357,6 +1357,90 @@ body {
   border-color: color-mix(in srgb, var(--consus-accent) 55%, transparent);
 }
 
+/* s3 (consus-phase29-brand-decision-review): a sibling section to
+ * Overview, not folded into it — a solid (not dashed) accent-tinted border
+ * keeps it visually distinct from Overview's muted read-only styling, since
+ * this bucket carries an active pending decision once s4 ships. */
+.feature-browser__brand {
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--consus-accent) 35%, var(--consus-line));
+  border-radius: calc(12px * var(--consus-radius-scale, 1));
+  background: color-mix(in srgb, var(--consus-accent) 5%, transparent);
+}
+.feature-browser__brand li button {
+  width: 100%;
+  text-align: left;
+  padding: 8px 14px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg-subtle);
+  color: var(--consus-ink-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.feature-browser__brand li button:hover {
+  color: var(--consus-ink);
+  border-color: color-mix(in srgb, var(--consus-accent) 55%, transparent);
+}
+
+/* ============================================================= */
+/* s3 (consus-phase29-brand-decision-review): the isolated iframe  */
+/* viewer for a full-page HTML doc (phase='brand') — a dedicated   */
+/* full-height slot, deliberately not squeezed into .doc-renderer's */
+/* cramped card layout (design-discussion.md's risk mitigation).   */
+/* ============================================================= */
+.full-page-doc-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 18px;
+  /* Fills the remaining viewport height rather than sizing to its (empty,
+     until the iframe loads) content — the "dedicated full-height slot"
+     this story's acceptance criteria call for, not the same card-shaped
+     slot a markdown doc gets. */
+  height: calc(100vh - 220px);
+  min-height: 480px;
+}
+.full-page-doc-viewer__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--consus-font-ui);
+}
+.full-page-doc-viewer__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--consus-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.full-page-doc-viewer__open-tab {
+  font-family: var(--consus-font-ui);
+  background: transparent;
+  border: 1px solid var(--consus-line);
+  color: var(--consus-ink);
+  padding: 6px 12px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.full-page-doc-viewer__open-tab:hover {
+  border-color: color-mix(in srgb, var(--consus-accent) 55%, transparent);
+  color: var(--consus-accent);
+}
+.full-page-doc-viewer__frame {
+  flex: 1;
+  width: 100%;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(14px * var(--consus-radius-scale, 1));
+  background: #fff;
+}
+
 .feature-detail-view {
   font-family: var(--consus-font-ui);
 }

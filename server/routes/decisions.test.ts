@@ -487,6 +487,87 @@ describe("POST /api/decisions", () => {
     });
   });
 
+  describe("concept-selection/v1 payloads (s2-concept-selection-answer-shape)", () => {
+    const CONCEPT_SELECTION_PAYLOAD = {
+      version: "dostal:concept-selection/v1" as const,
+      title: "Pick a logo concept",
+      context: "Three directions from the brand explorer.",
+      concepts: [
+        {
+          id: "geo",
+          name: "Geometric",
+          description: "Sharp angular mark.",
+          preview: { kind: "svg" as const, markup: "<svg><rect width='10' height='10'/></svg>" },
+        },
+        {
+          id: "script",
+          name: "Script",
+          description: "Flowing wordmark.",
+          preview: { kind: "svg" as const, markup: "<svg><path d='M0 0'/></svg>" },
+        },
+      ],
+    };
+
+    it("accepts and stores a concept-selection/v1 payload", async () => {
+      const res = await post({ id: "cs-1", title: "Logo concepts", decision_payload: CONCEPT_SELECTION_PAYLOAD });
+      expect(res.statusCode).toBe(201);
+      const body = res.json();
+      expect(body.decision_payload).toEqual(CONCEPT_SELECTION_PAYLOAD);
+    });
+
+    it("rejects a concept-selection/v1 payload with an empty concepts array", async () => {
+      const res = await post({
+        id: "cs-empty",
+        title: "t",
+        decision_payload: { ...CONCEPT_SELECTION_PAYLOAD, concepts: [] },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/concept/i);
+    });
+
+    it("rejects a concept-selection/v1 payload whose concept entry is missing id/name", async () => {
+      const res = await post({
+        id: "cs-bad-concept",
+        title: "t",
+        decision_payload: {
+          ...CONCEPT_SELECTION_PAYLOAD,
+          concepts: [{ description: "no id or name", preview: { kind: "svg", markup: "<svg/>" } }],
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/concept/i);
+    });
+
+    it("rejects a concept-selection/v1 payload with an unrecognized preview.kind", async () => {
+      const res = await post({
+        id: "cs-bad-preview",
+        title: "t",
+        decision_payload: {
+          ...CONCEPT_SELECTION_PAYLOAD,
+          concepts: [
+            {
+              id: "geo",
+              name: "Geometric",
+              description: "Sharp angular mark.",
+              preview: { kind: "png", markup: "<svg/>" },
+            },
+          ],
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/concept/i);
+    });
+
+    it("concept-selection/v1 items show up in GET /api/decisions", async () => {
+      await post({ id: "cs-2", title: "Logo concepts", decision_payload: CONCEPT_SELECTION_PAYLOAD });
+      const get = await app.inject({ method: "GET", url: "/api/decisions" });
+      const body = get.json();
+      const found = body.find((i: { id: string }) => i.id === "cs-2");
+      expect(found).toBeDefined();
+      expect(found.decision_payload.version).toBe("dostal:concept-selection/v1");
+    });
+  });
+
   it("round-trips research[] losslessly: POST with research[] then GET returns research[] intact", async () => {
     const payloadWithResearch = {
       ...VALID_PAYLOAD,

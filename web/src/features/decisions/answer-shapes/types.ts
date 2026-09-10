@@ -133,6 +133,40 @@ export interface RankingPayload {
   research?: ResearchSection[];
 }
 
+/**
+ * dostal:concept-selection/v1 (s2-concept-selection-answer-shape) —
+ * deliberately generalized ("pick one of N named options, each with a
+ * visual preview"), not logo-specific, so any future design decision of
+ * this shape reuses this payload type instead of a new one being defined.
+ * `preview` is a discriminated union on `kind` so a future "image" variant
+ * is additive, not a breaking change to this shape.
+ *
+ * SECURITY: `preview.markup` is raw SVG markup rendered via
+ * dangerouslySetInnerHTML by the ConceptSelection renderer. It must only
+ * ever come from server/operator-authored content — never end-user input.
+ */
+export interface ConceptSvgPreview {
+  kind: "svg";
+  markup: string;
+}
+
+export type ConceptPreview = ConceptSvgPreview;
+
+export interface Concept {
+  id: string;
+  name: string;
+  description: string;
+  preview: ConceptPreview;
+}
+
+export interface ConceptSelectionPayload {
+  version: "dostal:concept-selection/v1";
+  title: string;
+  context: string;
+  concepts: Concept[];
+  research?: ResearchSection[];
+}
+
 export type Verdict =
   | { kind: "accepted" }
   | { kind: "option_chosen"; optionId: string }
@@ -141,4 +175,5 @@ export type Verdict =
   | { kind: "features_selected"; selected: string[] }
   | { kind: "text_response"; text: string }
   | { kind: "rated"; value: number }
-  | { kind: "ranked"; order: string[] };
+  | { kind: "ranked"; order: string[] }
+  | { kind: "concept_selected"; conceptId: string };

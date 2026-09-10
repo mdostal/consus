@@ -383,4 +383,54 @@ describe("detectEvents", () => {
       expect(event.composed_prompt).toContain("epic/phase (if under .pHive/epics/**): epic: my-epic, phase: stories");
     });
   });
+
+  describe("brand manifest decision synthesis (s4-manifest-decision-synthesis, Pass C)", () => {
+    const VALID_MANIFEST = [
+      "version: dostal:concept-selection/v1",
+      'title: "Consus brand: select the logo concept direction"',
+      'context: "Five logo concepts were produced."',
+      "concepts:",
+      "  - id: geo",
+      "    name: Geometric",
+      "    description: Sharp angular mark.",
+      "    preview:",
+      "      kind: svg",
+      '      markup: "<svg><rect width=\\"10\\" height=\\"10\\"/></svg>"',
+    ].join("\n");
+
+    it("creates a concept-selection decision item when scanning a repo with a valid logo-concepts.yaml manifest, via the same scanAndDetect path every other doc-derived decision uses", () => {
+      mkdirSync(join(repoDir, ".pHive", "brand"), { recursive: true });
+      writeFileSync(join(repoDir, ".pHive", "brand", "logo-concepts.yaml"), VALID_MANIFEST);
+
+      scanAndDetect(db, "proj", "repo", repoDir);
+
+      const itemId = `decision:repo:${join(".pHive", "brand", "logo-concepts.yaml")}`;
+      const item = db.prepare("SELECT decision_payload, decided_at FROM items WHERE id = ?").get(itemId) as
+        | { decision_payload: string; decided_at: string | null }
+        | undefined;
+      expect(item).toBeDefined();
+      expect(item?.decided_at).toBeNull();
+      expect(JSON.parse(item!.decision_payload).version).toBe("dostal:concept-selection/v1");
+    });
+
+    it("does not create a brand decision (and does not crash the scan) when no manifest exists", () => {
+      const count = scanAndDetect(db, "proj", "repo", repoDir);
+      expect(count).toBe(0);
+
+      const itemId = `decision:repo:${join(".pHive", "brand", "logo-concepts.yaml")}`;
+      expect(db.prepare("SELECT id FROM items WHERE id = ?").get(itemId)).toBeUndefined();
+    });
+
+    it("re-running scanAndDetect against an unchanged manifest does not duplicate the brand decision item", () => {
+      mkdirSync(join(repoDir, ".pHive", "brand"), { recursive: true });
+      writeFileSync(join(repoDir, ".pHive", "brand", "logo-concepts.yaml"), VALID_MANIFEST);
+
+      scanAndDetect(db, "proj", "repo", repoDir);
+      scanAndDetect(db, "proj", "repo", repoDir);
+
+      const itemId = `decision:repo:${join(".pHive", "brand", "logo-concepts.yaml")}`;
+      const rows = db.prepare("SELECT id FROM items WHERE id = ?").all(itemId) as Array<{ id: string }>;
+      expect(rows).toHaveLength(1);
+    });
+  });
 });

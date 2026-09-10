@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
 import type {
   CbaPayload,
+  ConceptSelectionPayload,
   DecisionPayload,
   EditProposalPayload,
   FeatureSelectionPayload,
@@ -41,7 +42,8 @@ interface CreateDecisionBody {
     | CbaPayload
     | FreeTextPayload
     | RatingPayload
-    | RankingPayload;
+    | RankingPayload
+    | ConceptSelectionPayload;
   survey_id?: string;
 }
 
@@ -62,6 +64,12 @@ function validateDecisionPayload(payload: unknown): string | null {
     prompt?: unknown;
     scale?: { min?: unknown; max?: unknown; labels?: unknown };
     items?: Array<{ id?: unknown; label?: unknown }>;
+    concepts?: Array<{
+      id?: unknown;
+      name?: unknown;
+      description?: unknown;
+      preview?: { kind?: unknown; markup?: unknown };
+    }>;
   };
   if (p.version === "dostal:free-text/v1") {
     if (typeof p.prompt !== "string" || !p.prompt.trim()) {
@@ -92,6 +100,27 @@ function validateDecisionPayload(payload: unknown): string | null {
     }
     return null;
   }
+  if (p.version === "dostal:concept-selection/v1") {
+    if (!Array.isArray(p.concepts) || p.concepts.length < 1) {
+      return "decision_payload.concepts must have at least 1 entry";
+    }
+    const malformed = p.concepts.some(
+      (c) =>
+        typeof c.id !== "string" ||
+        !c.id ||
+        typeof c.name !== "string" ||
+        !c.name ||
+        typeof c.description !== "string" ||
+        !c.preview ||
+        typeof c.preview !== "object" ||
+        c.preview.kind !== "svg" ||
+        typeof c.preview.markup !== "string",
+    );
+    if (malformed) {
+      return "decision_payload.concepts entries must each have id, name, description, and a preview with kind \"svg\" and markup string";
+    }
+    return null;
+  }
   if (p.version === "dostal:feature-selection/v1") {
     if (!Array.isArray(p.features) || p.features.length < 1) {
       return "decision_payload.features must have at least 1 entry";
@@ -117,7 +146,7 @@ function validateDecisionPayload(payload: unknown): string | null {
     return null;
   }
   if (p.version !== "dostal:decision-request/v1") {
-    return `decision_payload.version must be one of "dostal:decision-request/v1", "dostal:feature-selection/v1", "dostal:edit-proposal/v1", "dostal:cba/v1", "dostal:free-text/v1", "dostal:rating/v1", "dostal:ranking/v1"`;
+    return `decision_payload.version must be one of "dostal:decision-request/v1", "dostal:feature-selection/v1", "dostal:edit-proposal/v1", "dostal:cba/v1", "dostal:free-text/v1", "dostal:rating/v1", "dostal:ranking/v1", "dostal:concept-selection/v1"`;
   }
   if (!Array.isArray(p.options) || p.options.length < 2) {
     return "decision_payload.options must have at least 2 entries";

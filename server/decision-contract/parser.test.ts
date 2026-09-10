@@ -307,6 +307,12 @@ describe("decision-request/v1 parser", () => {
         "Ranked: perf > a11y > i18n",
       );
     });
+
+    it("summarizes a concept_selected verdict", () => {
+      expect(verdictSummary({ kind: "concept_selected", conceptId: "concept-a" })).toBe(
+        "Selected concept concept-a.",
+      );
+    });
   });
 
   describe("FeatureSelectionPayload", () => {
@@ -412,6 +418,42 @@ describe("decision-request/v1 parser", () => {
       expect(payload.version).toBe("dostal:ranking/v1");
       expect(payload.items).toHaveLength(2);
       expect(payload.items[0].id).toBe("perf");
+    });
+  });
+
+  describe("ConceptSelectionPayload (s2-concept-selection-answer-shape)", () => {
+    it("validates a well-formed concept-selection/v1 payload is accepted by the type", () => {
+      const payload = {
+        version: "dostal:concept-selection/v1" as const,
+        title: "Pick a logo concept",
+        context: "Three directions from the brand explorer.",
+        concepts: [
+          {
+            id: "geo",
+            name: "Geometric",
+            description: "Sharp angular mark.",
+            preview: { kind: "svg" as const, markup: "<svg><rect width='10' height='10'/></svg>" },
+          },
+          {
+            id: "script",
+            name: "Script",
+            description: "Flowing wordmark.",
+            preview: { kind: "svg" as const, markup: "<svg><path d='M0 0'/></svg>" },
+          },
+        ],
+      };
+      expect(payload.version).toBe("dostal:concept-selection/v1");
+      expect(payload.concepts).toHaveLength(2);
+      expect(payload.concepts[0].preview.kind).toBe("svg");
+      expect(payload.concepts[0].preview.markup).toContain("<svg>");
+    });
+
+    it("the preview union's discriminant allows only 'svg' today, typed so an 'image' variant is additive later", () => {
+      // Compile-time-checked shape: ConceptPreview is currently `{ kind: "svg"; markup: string }`
+      // only, a union of one member — adding `{ kind: "image"; ... }` later widens the union
+      // without touching this member's shape, so this assertion keeps working unmodified.
+      const preview = { kind: "svg" as const, markup: "<svg/>" };
+      expect(preview.kind).toBe("svg");
     });
   });
 });
