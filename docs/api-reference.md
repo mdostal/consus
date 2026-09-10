@@ -155,7 +155,7 @@ supplies — it does not compose or classify the payload itself.
 
 **Request body:** `{ "id": string, "title": string, "source_repo"?: string, "decision_payload": DecisionPayload }`.
 `id` is caller-supplied and required (never server-generated). `decision_payload` must already be
-a valid object of one of seven supported `version`s (`server/decision-contract/parser.ts`):
+a valid object of one of eight supported `version`s (`server/decision-contract/parser.ts`):
 - `"dostal:decision-request/v1"` — `options` with at least 2 entries, `recommended` matching one
   of `options[].id`.
 - `"dostal:feature-selection/v1"` — `features` with at least 1 entry.
@@ -172,6 +172,13 @@ a valid object of one of seven supported `version`s (`server/decision-contract/p
 - `"dostal:ranking/v1"` (s5-freetext-rating-ranking-answer-shapes) — `prompt` (non-empty string) and
   `items` with at least 1 entry, each `{ id: string, label: string }`; renders as a drag-to-reorder
   list (with an up/down-button fallback).
+- `"dostal:concept-selection/v1"` (s2-concept-selection-answer-shape) — `concepts` with at least 1
+  entry, each `{ id: string, name: string, description: string, preview: { kind: "svg", markup: string } }`;
+  deliberately generalized ("pick one of N named options, each with a visual preview"), not
+  logo-specific — `preview` is a discriminated union on `kind` so a future `"image"` variant is
+  additive. Renders each concept's name, description, and SVG preview side by side with a Select
+  action per concept, firing a `{ kind: "concept_selected", conceptId: string }` verdict.
+  `preview.markup` must only ever be server/operator-authored SVG, never end-user input.
 
 **Response 201:** the created item, same shape `GET /api/decisions` returns for it (`id`, `type`,
 `title`, `status`, `source_repo`, `decided_at`, `decision_payload` parsed, `decision_type`,
@@ -209,6 +216,7 @@ summarizing the verdict.
 { "kind": "text_response", "text": "..." }
 { "kind": "rated", "value": 4 }
 { "kind": "ranked", "order": ["item-a", "item-b"] }
+{ "kind": "concept_selected", "conceptId": "concept-a" }
 ```
 
 **Response 200:** `{ "ok": true, "status": "done"|"in_progress", "decided_at": string|null }`.

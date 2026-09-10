@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { AnswerControl } from "./AnswerControl";
 import type {
   CbaPayload,
+  ConceptSelectionPayload,
   DecisionPayload,
   EditProposalPayload,
   FeatureSelectionPayload,
@@ -175,6 +176,38 @@ describe("AnswerControl", () => {
 
       expect(screen.getByTestId("ranking-list")).toBeInTheDocument();
       expect(screen.getByText("Option A")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^mix$/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("s2-concept-selection-answer-shape dispatch", () => {
+    const CONCEPT_SELECTION_PAYLOAD: ConceptSelectionPayload = {
+      version: "dostal:concept-selection/v1",
+      title: "Pick a logo concept",
+      context: "Three directions from the brand explorer.",
+      concepts: [
+        {
+          id: "geo",
+          name: "Geometric",
+          description: "Sharp angular mark.",
+          preview: { kind: "svg", markup: "<svg><rect width='10' height='10'/></svg>" },
+        },
+        {
+          id: "script",
+          name: "Script",
+          description: "Flowing wordmark.",
+          preview: { kind: "svg", markup: "<svg><path d='M0 0'/></svg>" },
+        },
+      ],
+    };
+
+    it("dispatches a concept-selection/v1 payload to the concept selection renderer, not the generic options fallback", () => {
+      render(<AnswerControl payload={CONCEPT_SELECTION_PAYLOAD} onVerdict={vi.fn()} />);
+
+      expect(screen.getByTestId("concept-selection-list")).toBeInTheDocument();
+      expect(screen.getByText("Geometric")).toBeInTheDocument();
+      expect(screen.getByText("Script")).toBeInTheDocument();
+      expect(screen.queryByTestId("recommended-badge")).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /^mix$/i })).not.toBeInTheDocument();
     });
   });
