@@ -18,6 +18,13 @@ Pick a visual skin (Drafting Table, Case Board, or Harness) and a light/dark/sys
 
 Consus is fully standalone: **zero live coupling to any other system.** It reads and writes only local SQLite and the local filesystem. It binds to `127.0.0.1` by default — no network exposure unless you explicitly opt in via `HOST` (e.g. for a containerized deploy).
 
+## Brand
+
+See [`branding/`](./branding/) for Consus's brand guide — colors, typography, and the
+approved logo direction (Monogram). That folder is the finalized, human-facing copy;
+`.pHive/brand/` holds the same files as the live source Consus itself scans to power the
+in-app brand decision.
+
 ## Architecture
 
 ```mermaid
