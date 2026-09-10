@@ -74,6 +74,45 @@ describe("FeatureBrowser", () => {
   });
 });
 
+describe("FeatureBrowser — Brand section (s3 of consus-phase29-brand-decision-review)", () => {
+  const BRAND: FeatureDoc[] = [
+    { repo: "consus", file_path: ".pHive/brand/brand-guide.html", content_hash: "mno", last_scanned_at: "2026-09-10T00:00:00Z" },
+  ];
+
+  it("renders a Brand section as a sibling to Overview, not nested inside it", () => {
+    render(<FeatureBrowser features={[]} overview={OVERVIEW} brand={BRAND} onSelectFeature={vi.fn()} onOpenDoc={vi.fn()} />);
+
+    const overviewSection = screen.getByText("Overview").closest("section");
+    const brandSection = screen.getByText("Brand").closest("section");
+    expect(brandSection).not.toBe(overviewSection);
+    expect(brandSection?.className).toContain("feature-browser__brand");
+    // Not a child of the Overview section.
+    expect(overviewSection?.contains(brandSection as Node)).toBe(false);
+
+    expect(within(brandSection as HTMLElement).getByText(".pHive/brand/brand-guide.html")).toBeInTheDocument();
+  });
+
+  it("calls onOpenDoc with the doc's repo and file_path when a brand doc is clicked", () => {
+    const onOpenDoc = vi.fn();
+    render(<FeatureBrowser features={[]} overview={[]} brand={BRAND} onSelectFeature={vi.fn()} onOpenDoc={onOpenDoc} />);
+
+    fireEvent.click(screen.getByText(".pHive/brand/brand-guide.html"));
+
+    expect(onOpenDoc).toHaveBeenCalledWith("consus", ".pHive/brand/brand-guide.html");
+  });
+
+  it("shows an empty message for the Brand section when there are no brand docs", () => {
+    render(<FeatureBrowser features={[]} overview={[]} brand={[]} onSelectFeature={vi.fn()} onOpenDoc={vi.fn()} />);
+    expect(screen.getByText(/no brand docs indexed yet/i)).toBeInTheDocument();
+  });
+
+  it("defaults to an empty Brand section when the brand prop is omitted entirely — every pre-existing caller keeps working unchanged", () => {
+    render(<FeatureBrowser features={[]} overview={[]} onSelectFeature={vi.fn()} onOpenDoc={vi.fn()} />);
+    expect(screen.getByRole("heading", { name: "Brand" })).toBeInTheDocument();
+    expect(screen.getByText(/no brand docs indexed yet/i)).toBeInTheDocument();
+  });
+});
+
 describe("FeatureBrowser — design topic surfacing (s3 of consus-phase28-interaction-completeness)", () => {
   const FEATURES_WITH_DESIGN: Feature[] = [
     {
