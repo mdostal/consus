@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Consus Brand Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@300;400;500;600;700;900&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --primary: #362B6B;      /* Granary Indigo */
+    --secondary: #9C6316;    /* Threshing Gold */
+    --neutral: #46414F;      /* Quern Charcoal */
+    --surface: #FAF7F0;      /* Parchment */
+    --white: #FFFFFF;
+    --black: #000000;
+    --heading-font: 'Fraunces', Georgia, 'Times New Roman', serif;
+    --body-font: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f0efec;
+    color: #1a1a1a;
+    margin: 0;
+    padding: 40px;
+    line-height: 1.5;
+  }
+
+  .wrap { max-width: 1100px; margin: 0 auto; }
+
+  section {
+    background: white;
+    padding: 32px 40px 40px;
+    margin-bottom: 24px;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+
+  h2 {
+    margin: 0 0 24px 0;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: #767074;
+    font-weight: 700;
+  }
+
+  h3 { margin: 0 0 4px 0; }
+
+  code {
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    font-size: 12px;
+    background: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  /* ---------- Header ---------- */
+  .brand-header {
+    background: linear-gradient(160deg, var(--primary) 0%, #241d4d 100%);
+    color: var(--surface);
+    border-radius: 16px;
+    padding: 56px 48px;
+    margin-bottom: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .brand-header .eyebrow {
+    font-family: var(--body-font);
+    font-size: 12px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #c9a86a;
+    margin: 0 0 14px 0;
+    font-weight: 600;
+  }
+  .brand-header h1 {
+    font-family: var(--heading-font);
+    font-weight: 700;
+    font-size: 64px;
+    margin: 0 0 18px 0;
+    letter-spacing: -0.5px;
+  }
+  .brand-header .personality-statement {
+    font-family: var(--body-font);
+    font-size: 19px;
+    max-width: 640px;
+    color: #ece8f5;
+    margin: 0 0 18px 0;
+  }
+  .brand-header .tone {
+    font-family: var(--body-font);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: #9d90c4;
+    margin: 0;
+    font-weight: 600;
+  }
+
+  /* ---------- Colors ---------- */
+  .color-grid { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+  .color-card { border: 1px solid #eee; border-radius: 10px; overflow: hidden; }
+  .swatch { width: 100%; height: 140px; }
+  .color-info { padding: 18px 20px 22px; }
+  .color-info h3 { font-size: 17px; }
+  .color-info dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 10px 0; font-size: 12px; }
+  .color-info dt { color: #999; }
+  .color-info dd { margin: 0; }
+  .usage { font-size: 13px; color: #555; margin: 10px 0 14px; }
+  .contrast-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .badge { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 20px; display: inline-flex; align-items: center; gap: 5px; }
+  .badge-aaa { background: #e3f4ea; color: #1c7a44; }
+  .badge-aa { background: #e2eefc; color: #1b5fac; }
+  .badge-aa-large { background: #fdefdc; color: #96590a; }
+  .badge-fail { background: #fbe3e3; color: #b23b3b; }
+
+  /* ---------- Typography ---------- */
+  .type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+  .type-column h3.font-name { font-family: var(--heading-font); font-size: 15px; letter-spacing: 0; text-transform: none; color: #1a1a1a; }
+  .font-role { font-size: 12px; color: #999; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 24px 0; }
+  .weight-sample { display: grid; grid-template-columns: 72px 1fr; align-items: center; gap: 16px; padding: 14px 0; border-top: 1px solid #eee; }
+  .weight-sample .big-aa { font-size: 44px; line-height: 1; }
+  .weight-meta .weight-label { display: block; font-size: 12px; font-weight: 700; color: #333; }
+  .weight-meta .weight-usage { display: block; font-size: 12px; color: #888; margin-top: 2px; }
+  .sample-sentence { font-size: 15px; margin: 18px 0 0; padding: 16px; background: var(--surface); border-radius: 8px; color: var(--neutral); }
+  .scale-samples { margin-top: 22px; }
+  .scale-row { display: flex; align-items: baseline; gap: 14px; padding: 6px 0; border-top: 1px dashed #eee; }
+  .scale-row .scale-label { font-family: 'SF Mono', monospace; font-size: 11px; color: #aaa; width: 34px; flex-shrink: 0; }
+  .scale-row .scale-text { color: #1a1a1a; }
+
+  /* ---------- Logos ---------- */
+  .fallback-notice {
+    font-size: 13px; color: #96590a; background: #fdefdc; border: 1px solid #f3d9ac;
+    border-radius: 8px; padding: 10px 16px; margin: 0 0 26px 0; font-family: var(--body-font);
+  }
+  .logo-grid { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); margin-bottom: 36px; }
+  .logo-card { border: 1px solid #eee; border-radius: 10px; overflow: hidden; }
+  .logo-display { display: flex; align-items: center; justify-content: center; padding: 28px 16px; min-height: 130px; }
+  .logo-card .logo-meta { padding: 14px 18px 18px; }
+  .logo-card h4 { margin: 0 0 6px; font-size: 14px; }
+  .concept-description { font-size: 12.5px; color: #666; margin: 0; }
+  .selected-tag { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--secondary); background: #fdefdc; border-radius: 20px; padding: 2px 9px; margin-bottom: 6px; }
+  .logo-bg-grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+  .logo-bg-card { border-radius: 10px; overflow: hidden; border: 1px solid #eee; }
+  .logo-bg-display { display: flex; align-items: center; justify-content: center; padding: 24px; min-height: 120px; }
+  .logo-bg-caption { padding: 10px 14px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+
+  /* ---------- Spacing / radius ---------- */
+  .spacing-row, .radius-row { display: flex; align-items: flex-end; gap: 26px; flex-wrap: wrap; margin-bottom: 8px; }
+  .spacing-sample, .radius-sample { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .spacing-sample .box { background: var(--primary); }
+  .spacing-sample .label, .radius-sample .label { font-size: 11px; color: #888; font-family: 'SF Mono', monospace; }
+  .radius-sample .box { width: 72px; height: 72px; background: var(--secondary); display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; font-weight: 600; }
+
+  /* ---------- Context ---------- */
+  .context-block { margin-bottom: 34px; }
+  .context-block:last-child { margin-bottom: 0; }
+  .context-label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #999; margin: 0 0 14px; font-weight: 600; }
+  .example-buttons { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  .btn-primary {
+    background: var(--primary); color: white; padding: 12px 26px; font-family: var(--body-font);
+    font-weight: 600; font-size: 14px; border: none; border-radius: 8px; cursor: pointer;
+  }
+  .btn-secondary {
+    background: transparent; color: var(--primary); padding: 12px 26px; font-family: var(--body-font);
+    font-weight: 600; font-size: 14px; border: 2px solid var(--primary); border-radius: 8px; cursor: pointer;
+  }
+  .btn-accent {
+    background: var(--secondary); color: white; padding: 12px 26px; font-family: var(--body-font);
+    font-weight: 600; font-size: 14px; border: none; border-radius: 8px; cursor: pointer;
+  }
+  .example-card {
+    background: var(--surface); padding: 26px; border-radius: 14px; max-width: 420px;
+    border: 1px solid #ece6d8;
+  }
+  .example-card .status-pill {
+    display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+    color: white; background: var(--secondary); border-radius: 20px; padding: 3px 10px; margin-bottom: 12px;
+  }
+  .example-card h3 { font-family: var(--heading-font); color: var(--primary); font-size: 20px; margin: 0 0 8px; }
+  .example-card p { font-family: var(--body-font); color: var(--neutral); font-size: 14px; margin: 0 0 18px; }
+  .hero-mock {
+    background: radial-gradient(circle at 20% 20%, #4a3b8a 0%, var(--primary) 45%, #241d4d 100%);
+    border-radius: 16px; padding: 56px 48px; color: var(--surface);
+  }
+  .hero-mock .kicker { font-family: var(--body-font); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #c9a86a; margin: 0 0 14px; font-weight: 600; }
+  .hero-mock h3 { font-family: var(--heading-font); font-size: 34px; margin: 0 0 14px; max-width: 520px; }
+  .hero-mock p { font-family: var(--body-font); font-size: 15px; color: #d9d4ec; max-width: 480px; margin: 0 0 24px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- 1. Brand Header -->
+  <header class="brand-header">
+    <p class="eyebrow">Brand System · v1</p>
+    <h1>Consus</h1>
+    <p class="personality-statement">Consus is the quiet keeper of a repo's decisions — a granary where what's been settled is stored safely, and a counselor you consult before deciding what's next.</p>
+    <p class="tone">Precise &middot; Trustworthy &middot; Unshowy &middot; Quietly Mythic</p>
+  </header>
+
+  <!-- 2. Color Palette -->
+  <section class="colors">
+    <h2>Color Palette</h2>
+    <div class="color-grid">
+
+      <article class="color-card">
+        <div class="swatch" style="background:#362B6B;"></div>
+        <div class="color-info">
+          <h3>Granary Indigo</h3>
+          <dl>
+            <dt>HEX</dt><dd><code>#362B6B</code></dd>
+            <dt>RGB</dt><dd><code>rgb(54, 43, 107)</code></dd>
+            <dt>CMYK</dt><dd><code>cmyk(50, 60, 0, 58)</code></dd>
+            <dt>PMS</dt><dd><code>2685 C (approx.)</code></dd>
+          </dl>
+          <p class="usage">Primary actions, CTAs, active nav state, key UI chrome — the deep dusk under which counsel is given.</p>
+          <div class="contrast-row">
+            <span class="badge badge-aaa">AAA vs white · 12.25:1</span>
+            <span class="badge badge-fail">Fail vs black · 1.71:1</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="color-card">
+        <div class="swatch" style="background:#9C6316;"></div>
+        <div class="color-info">
+          <h3>Threshing Gold</h3>
+          <dl>
+            <dt>HEX</dt><dd><code>#9C6316</code></dd>
+            <dt>RGB</dt><dd><code>rgb(156, 99, 22)</code></dd>
+            <dt>CMYK</dt><dd><code>cmyk(0, 37, 86, 39)</code></dd>
+            <dt>PMS</dt><dd><code>7568 C (approx.)</code></dd>
+          </dl>
+          <p class="usage">Accents, highlighted state, decision/verdict emphasis, badges — the stored grain, used sparingly against indigo.</p>
+          <div class="contrast-row">
+            <span class="badge badge-aa">AA vs white · 4.99:1</span>
+            <span class="badge badge-aa-large">AA Large vs black · 4.21:1</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="color-card">
+        <div class="swatch" style="background:#46414F;"></div>
+        <div class="color-info">
+          <h3>Quern Charcoal</h3>
+          <dl>
+            <dt>HEX</dt><dd><code>#46414F</code></dd>
+            <dt>RGB</dt><dd><code>rgb(70, 65, 79)</code></dd>
+            <dt>CMYK</dt><dd><code>cmyk(11, 18, 0, 69)</code></dd>
+            <dt>PMS</dt><dd><code>5265 C (approx.)</code></dd>
+          </dl>
+          <p class="usage">Body text, secondary content, borders — an indigo-tinted charcoal so neutral text still reads as part of the same family.</p>
+          <div class="contrast-row">
+            <span class="badge badge-aaa">AAA vs white · 9.86:1</span>
+            <span class="badge badge-fail">Fail vs black · 2.13:1</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="color-card">
+        <div class="swatch" style="background:#FAF7F0; border-bottom: 1px solid #eee;"></div>
+        <div class="color-info">
+          <h3>Parchment</h3>
+          <dl>
+            <dt>HEX</dt><dd><code>#FAF7F0</code></dd>
+            <dt>RGB</dt><dd><code>rgb(250, 247, 240)</code></dd>
+            <dt>CMYK</dt><dd><code>cmyk(0, 1, 4, 2)</code></dd>
+            <dt>PMS</dt><dd><code>7527 C (approx.)</code></dd>
+          </dl>
+          <p class="usage">App backgrounds, cards, containers — warm off-white, evoking ledger paper rather than clinical white.</p>
+          <div class="contrast-row">
+            <span class="badge badge-fail">Fail vs white · 1.07:1</span>
+            <span class="badge badge-aaa">AAA vs black · 19.63:1</span>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- 3. Typography -->
+  <section class="typography">
+    <h2>Typography</h2>
+    <div class="type-grid">
+
+      <article class="type-column">
+        <h3 class="font-name">Fraunces</h3>
+        <p class="font-role">Display / Headings / Wordmark</p>
+
+        <div class="weight-sample">
+          <span class="big-aa" style="font-family:'Fraunces'; font-weight:400;">Aa</span>
+          <span class="weight-meta"><span class="weight-label">Regular 400</span><span class="weight-usage">Body copy, captions, table cells</span></span>
+        </div>
+        <div class="weight-sample">
+          <span class="big-aa" style="font-family:'Fraunces'; font-weight:500;">Aa</span>
+          <span class="weight-meta"><span class="weight-label">Medium 500</span><span class="weight-usage">Labels, nav items, form field text</span></span>
+        </div>
+        <div class="weight-sample">
+          <span class="big-aa" style="font-family:'Fraunces'; font-weight:600;">Aa</span>
+          <span class="weight-meta"><span class="weight-label">SemiBold 600</span><span class="weight-usage">Subheadings, card titles, emphasis</span></span>
+        </div>
+        <div class="weight-sample">
+          <span class="big-aa" style="font-family:'Fraunces'; font-weight:700;">Aa</span>
+          <span class="weight-meta"><span class="weight-label">Bold 700</span><span class="weight-usage">Page headings, the wordmark</span></span>
+        </div>
+
+        <p class="sample-sentence" style="font-family:'Fraunces'; font-weight:500;">The quick brown fox jumps over the lazy dog.</p>
+
+        <div class="scale-samples">
+          <div class="scale-row"><span class="scale-label">48px</span><span class="scale-text" style="font-family:'Fraunces'; font-weight:700; font-size:48px;">Consus</span></div>
+          <div class="scale-row"><span class="scale-label">32px</span><span class="scale-text" style="font-family:'Fraunces'; font-weight:700; font-size:32px;">Consus</span></div>
+          <div class="scale-row"><span class="scale-label">24px</span><span class="scale-text" style="font-family:'Fraunces'; font-weight:600; font-size:24px;">Consus</span></div>
+          <div class="scale-row"><span class="scale-label">18px</span><span class="scale-text" style="font-family:'Fraunces'; font-weight:600; font-size:18px;">Consus</span></div>
+          <div class="scale-row"><span class="scale-label">16px</span><span class="scale-text" style="font-family:'Fraunces'; font-weight:500; font-size:16px;">Consus</span></div>
+          <div class="scale-row"><span class="scale-label">14px</span><span class="scale-text" style="font-family:'Fraunces'; font-weight:500; font-size:14px;">Consus</span></div>
+          <div class="scale-row"><span class="scale-label">12px</span><span class="scale-text" style="font-family:'Fraunces'; font-weight:500; font-size:12px;">Consus</span></div>
+        </div>
+      </article>
+
+      <article class="type-column">
+        <h3 class="font-name" style="font-family:'IBM Plex Sans';">IBM Plex Sans</h3>
+        <p class="font-role">UI / Body / Interface Text</p>
+
+        <div class="weight-sample">
+          <span class="big-aa" style="font-family:'IBM Plex Sans'; font-weight:400;">Aa</span>
+          <span class="weight-meta"><span class="weight-label">Regular 400</span><span class="weight-usage">Body copy, captions, table cells</span></span>
+        </div>
+        <div class="weight-sample">
+          <span class="big-aa" style="font-family:'IBM Plex Sans'; font-weight:500;">Aa</span>
+          <span class="weight-meta"><span class="weight-label">Medium 500</span><span class="weight-usage">Labels, nav items, form field text</span></span>
+        </div>
+        <div class="weight-sample">
+          <span class="big-aa" style="font-family:'IBM Plex Sans'; font-weight:600;">Aa</span>
+          <span class="weight-meta"><span class="weight-label">SemiBold 600</span><span class="weight-usage">Subheadings, card titles, emphasis</span></span>
+        </div>
+        <div class="weight-sample">
+          <span class="big-aa" style="font-family:'IBM Plex Sans'; font-weight:700;">Aa</span>
+          <span class="weight-meta"><span class="weight-label">Bold 700</span><span class="weight-usage">Primary CTAs, strong emphasis</span></span>
+        </div>
+
+        <p class="sample-sentence" style="font-family:'IBM Plex Sans'; font-weight:400;">The quick brown fox jumps over the lazy dog.</p>
+
+        <div class="scale-samples">
+          <div class="scale-row"><span class="scale-label">48px</span><span class="scale-text" style="font-family:'IBM Plex Sans'; font-weight:600; font-size:48px;">Consus</span></div>
+          <div class="scale-row"><span class="scale-label">32px</span><span class="scale-text" style="font-family:'IBM Plex Sans'; font-weight:600; font-size:32px;">Consus</span></div>
+          <div class="scale-row"><span class="scale-label">24px</span><span class="scale-text" style="font-family:'IBM Plex Sans'; font-weight:600; font-size:24px;">Consus</span></div>
+          <div class="scale-row"><span class="scale-label">18px</span><span class="scale-text" style="font-family:'IBM Plex Sans'; font-weight:500; font-size:18px;">Consus</span></div>
+          <div class="scale-row"><span class="scale-label">16px</span><span class="scale-text" style="font-family:'IBM Plex Sans'; font-weight:400; font-size:16px;">Consus</span></div>
+          <div class="scale-row"><span class="scale-label">14px</span><span class="scale-text" style="font-family:'IBM Plex Sans'; font-weight:400; font-size:14px;">Consus</span></div>
+          <div class="scale-row"><span class="scale-label">12px</span><span class="scale-text" style="font-family:'IBM Plex Sans'; font-weight:400; font-size:12px;">Consus</span></div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- 4. Logo Concepts (inline-SVG fallback path) -->
+  <section class="logos">
+    <h2>Logo Concepts</h2>
+    <p class="fallback-notice">Inline SVG fallback — install the <code>openai-image</code> MCP and re-run <code>/brand-system</code> for image-backed exploration via <code>/logo-exploration</code>.</p>
+    <p style="font-size:14px; color:#555; max-width:760px; margin:-8px 0 28px;">
+      Every concept below shares one glyph: a vertical kernel of grain with a natural crease down its
+      spine and a small punched "eye" near its base — the seed a granary stores, and the aperture
+      you need counsel to open. The current app icon (a generic hub-and-spoke graph on an indigo
+      field) was an explicit placeholder; these concepts replace the graph-node cliché with something
+      that actually maps to what "Consus" means.
+    </p>
+
+    <div class="logo-grid">
+
+      <!-- Concept 1: Pure Wordmark -->
+      <article class="logo-card">
+        <div class="logo-display" style="background:#FAF7F0;">
+          <svg viewBox="0 0 240 80" width="220" height="74" role="img" aria-label="Consus wordmark">
+            <text x="120" y="52" text-anchor="middle" font-family="Fraunces" font-weight="700" font-size="46" fill="#362B6B">Consus</text>
+          </svg>
+        </div>
+        <div class="logo-meta">
+          <h4>1 &middot; Pure Wordmark</h4>
+          <p class="concept-description">Consus set in Fraunces Bold — the name alone carries the whole personality, for contexts where space is tight or the name itself is the point.</p>
+        </div>
+      </article>
+
+      <!-- Concept 2: Wordmark + Symbol -->
+      <article class="logo-card">
+        <div class="logo-display" style="background:#FAF7F0;">
+          <svg viewBox="0 0 240 80" width="220" height="74" role="img" aria-label="Consus wordmark with grain-kernel symbol">
+            <g transform="translate(2,8) scale(0.30)">
+              <path d="M60,14 C76,14 86,38 86,60 C86,82 76,106 60,106 C44,106 34,82 34,60 C34,38 44,14 60,14 Z" fill="#9C6316"/>
+              <path d="M60,26 Q68,60 60,94" fill="none" stroke="#FAF7F0" stroke-width="4" stroke-linecap="round" opacity="0.8"/>
+              <circle cx="60" cy="76" r="7" fill="#FAF7F0"/>
+            </g>
+            <text x="54" y="52" text-anchor="start" font-family="Fraunces" font-weight="700" font-size="42" fill="#362B6B">Consus</text>
+          </svg>
+        </div>
+        <div class="logo-meta">
+          <h4>2 &middot; Wordmark + Symbol</h4>
+          <p class="concept-description">The grain-kernel glyph paired with the wordmark, for headers and marketing surfaces where name and mark should register together.</p>
+        </div>
+      </article>
+
+      <!-- Concept 3: Monogram -->
+      <article class="logo-card">
+        <div class="logo-display" style="background:#FAF7F0;">
+          <svg viewBox="0 0 120 120" width="110" height="110" role="img" aria-label="Consus monogram, an open C wrapping the grain kernel">
+            <path d="M 101.57,36 A 48,48 0 1 0 101.57,84" fill="none" stroke="#362B6B" stroke-width="9" stroke-linecap="round"/>
+            <g transform="translate(60,60) scale(0.62) translate(-60,-60)">
+              <path d="M60,14 C76,14 86,38 86,60 C86,82 76,106 60,106 C44,106 34,82 34,60 C34,38 44,14 60,14 Z" fill="#9C6316"/>
+              <path d="M60,26 Q68,60 60,94" fill="none" stroke="#FAF7F0" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
+              <circle cx="60" cy="76" r="8" fill="#FAF7F0"/>
+            </g>
+          </svg>
+        </div>
+        <div class="logo-meta">
+          <h4>3 &middot; Monogram</h4>
+          <p class="concept-description">An open "C" arc — the granary door, standing ajar — wrapped around the kernel glyph. More identity than a wordmark, less weight than a full badge.</p>
+        </div>
+      </article>
+
+      <!-- Concept 4: Abstract Mark (selected) -->
+      <article class="logo-card" style="border-color:#e3c98c;">
+        <div class="logo-display" style="background:#FAF7F0;">
+          <svg viewBox="0 0 120 120" width="110" height="110" role="img" aria-label="Consus abstract grain-kernel mark">
+            <circle cx="60" cy="60" r="54" fill="none" stroke="#362B6B" stroke-width="1" opacity="0.15"/>
+            <path d="M60,14 C76,14 86,38 86,60 C86,82 76,106 60,106 C44,106 34,82 34,60 C34,38 44,14 60,14 Z" fill="#362B6B"/>
+            <path d="M60,26 Q68,60 60,94" fill="none" stroke="#FAF7F0" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
+            <circle cx="60" cy="76" r="8" fill="#FAF7F0"/>
+          </svg>
+        </div>
+        <div class="logo-meta">
+          <span class="selected-tag">Selected &middot; app icon</span>
+          <h4>4 &middot; Abstract Mark</h4>
+          <p class="concept-description">The kernel alone — its crease and punched "eye" are the whole story. Holds up at 16px, which makes it the candidate for the dock icon, tray icon, and favicon.</p>
+        </div>
+      </article>
+
+      <!-- Concept 5: Badge / Seal -->
+      <article class="logo-card">
+        <div class="logo-display" style="background:#FAF7F0;">
+          <svg viewBox="0 0 120 120" width="110" height="110" role="img" aria-label="Consus badge, a seal with arced CONSUS text around the grain kernel">
+            <defs>
+              <path id="sealArc" d="M 20,64 A 40,40 0 0 1 100,64" fill="none"/>
+            </defs>
+            <circle cx="60" cy="60" r="56" fill="none" stroke="#362B6B" stroke-width="2.5"/>
+            <circle cx="60" cy="60" r="45" fill="none" stroke="#9C6316" stroke-width="1"/>
+            <text font-family="IBM Plex Sans" font-weight="600" font-size="11" letter-spacing="2.5" fill="#362B6B">
+              <textPath href="#sealArc" startOffset="50%" text-anchor="middle">CONSUS</textPath>
+            </text>
+            <g transform="translate(60,66) scale(0.46) translate(-60,-60)">
+              <path d="M60,14 C76,14 86,38 86,60 C86,82 76,106 60,106 C44,106 34,82 34,60 C34,38 44,14 60,14 Z" fill="#9C6316"/>
+              <path d="M60,26 Q68,60 60,94" fill="none" stroke="#FAF7F0" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
+              <circle cx="60" cy="76" r="8" fill="#FAF7F0"/>
+            </g>
+          </svg>
+        </div>
+        <div class="logo-meta">
+          <h4>5 &middot; Badge / Seal</h4>
+          <p class="concept-description">The kernel ringed by arced "CONSUS," like a Roman coin or wax seal — for a splash screen or About panel where the mythic register can run full ceremonial.</p>
+        </div>
+      </article>
+
+    </div>
+
+    <h3 style="font-size:14px; text-transform:uppercase; letter-spacing:1px; color:#767074; margin-bottom:16px;">Background Variants &mdash; Concept 4, Abstract Mark</h3>
+    <div class="logo-bg-grid">
+
+      <div class="logo-bg-card">
+        <div class="logo-bg-display" style="background:#362B6B;">
+          <svg viewBox="0 0 120 120" width="88" height="88">
+            <path d="M60,14 C76,14 86,38 86,60 C86,82 76,106 60,106 C44,106 34,82 34,60 C34,38 44,14 60,14 Z" fill="#FAF7F0"/>
+            <path d="M60,26 Q68,60 60,94" fill="none" stroke="#362B6B" stroke-width="5" stroke-linecap="round" opacity="0.55"/>
+            <circle cx="60" cy="76" r="8" fill="#362B6B"/>
+          </svg>
+        </div>
+        <div class="logo-bg-caption"><span>Granary Indigo</span><span class="badge badge-aaa">11.45:1</span></div>
+      </div>
+
+      <div class="logo-bg-card">
+        <div class="logo-bg-display" style="background:#9C6316;">
+          <svg viewBox="0 0 120 120" width="88" height="88">
+            <path d="M60,14 C76,14 86,38 86,60 C86,82 76,106 60,106 C44,106 34,82 34,60 C34,38 44,14 60,14 Z" fill="#FFFFFF"/>
+            <path d="M60,26 Q68,60 60,94" fill="none" stroke="#9C6316" stroke-width="5" stroke-linecap="round" opacity="0.5"/>
+            <circle cx="60" cy="76" r="8" fill="#9C6316"/>
+          </svg>
+        </div>
+        <div class="logo-bg-caption"><span>Threshing Gold</span><span class="badge badge-aa">4.99:1</span></div>
+      </div>
+
+      <div class="logo-bg-card">
+        <div class="logo-bg-display" style="background:#46414F;">
+          <svg viewBox="0 0 120 120" width="88" height="88">
+            <path d="M60,14 C76,14 86,38 86,60 C86,82 76,106 60,106 C44,106 34,82 34,60 C34,38 44,14 60,14 Z" fill="#FAF7F0"/>
+            <path d="M60,26 Q68,60 60,94" fill="none" stroke="#46414F" stroke-width="5" stroke-linecap="round" opacity="0.55"/>
+            <circle cx="60" cy="76" r="8" fill="#46414F"/>
+          </svg>
+        </div>
+        <div class="logo-bg-caption"><span>Quern Charcoal</span><span class="badge badge-aaa">9.22:1</span></div>
+      </div>
+
+      <div class="logo-bg-card">
+        <div class="logo-bg-display" style="background:#FAF7F0;">
+          <svg viewBox="0 0 120 120" width="88" height="88">
+            <path d="M60,14 C76,14 86,38 86,60 C86,82 76,106 60,106 C44,106 34,82 34,60 C34,38 44,14 60,14 Z" fill="#362B6B"/>
+            <path d="M60,26 Q68,60 60,94" fill="none" stroke="#FAF7F0" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
+            <circle cx="60" cy="76" r="8" fill="#FAF7F0"/>
+          </svg>
+        </div>
+        <div class="logo-bg-caption"><span>Parchment</span><span class="badge badge-aaa">11.45:1</span></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 5. Spacing & Radius -->
+  <section class="spacing">
+    <h2>Spacing Scale</h2>
+    <div class="spacing-row">
+      <div class="spacing-sample"><div class="box" style="width:4px; height:4px;"></div><span class="label">4px</span></div>
+      <div class="spacing-sample"><div class="box" style="width:8px; height:8px;"></div><span class="label">8px</span></div>
+      <div class="spacing-sample"><div class="box" style="width:12px; height:12px;"></div><span class="label">12px</span></div>
+      <div class="spacing-sample"><div class="box" style="width:16px; height:16px;"></div><span class="label">16px</span></div>
+      <div class="spacing-sample"><div class="box" style="width:24px; height:24px;"></div><span class="label">24px</span></div>
+      <div class="spacing-sample"><div class="box" style="width:32px; height:32px;"></div><span class="label">32px</span></div>
+      <div class="spacing-sample"><div class="box" style="width:48px; height:48px;"></div><span class="label">48px</span></div>
+      <div class="spacing-sample"><div class="box" style="width:64px; height:64px;"></div><span class="label">64px</span></div>
+    </div>
+
+    <h2 style="margin-top:40px;">Border Radius</h2>
+    <div class="radius-row">
+      <div class="radius-sample"><div class="box" style="border-radius:4px;">small</div><span class="label">4px</span></div>
+      <div class="radius-sample"><div class="box" style="border-radius:8px;">medium</div><span class="label">8px</span></div>
+      <div class="radius-sample"><div class="box" style="border-radius:14px;">large</div><span class="label">14px</span></div>
+      <div class="radius-sample"><div class="box" style="border-radius:9999px;">full</div><span class="label">9999px</span></div>
+    </div>
+  </section>
+
+  <!-- 6. Brand in Context -->
+  <section class="context">
+    <h2>Brand in Context</h2>
+
+    <div class="context-block">
+      <p class="context-label">Buttons</p>
+      <div class="example-buttons">
+        <button class="btn-primary">Record verdict</button>
+        <button class="btn-secondary">View decision</button>
+        <button class="btn-accent">Propose change</button>
+      </div>
+    </div>
+
+    <div class="context-block">
+      <p class="context-label">Decision card</p>
+      <div class="example-card">
+        <span class="status-pill">Open decision</span>
+        <h3>Adopt event-sourced audit log</h3>
+        <p>Should item verdicts append to an immutable log, or overwrite in place? Recommended: append-only, matching the existing decided_at contract.</p>
+        <button class="btn-primary" style="padding:10px 20px; font-size:13px;">Open in Consus</button>
+      </div>
+    </div>
+
+    <div class="context-block">
+      <p class="context-label">Hero section</p>
+      <div class="hero-mock">
+        <p class="kicker">Consus &middot; Local knowledgebase</p>
+        <h3>Every decision your repo has made, kept and ready to consult.</h3>
+        <p>Index a repo's own docs, decisions, and architecture, then open, search, and propose changes to all of it — without digging through files by hand.</p>
+        <button class="btn-accent">Open the decision queue</button>
+      </div>
+    </div>
+
+  </section>
+
+</div>
+</body>
+</html>

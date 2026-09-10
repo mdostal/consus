@@ -87,6 +87,7 @@ app/src-tauri/gen/
 .pHive/agent-complete/
 .pHive/interrupts/
 .pHive/metrics/
+.pHive/cycle-state/
 .pHive/session-effort.txt
 .consus-backup-cadex/
 dev.log
