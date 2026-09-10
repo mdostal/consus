@@ -298,6 +298,54 @@ real feature's epic folds into that feature's existing doc group in
 `GET /api/docs/features` (below), rather than appearing as a separate bucket. A repo with no
 `.pHive/design/` directory is entirely unaffected — this scan root is purely additive.
 
+### Brand manifest decision synthesis (`.pHive/brand/logo-concepts.yaml`)
+As of `consus-phase29-brand-decision-review` (s4), every scan (`POST /api/projects`,
+`POST /api/projects/:project/ingest`, `POST /api/projects/scan-all`) also runs a brand-manifest
+synthesis pass (`server/adapters/doc-scanner/brand-manifest.ts`'s `synthesizeBrandManifestDecision`,
+called from `server/events/detect.ts`'s `detectEvents` — the same entrypoint every scan route already
+shares) immediately after `scanRepo`. This is a different mechanism from the **Events** doc-scanned
+`decision_needed` pass above: instead of surfacing a reviewable event, it synthesizes a real decision
+item directly, so a design artifact that already carries its own set of named options (e.g. a set of
+logo concepts) becomes something the operator can open and decide on in Consus without a
+`decision-request` block ever needing to be hand-authored into a doc.
+
+**Manifest format** — `.pHive/brand/logo-concepts.yaml`, a YAML object:
+```yaml
+version: dostal:concept-selection/v1
+title: "Consus brand: select the logo concept direction"
+context: "Five logo concepts were produced for Consus's first real brand system..."
+concepts:
+  - id: pure-wordmark
+    name: Pure Wordmark
+    description: "Consus set in Fraunces Bold — ..."
+    preview:
+      kind: svg
+      markup: "<svg>...</svg>"
+  # ... one entry per concept
+```
+`title`/`context` are required non-empty strings. `concepts` must have at least 1 entry, each
+conforming exactly to `dostal:concept-selection/v1`'s `concepts[]` shape (`id`, `name`, `description`
+all required non-empty strings; `preview.kind` must be `"svg"`; `preview.markup` a required non-empty
+string, server/operator-authored SVG only — see `POST /api/decisions`'s concept-selection entry above
+for the security note on `preview.markup`). `version`, if present in the file, is ignored — the
+synthesized payload's `version` is always fixed to `"dostal:concept-selection/v1"` server-side, never
+trusted from the file.
+
+**Synthesis behavior:**
+- No manifest on disk, a YAML parse failure, or a manifest that fails the shape validation above all
+  degrade gracefully — no decision item is created or updated, and the scan itself never crashes
+  (the same defensive posture as every other optional scan input in this codebase, e.g. a missing
+  `.pHive/design/` directory).
+- On a valid manifest, an `items` row is created with `id` following the exact same
+  `decision:<repo>:<file_path>` scheme every other doc-derived decision uses (`server/events/
+  detect.ts`'s `decisionItemIdFor`), keyed off the manifest's own repo-relative path
+  (`.pHive/brand/logo-concepts.yaml`) — idempotent by construction: re-scanning resolves to the same
+  id every time, never a duplicate row.
+- Re-scanning an already-existing brand decision refreshes its `decision_payload`/`updated_at` from
+  the manifest's current contents, but never clears `decided_at` — once the operator has recorded a
+  verdict (e.g. `concept_selected` with `conceptId: "monogram"`, via `POST /api/decisions/:id/verdict`
+  above), the decision stays decided across every future scan.
+
 ## Design Assets
 
 ### `GET /api/design-assets?repo=<name>&path=<repo-relative path>`

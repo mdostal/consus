@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 import { queryDocIndex, readDocContent, type DocIndexRow } from "../adapters/doc-scanner/index.js";
+import { synthesizeBrandManifestDecision } from "../adapters/doc-scanner/brand-manifest.js";
 import { readGitDoc } from "../adapters/gitdocs/index.js";
 import { parseDecisionPayload, serializeDecisionPayload, type DecisionPayload } from "../decision-contract/parser.js";
 import { classifyItem } from "../decision-contract/classifier.js";
@@ -330,6 +331,19 @@ export function detectEvents(db: Database.Database, input: DetectEventsInput): n
   for (const row of currentRows) {
     if (detectDecisionNeededForRow(db, ctx, row)) count++;
   }
+
+  // Pass C — brand manifest decision synthesis (s4-manifest-decision-
+  // synthesis). Deliberately NOT an events-table pass like A/B above: this
+  // creates (or idempotently refreshes) a real decision item directly from
+  // `.pHive/brand/logo-concepts.yaml`, the same "synthesize a decision
+  // straight from a scanned artifact, skip the review-queue event" pattern
+  // server/routes/projects.ts's ingestDecisionsAtRef already uses for
+  // branch-scoped decisions. Not counted in this function's return value —
+  // that count is specifically "events created" (doc_changed/
+  // decision_needed), a different concept from a directly-synthesized
+  // decision. No-ops silently (see synthesizeBrandManifestDecision's own
+  // doc comment) when the manifest is absent or malformed.
+  synthesizeBrandManifestDecision(db, { repoName, repoPath });
 
   return count;
 }
