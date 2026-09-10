@@ -59,6 +59,25 @@ export const OVERVIEW_ROOT_DIR = "docs";
  */
 export const DESIGN_ROOT = join(".pHive", "design");
 
+/**
+ * Brand docs (s1 of consus-phase29-brand-decision-review): the Hive
+ * `/brand-system` skill's output directory, `.pHive/brand/`. Repo-wide, not
+ * tied to a single feature/epic — mirrors OVERVIEW_ROOT_* exactly, tagged
+ * `phase: "brand"` (a new reserved value distinct from "planning"/
+ * "overview"/"design") and `epic: null`, always, never derived from path
+ * structure. Only `brand-guide.html` (and any future .md docs) match —
+ * DOC_EXTENSIONS only matches .md/.html, so `brand-system.yaml` sitting
+ * alongside it (structured data consumed directly by later stories'
+ * manifest-synthesis logic, not a human-readable doc) is naturally excluded
+ * by construction, no special-casing needed.
+ *
+ * Deliberately kept OUT of SCAN_ROOTS itself, same rationale as
+ * OVERVIEW_ROOT_DIR/DESIGN_ROOT above: SCAN_ROOTS also backs ./git-ref.ts's
+ * isUnderScanRoots() for ref-aware git plumbing, and brand docs weren't part
+ * of its (already-tested) contract.
+ */
+export const BRAND_ROOT = join(".pHive", "brand");
+
 function walk(dir: string): string[] {
   let out: string[] = [];
   let entries: import("node:fs").Dirent[];
@@ -125,6 +144,19 @@ function deriveDesignTopic(relPath: string): string | null {
   const parts = relPath.split(sep);
   // parts[0] === ".pHive", parts[1] === "design"
   return parts.length >= 4 ? parts[2] : null;
+}
+
+/**
+ * Finds every .md/.html artifact under .pHive/brand/, if that directory
+ * exists at all. Reuses walk() unchanged (the same directory-walk
+ * convention as .pHive/epics/**, the overview docs/** tree, and
+ * .pHive/design/** above) — a repo with no .pHive/brand/ directory (the
+ * common case for any repo without a brand pass) yields no files, no error,
+ * matching this story's "purely additive, zero regression" acceptance
+ * criterion.
+ */
+function walkBrandFiles(repoPath: string): string[] {
+  return walk(join(repoPath, BRAND_ROOT));
 }
 
 function hashContent(content: string): string {
@@ -196,6 +228,24 @@ export function scanRepo(db: Database.Database, { repoName, repoPath }: ScanOpti
       repo: repoName,
       epic,
       phase: "design",
+      file_path: relPath,
+      content_hash: hashContent(content),
+      last_scanned_at: now,
+    });
+  }
+
+  // Brand docs (.pHive/brand/**, s1 of consus-phase29-brand-decision-review)
+  // — always epic: null, phase: "brand", the same repo-wide, fixed-tag
+  // convention as the overview docs above (never derived from path
+  // structure the way .pHive/epics/** or .pHive/design/** docs are).
+  for (const absPath of walkBrandFiles(repoPath)) {
+    const relPath = relative(repoPath, absPath);
+    const content = readFileSync(absPath, "utf-8");
+
+    upsert.run({
+      repo: repoName,
+      epic: null,
+      phase: "brand",
       file_path: relPath,
       content_hash: hashContent(content),
       last_scanned_at: now,

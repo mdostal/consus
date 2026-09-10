@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { runMigration } from "../../db/migrate.js";
@@ -295,5 +296,112 @@ describe("Doc Scanner — .pHive/design/ wireframe docs (s3 of consus-phase28-in
 
     // No double-counting: exactly one row per file, four files total.
     expect(rows).toHaveLength(4);
+  });
+});
+
+describe("Doc Scanner — .pHive/brand/ brand docs (s1 of consus-phase29-brand-decision-review)", () => {
+  let repoDir: string;
+  let db: Database.Database;
+
+  beforeEach(() => {
+    repoDir = mkdtempSync(join(tmpdir(), "consus-repo-brand-"));
+    db = new Database(":memory:");
+    runMigration(db);
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it("indexes brand-guide.html under .pHive/brand/ tagged epic=null, phase='brand'", () => {
+    mkdirSync(join(repoDir, ".pHive", "brand"), { recursive: true });
+    writeFileSync(join(repoDir, ".pHive", "brand", "brand-guide.html"), "<html><body>Brand</body></html>");
+
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
+
+    const rows = queryDocIndex(db, "consus");
+    const guide = rows.find((r) => r.file_path === join(".pHive", "brand", "brand-guide.html"));
+    expect(guide).toBeDefined();
+    expect(guide?.epic).toBeNull();
+    expect(guide?.phase).toBe("brand");
+  });
+
+  it("does NOT index brand-system.yaml alongside brand-guide.html (only .md/.html per DOC_EXTENSIONS)", () => {
+    mkdirSync(join(repoDir, ".pHive", "brand"), { recursive: true });
+    writeFileSync(join(repoDir, ".pHive", "brand", "brand-guide.html"), "<html><body>Brand</body></html>");
+    writeFileSync(join(repoDir, ".pHive", "brand", "brand-system.yaml"), "colors: {}\n");
+
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
+
+    const rows = queryDocIndex(db, "consus");
+    const paths = rows.map((r) => r.file_path);
+    expect(paths).toEqual([join(".pHive", "brand", "brand-guide.html")]);
+    expect(paths).not.toContain(join(".pHive", "brand", "brand-system.yaml"));
+  });
+
+  it("does not error and indexes nothing when .pHive/brand/ is entirely absent (the common case for any repo without a brand pass)", () => {
+    expect(() => scanRepo(db, { repoName: "consus", repoPath: repoDir })).not.toThrow();
+    expect(queryDocIndex(db, "consus")).toEqual([]);
+  });
+
+  it("leaves planning/epics/overview/design scan roots' behavior and tagging completely unchanged (purely additive)", () => {
+    mkdirSync(join(repoDir, ".pHive", "planning"), { recursive: true });
+    mkdirSync(join(repoDir, ".pHive", "epics", "sample-epic", "docs"), { recursive: true });
+    mkdirSync(join(repoDir, ".pHive", "design", "sample-epic"), { recursive: true });
+    mkdirSync(join(repoDir, ".pHive", "brand"), { recursive: true });
+    writeFileSync(join(repoDir, ".pHive", "planning", "prd.md"), "# PRD\n\nhello");
+    writeFileSync(
+      join(repoDir, ".pHive", "epics", "sample-epic", "docs", "architecture.md"),
+      "# Architecture\n\nhello",
+    );
+    writeFileSync(join(repoDir, ".pHive", "design", "sample-epic", "brief.md"), "# Brief\n");
+    writeFileSync(join(repoDir, "README.md"), "# Hello\n");
+    writeFileSync(join(repoDir, ".pHive", "brand", "brand-guide.html"), "<html><body>Brand</body></html>");
+
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
+    const rows = queryDocIndex(db, "consus");
+
+    const planningDoc = rows.find((r) => r.file_path.endsWith("prd.md"));
+    expect(planningDoc?.epic).toBeNull();
+    expect(planningDoc?.phase).toBe("planning");
+
+    const epicDoc = rows.find((r) => r.file_path.endsWith("architecture.md"));
+    expect(epicDoc?.epic).toBe("sample-epic");
+    expect(epicDoc?.phase).toBe("docs");
+
+    const overviewDoc = rows.find((r) => r.file_path === "README.md");
+    expect(overviewDoc?.epic).toBeNull();
+    expect(overviewDoc?.phase).toBe("overview");
+
+    const designDoc2 = rows.find((r) => r.file_path.endsWith(join("design", "sample-epic", "brief.md")));
+    expect(designDoc2?.epic).toBe("sample-epic");
+    expect(designDoc2?.phase).toBe("design");
+
+    const brandDoc = rows.find((r) => r.file_path === join(".pHive", "brand", "brand-guide.html"));
+    expect(brandDoc?.epic).toBeNull();
+    expect(brandDoc?.phase).toBe("brand");
+
+    // No double-counting: exactly one row per file, five files total.
+    expect(rows).toHaveLength(5);
+  });
+
+  it("running a real scan against this repo (consus) actually finds and indexes the real .pHive/brand/brand-guide.html on disk", () => {
+    // repoPath resolves to the real consus checkout, three levels up from
+    // this test file (server/adapters/doc-scanner/index.test.ts) — the same
+    // dirname(fileURLToPath(import.meta.url)) convention already used by
+    // server/kb/store.test.ts and server/routes/kb.test.ts to locate a
+    // real on-disk path at test time.
+    const testDir = dirname(fileURLToPath(import.meta.url));
+    const realRepoPath = resolve(testDir, "..", "..", "..");
+    expect(existsSync(join(realRepoPath, ".pHive", "brand", "brand-guide.html"))).toBe(true);
+
+    scanRepo(db, { repoName: "consus", repoPath: realRepoPath });
+
+    const rows = queryDocIndex(db, "consus");
+    const guide = rows.find((r) => r.file_path === join(".pHive", "brand", "brand-guide.html"));
+    expect(guide).toBeDefined();
+    expect(guide?.epic).toBeNull();
+    expect(guide?.phase).toBe("brand");
   });
 });

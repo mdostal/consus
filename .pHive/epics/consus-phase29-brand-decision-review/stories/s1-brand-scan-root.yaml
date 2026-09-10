@@ -1,0 +1,84 @@
+id: s1-brand-scan-root
+epic: consus-phase29-brand-decision-review
+title: Scan .pHive/brand/ as a repo-wide doc bucket
+status: pending
+complexity: low
+methodology: classic
+depends_on: []
+
+parallel_allowed: true
+parallel_rationale: bounded-slice
+
+description: |
+  Confirmed this session: server/adapters/doc-scanner/index.ts's scan
+  locations are SCAN_ROOTS ([".pHive/planning", ".pHive/epics"]),
+  OVERVIEW_ROOT_FILES/OVERVIEW_ROOT_DIR (phase27 -- repo-root
+  README/VISION/docs/, phase="overview", epic=null), and DESIGN_ROOT
+  (phase28 s3 -- .pHive/design/<topic>/, phase="design", epic=<topic>).
+  .pHive/brand/ is not scanned at all -- confirmed by direct read of every
+  root the scanner walks.
+
+  This story adds .pHive/brand/ as a fifth scan location, mirroring the
+  OVERVIEW_ROOT_* pattern exactly (repo-wide, not tied to a single
+  feature/epic): matched .md/.html files under .pHive/brand/ are indexed
+  with phase="brand", epic=null. Deliberately kept OUT of SCAN_ROOTS itself,
+  same rationale as OVERVIEW_ROOT_DIR/DESIGN_ROOT -- SCAN_ROOTS also backs
+  ./git-ref.ts's isUnderScanRoots(), and brand docs weren't part of its
+  (already-tested) contract.
+
+  Note: brand-system.yaml itself (the structured data half) is
+  intentionally NOT scanned as a doc -- it's data consumed directly by
+  s4's manifest-synthesis logic, not a doc for a human to read in the doc
+  browser. Only brand-guide.html (and any future .md docs under
+  .pHive/brand/) are indexed here.
+
+acceptance_criteria:
+  - "Given a .pHive/brand/ directory with brand-guide.html, running the doc scan indexes it into doc_index with phase='brand', epic=null, the same tagging convention as phase='overview'"
+  - "Given .pHive/brand/brand-system.yaml exists alongside it, the scan does NOT index the .yaml file (only .md/.html per the existing DOC_EXTENSIONS set) -- confirm this is already true by construction, add a regression test making it explicit"
+  - "Given no .pHive/brand/ directory exists in a repo (the common case for any repo without a brand pass), the scan behaves exactly as before this story -- purely additive, zero regression"
+  - "Given the existing SCAN_ROOTS/OVERVIEW_ROOT_*/DESIGN_ROOT scan locations, their behavior is byte-identical before and after this change"
+  - "Given this repo (consus) itself, with the real .pHive/brand/brand-guide.html already on disk, running a real scan actually finds and indexes it -- verified by querying doc_index directly, not just reading the code"
+
+steps:
+  - id: research
+    description: Re-confirm SCAN_ROOTS/OVERVIEW_ROOT_*/DESIGN_ROOT in doc-scanner/index.ts as they stand now, and isUnderScanRoots() in git-ref.ts to confirm brand docs staying out of SCAN_ROOTS doesn't affect it.
+    agent: researcher
+  - id: implement
+    description: Add .pHive/brand/ as a new scan root (BRAND_ROOT), tagged phase="brand"/epic=null, matching only .md/.html files.
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Add scanner tests for the new root (indexes brand-guide.html, ignores brand-system.yaml, no-.pHive/brand/-directory no-op case), plus a real scan against this repo confirming brand-guide.html is actually indexed.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm existing scan roots (planning/epics/overview/design) are byte-identical in behavior; confirm brand-system.yaml is genuinely excluded.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase29-brand-decision-review.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: server/adapters/doc-scanner/index.ts
+      purpose: "OVERVIEW_ROOT_*/DESIGN_ROOT -- the exact pattern this story extends a fifth time"
+    - path: .pHive/brand/brand-guide.html
+      purpose: "The real artifact this scan root needs to actually index -- already exists on disk from this session's brand-system pass"
+
+files_to_modify:
+  - file: server/adapters/doc-scanner/index.ts
+    change: Add .pHive/brand/ as a new scan root (BRAND_ROOT), tagged phase="brand", epic=null
+
+design_decisions:
+  - decision: brand-system.yaml is not scanned as a doc
+    rationale: "It's structured data consumed by s4's manifest-synthesis logic, not human-readable doc content -- scanning it as a doc would show raw YAML in the doc browser with no rendering value"
+
+references:
+  - path: .pHive/epics/consus-phase27-feature-doc-review-ui/stories/s1-repo-overview-doc-scanning.yaml
+    relevant_excerpt: |
+      Add the repo-root scan root, tag matched files phase="overview"/
+      epic=null, keep existing scan roots' behavior byte-identical.
+      (This story repeats that exact pattern for .pHive/brand/.)

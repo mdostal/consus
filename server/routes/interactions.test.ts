@@ -361,5 +361,44 @@ describe("POST /api/decisions/:id/verdict", () => {
         .get("rk-verdict-1") as { new_value: string };
       expect(JSON.parse(auditRow.new_value)).toEqual({ kind: "ranked", order: ["a11y", "perf"] });
     });
+
+    it("records a concept_selected verdict on a concept-selection/v1 item and marks it done", async () => {
+      insertDecisionWithPayload(db, "cs-verdict-1", "Pick a logo concept", {
+        version: "dostal:concept-selection/v1",
+        title: "Pick a logo concept",
+        context: "ctx",
+        concepts: [
+          {
+            id: "geo",
+            name: "Geometric",
+            description: "Sharp angular mark.",
+            preview: { kind: "svg", markup: "<svg/>" },
+          },
+          {
+            id: "script",
+            name: "Script",
+            description: "Flowing wordmark.",
+            preview: { kind: "svg", markup: "<svg/>" },
+          },
+        ],
+      });
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/decisions/cs-verdict-1/verdict",
+        payload: { verdict: { kind: "concept_selected", conceptId: "script" } },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ ok: true, status: "done" });
+      const row = db.prepare("SELECT status, decided_at FROM items WHERE id = 'cs-verdict-1'").get() as {
+        status: string;
+        decided_at: string;
+      };
+      expect(row.status).toBe("done");
+      expect(row.decided_at).toBeTruthy();
+      const auditRow = db
+        .prepare("SELECT new_value FROM audit_log WHERE item_id = ? AND field = 'verdict'")
+        .get("cs-verdict-1") as { new_value: string };
+      expect(JSON.parse(auditRow.new_value)).toEqual({ kind: "concept_selected", conceptId: "script" });
+    });
   });
 });

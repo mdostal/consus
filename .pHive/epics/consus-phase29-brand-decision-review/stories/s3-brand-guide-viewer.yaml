@@ -1,0 +1,100 @@
+id: s3-brand-guide-viewer
+epic: consus-phase29-brand-decision-review
+title: Isolated full-page HTML doc viewer + Brand section in the UI
+status: pending
+complexity: medium
+methodology: classic
+depends_on: [s1-brand-scan-root]
+
+description: |
+  Confirmed this session by direct read: DocRenderer.tsx (web/src/features/docs/DocRenderer.tsx:98,105,218)
+  always runs marked.parse(content) and injects the result via
+  dangerouslySetInnerHTML into a <div>, regardless of the format prop
+  ("md" | "html"). For a genuine HTML fragment (an existing planning-doc
+  HTML sidecar) this degrades acceptably. For a FULL self-contained page
+  like brand-guide.html (its own <!DOCTYPE>, a <head> with Google Fonts
+  <link> tags and a large <style> block, a <body>) this breaks: browsers
+  silently normalize/strip <html>/<head>/<body> when they appear as
+  children of a <div>, so fonts, styles, and structure would not render
+  correctly in-app. Reproduced conceptually, not yet attempted live in the
+  app -- this story is the fix before it ships broken.
+
+  This story adds a narrow, new rendering path specifically for full-page
+  HTML docs: detected by phase="brand" (from s1's scan tagging, the
+  reliable signal for this story) rendered via <iframe srcdoc={content}>
+  instead of DocRenderer's existing dangerouslySetInnerHTML path -- real
+  browser-level isolation, the page renders exactly as designed, Google
+  Fonts and all. Do NOT change DocRenderer's existing behavior for
+  phase="planning"/"epics"/"overview"/"design" docs -- this is an
+  additional rendering path selected by phase, not a rewrite of the
+  existing one.
+
+  Also surfaces a "Brand" section in the UI, sibling to the existing
+  Overview section (both phase-tagged epic=null, repo-wide) rather than
+  folded into it -- Overview today is pure-read docs; Brand carries an
+  active pending decision (once s4 ships) and conflating the two risks
+  burying the decision under a docs list.
+
+acceptance_criteria:
+  - "Given a doc with phase='brand' (brand-guide.html, from s1's scan), the UI renders it via an isolated iframe (srcdoc), not through DocRenderer's marked.parse path -- confirmed by inspecting the actual rendered DOM, not just the component tree"
+  - "Given the real .pHive/brand/brand-guide.html already on disk, opening it in the new viewer shows the actual designed page -- correct fonts (Fraunces/IBM Plex Sans), correct colors, correct layout -- not a mangled fragment"
+  - "Given every existing doc phase (planning, epics, overview, design), DocRenderer's existing rendering behavior for them is completely unchanged -- confirmed by running the existing DocRenderer test suite unmodified"
+  - "Given the FeatureBrowser/docs UI, a 'Brand' section appears as a sibling to Overview, not nested inside it, and is reachable without needing to know a direct URL"
+  - "Given the brand-guide viewer's layout, it gets a dedicated full-height slot (not squeezed into the same card layout as a markdown doc) per design-discussion.md's risk mitigation, with an explicit 'open in new tab' fallback affordance"
+
+steps:
+  - id: research
+    description: Re-confirm DocRenderer.tsx's exact rendering path (line-cited above) and FeatureBrowser.tsx's current section layout (Overview, per-feature list) to find the right insertion point for a sibling Brand section.
+    agent: researcher
+  - id: implement
+    description: Build the iframe-based full-page-HTML viewer component, wire it in ahead of DocRenderer's existing path for phase='brand' docs specifically, add the Brand section to FeatureBrowser.
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Component tests for the iframe viewer (srcdoc set correctly, isolated from host page styles), FeatureBrowser tests for the new Brand section, and a real-render check against the actual brand-guide.html content confirming fonts/layout survive.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm DocRenderer's existing phase behaviors are byte-identical, confirm the Brand section doesn't get swallowed by the Overview grouping logic, confirm the full-height layout genuinely differs from the cramped card default.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase29-brand-decision-review.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: web/src/features/docs/DocRenderer.tsx
+      purpose: "Lines 98,105,218 -- the marked.parse + dangerouslySetInnerHTML path that breaks for a full-page HTML doc; this story adds a sibling path selected before DocRenderer is reached for phase='brand'"
+    - path: web/src/features/docs/FeatureBrowser.tsx
+      purpose: "Current Overview section layout (epic=null docs) -- the insertion point for a new sibling Brand section"
+    - path: .pHive/brand/brand-guide.html
+      purpose: "The real artifact this viewer needs to render correctly -- already on disk"
+
+files_to_modify:
+  - file: web/src/features/docs/FullPageDocViewer.tsx
+    change: New iframe-srcdoc-based viewer for phase='brand' (and any future full-page HTML doc) docs
+  - file: web/src/features/docs/FeatureBrowser.tsx
+    change: Add a Brand section sibling to Overview, routing phase='brand' docs to FullPageDocViewer instead of DocRenderer
+
+design_decisions:
+  - decision: iframe srcdoc, not a new file-serving route
+    rationale: "The doc-content API already serves brand-guide.html's raw text (same as any other indexed doc) -- srcdoc consumes that string directly, no new route needed unlike phase28 s3's image-serving case"
+  - decision: Brand as a sibling section, not folded into Overview
+    rationale: "design-discussion.md open question 1 -- Overview is pure-read docs, Brand carries an active decision once s4 ships; conflating them risks burying the decision"
+
+risks:
+  - severity: medium
+    description: iframe srcdoc rendering a full page inside a card-shaped UI slot looks cramped compared to opening it full-page
+    mitigation: Dedicated full-height view + explicit 'open in new tab' fallback, per design-discussion.md's risk table
+
+references:
+  - path: .pHive/epics/consus-phase29-brand-decision-review/docs/research-brief.md
+    relevant_excerpt: |
+      This means the brand guide genuinely cannot be embedded through the
+      existing doc-rendering path — it needs isolated rendering (an
+      <iframe>, which is the standard, correct way to embed a
+      self-contained HTML document without DOM/CSS collision with the
+      host page).

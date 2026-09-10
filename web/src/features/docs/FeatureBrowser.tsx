@@ -31,19 +31,31 @@ export interface FeatureBrowserProps {
    *  rows, epic=null) — kept visually distinct from the per-epic feature
    *  list below, per this story's acceptance criteria. */
   overview: FeatureDoc[];
+  /** s3 (consus-phase29-brand-decision-review): the .pHive/brand/** bucket
+   *  (phase='brand' rows, epic=null, GET /api/docs/features's new `brand`
+   *  field). Rendered as its own sibling section, NOT folded into Overview
+   *  — Overview is pure-read docs, Brand carries an active pending decision
+   *  once s4 ships, and design-discussion.md's open question 1 flags
+   *  conflating the two as a risk of burying that decision. Optional and
+   *  defaulted to [] so every existing caller (and every existing test)
+   *  that doesn't yet pass it keeps working unchanged. */
+  brand?: FeatureDoc[];
   /** Fires with the full Feature (epic, docCount, and its docs) when a
    *  feature row is clicked — the caller navigates to FeatureDetailView
    *  with it, matching this app's existing "hold the selection in local
    *  state, no router" navigation pattern (see ProjectDocs/DocsSection's
    *  pre-existing openDoc state). */
   onSelectFeature: (feature: Feature) => void;
-  /** Opens a single overview doc directly — the same (repo, filePath)
-   *  callback shape DocBrowser's onOpen and DocSearch's onOpen already
-   *  use, reused unchanged here. */
+  /** Opens a single overview (or brand) doc directly — the same
+   *  (repo, filePath) callback shape DocBrowser's onOpen and DocSearch's
+   *  onOpen already use, reused unchanged here. The caller decides how to
+   *  render what comes back (DocRenderer vs. s3's FullPageDocViewer) based
+   *  on the opened doc's phase, which GET /api/docs/content now returns —
+   *  this component doesn't need to know or care which viewer is used. */
   onOpenDoc: (repo: string, filePath: string) => void;
 }
 
-export function FeatureBrowser({ features, overview, onSelectFeature, onOpenDoc }: FeatureBrowserProps) {
+export function FeatureBrowser({ features, overview, brand = [], onSelectFeature, onOpenDoc }: FeatureBrowserProps) {
   return (
     <div className="feature-browser">
       <section className="feature-browser__features">
@@ -87,6 +99,25 @@ export function FeatureBrowser({ features, overview, onSelectFeature, onOpenDoc 
         ) : (
           <ul>
             {overview.map((doc) => (
+              <li key={`${doc.repo} ${doc.file_path}`}>
+                <button type="button" onClick={() => onOpenDoc(doc.repo, doc.file_path)}>
+                  {doc.file_path}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* s3 (consus-phase29-brand-decision-review): a sibling to Overview,
+          not nested inside it — see the `brand` prop doc comment above. */}
+      <section className="feature-browser__brand">
+        <h2>Brand</h2>
+        {brand.length === 0 ? (
+          <p className="feature-browser__empty">No brand docs indexed yet.</p>
+        ) : (
+          <ul>
+            {brand.map((doc) => (
               <li key={`${doc.repo} ${doc.file_path}`}>
                 <button type="button" onClick={() => onOpenDoc(doc.repo, doc.file_path)}>
                   {doc.file_path}

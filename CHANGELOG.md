@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Design/brand artifacts become real, decidable decisions in Consus** (`consus-phase29-brand-decision-review`,
+  4 dependency-tracked stories, grounded in a real gap hit live this session — Consus's first brand
+  system had to be reviewed and decided on entirely outside the app):
+  - **`.pHive/brand/` scan root** — mirrors the existing overview/design scan-root pattern, tagging
+    brand docs `phase: "brand"`, `epic: null` (repo-wide, like overview).
+  - **New generalized answer shape, `dostal:concept-selection/v1`** — "pick one of N named options,
+    each with a visual preview," deliberately not logo-specific so any future design decision of this
+    shape reuses it. Eighth payload type on the proven parser → `AnswerControl` → verdict pattern.
+  - **Isolated full-page HTML doc viewer** — `DocRenderer`'s existing markdown-parse path silently
+    mangles a genuine self-contained HTML page (fonts, styles, structure all stripped when injected
+    as `<div>` children). A new `<iframe srcDoc>`-based viewer renders `phase="brand"` docs correctly,
+    with a dedicated full-height layout and an "open in new tab" fallback. A new "Brand" section
+    surfaces alongside Overview in the docs UI.
+  - **Manifest-driven decision synthesis** — `.pHive/brand/logo-concepts.yaml` conforms to the new
+    payload's `concepts[]` shape; scanning a repo with this manifest present idempotently creates a
+    real, pending decision. Backfilled with the actual 5 logo concepts from this session's brand
+    guide (verified byte-for-byte against the source HTML) — the monogram decision is waiting in
+    Consus's own UI now, closing the loop the operator asked for directly.
+
 ## [0.15.5] - 2026-09-08
 
 ### Fixed
