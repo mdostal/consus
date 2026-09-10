@@ -1,0 +1,55 @@
+name: consus-phase29-brand-decision-review
+title: Bring design/brand artifacts into Consus as real, decidable decisions
+description: >
+  Closes a gap hit live this session: Consus's first real brand system
+  (brand-system.yaml, brand-guide.html, five logo concepts) had to be
+  reviewed and decided on entirely outside Consus -- in chat, with a raw
+  HTML file opened locally -- because Consus has no concept of a design
+  artifact that carries its own decision. This epic adds a .pHive/brand/
+  scan root (mirroring the OVERVIEW_ROOT_*/DESIGN_ROOT pattern from
+  phase27/28), a new generalized dostal:concept-selection/v1 answer shape
+  (pick one of N named options, each with a visual preview -- not
+  logo-specific, reusable for any future design decision), an isolated
+  full-page HTML doc viewer (DocRenderer's existing marked.parse ->
+  dangerouslySetInnerHTML path silently mangles a real <html>/<head>/<body>
+  document -- confirmed live by direct read), and manifest-driven decision
+  synthesis, including backfilling the real manifest for the brand guide
+  that already exists on disk so the operator can record "monogram,
+  selected" through Consus's own UI today.
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: classic
+version_bump: minor
+sidecar_retention: committed
+
+git_flow:
+  base_branch: dev
+  branch_strategy: per-epic
+
+planning_team:
+  matched_tags: [decision-answer-shape, doc-scanning, design-review]
+  roster: [orchestrator]
+  per_tag_reasoning:
+    decision-answer-shape: "Grounded in a live, file-cited research pass over the real doc-scanner/decision-contract/AnswerControl code before design -- single-pass design discussion + direct story decomposition, proportionate to a medium-scope set of independent vertical slices reusing a pattern proven six times already."
+  confidence: high
+  gate_decisions:
+    hv_planning: skipped
+    structured_outline: skipped
+    reason: "Medium scope -- four independently-scoped vertical slices, each reusing an existing proven pattern (scan-root, answer-shape dispatch, decision-id scheme), no cross-slice sequencing beyond two simple depends_on edges."
+
+stories:
+  - id: s1-brand-scan-root
+    title: Scan .pHive/brand/ as a repo-wide doc bucket
+    complexity: low
+    depends_on: []
+  - id: s2-concept-selection-answer-shape
+    title: New generalized answer shape -- pick one of N visual concepts
+    complexity: medium
+    depends_on: []
+  - id: s3-brand-guide-viewer
+    title: Isolated full-page HTML doc viewer + Brand section in the UI
+    complexity: medium
+    depends_on: [s1-brand-scan-root]
+  - id: s4-manifest-decision-synthesis
+    title: Manifest format, decision synthesis, and real backfill for the brand guide
+    complexity: medium
+    depends_on: [s2-concept-selection-answer-shape]
