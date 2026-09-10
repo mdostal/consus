@@ -16,6 +16,7 @@ import { FeatureBrowser, type Feature, type FeatureDoc } from "./features/docs/F
 import { FeatureDetailView } from "./features/docs/FeatureDetailView";
 import { DocSearch, type DocSearchResult } from "./features/docs/DocSearch";
 import { DocRenderer } from "./features/docs/DocRenderer";
+import { FullPageDocViewer } from "./features/docs/FullPageDocViewer";
 import { EventsList, type EventRow, type EventStatus } from "./features/events/EventsList";
 import { EventProposeComposer } from "./features/events/EventProposeComposer";
 import type { DecisionPayload, Verdict } from "./features/decisions/answer-shapes/types";
@@ -57,9 +58,21 @@ function docsAreEmpty(grouped: GroupedDocs): boolean {
 
 /** s3: GET /api/docs/features's shape once repo has been attached to each
  *  doc client-side (see ProjectDocs/DocsSection) — "empty" means no
- *  features and no overview docs at all. */
-function featureDataIsEmpty(data: { features: Feature[]; overview: FeatureDoc[] }): boolean {
-  return data.features.length === 0 && data.overview.length === 0;
+ *  features and no overview docs at all.
+ *
+ * s3 (consus-phase29-brand-decision-review): `brand` is optional here so a
+ * caller that hasn't loaded it yet (or a server response predating the
+ * brand bucket) doesn't blow this up — treated as empty when absent. */
+function featureDataIsEmpty(data: { features: Feature[]; overview: FeatureDoc[]; brand?: FeatureDoc[] }): boolean {
+  return data.features.length === 0 && data.overview.length === 0 && (data.brand?.length ?? 0) === 0;
+}
+
+/** phase='brand' (s1's scan tagging, s3's reliable signal) is the one and
+ *  only trigger for the new isolated-iframe viewer instead of DocRenderer's
+ *  existing marked.parse path — every other phase (planning/epics/overview/
+ *  design/null) keeps rendering through DocRenderer completely unchanged. */
+function isFullPageDoc(phase: string | null | undefined): boolean {
+  return phase === "brand";
 }
 
 /** A decision as returned by GET /api/decisions (payload parsed server-side).
@@ -873,10 +886,14 @@ function ProjectDocs({
    *  component's behavior byte-identical to before this story. */
   branch?: string | null;
 }) {
-  const [featureData, setFeatureData] = useState<{ features: Feature[]; overview: FeatureDoc[] } | null>(null);
+  const [featureData, setFeatureData] = useState<{ features: Feature[]; overview: FeatureDoc[]; brand: FeatureDoc[] } | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
-  const [openDoc, setOpenDoc] = useState<{ format: "md" | "html"; content: string; path: string } | null>(null);
+  const [openDoc, setOpenDoc] = useState<
+    { format: "md" | "html"; content: string; path: string; phase: string | null } | null
+  >(null);
 
   useEffect(() => {
     setFeatureData(null);
@@ -884,12 +901,19 @@ function ProjectDocs({
     setOpenDoc(null);
     fetch(`/api/docs/features?project=${encodeURIComponent(repo)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((body: { features: Array<Omit<Feature, "docs"> & { docs: Omit<FeatureDoc, "repo">[] }>; overview: Omit<FeatureDoc, "repo">[] }) => {
-        setFeatureData({
-          features: body.features.map((f) => ({ ...f, docs: f.docs.map((d) => ({ ...d, repo })) })),
-          overview: body.overview.map((d) => ({ ...d, repo })),
-        });
-      })
+      .then(
+        (body: {
+          features: Array<Omit<Feature, "docs"> & { docs: Omit<FeatureDoc, "repo">[] }>;
+          overview: Omit<FeatureDoc, "repo">[];
+          brand?: Omit<FeatureDoc, "repo">[];
+        }) => {
+          setFeatureData({
+            features: body.features.map((f) => ({ ...f, docs: f.docs.map((d) => ({ ...d, repo })) })),
+            overview: body.overview.map((d) => ({ ...d, repo })),
+            brand: (body.brand ?? []).map((d) => ({ ...d, repo })),
+          });
+        },
+      )
       .catch((e) => setError(e.message));
   }, [repo, refreshToken]);
 
@@ -899,7 +923,7 @@ function ProjectDocs({
     );
     if (res.ok) {
       const data = await res.json();
-      setOpenDoc({ format: data.format, content: data.content, path: filePath });
+      setOpenDoc({ format: data.format, content: data.content, path: filePath, phase: data.phase ?? null });
     }
   }
 
@@ -909,6 +933,19 @@ function ProjectDocs({
   const empty = featureDataIsEmpty(featureData);
 
   if (openDoc) {
+    // s3 (consus-phase29-brand-decision-review): phase='brand' docs render
+    // through the isolated-iframe FullPageDocViewer instead of DocRenderer
+    // — DocRenderer's own rendering path is otherwise untouched below.
+    if (isFullPageDoc(openDoc.phase)) {
+      return (
+        <div>
+          <button className="doc-back" onClick={() => setOpenDoc(null)}>
+            ← Back to docs
+          </button>
+          <FullPageDocViewer content={openDoc.content} title={openDoc.path} />
+        </div>
+      );
+    }
     return (
       <div>
         <button className="doc-back" onClick={() => setOpenDoc(null)}>
@@ -943,6 +980,7 @@ function ProjectDocs({
         <FeatureBrowser
           features={featureData.features}
           overview={featureData.overview}
+          brand={featureData.brand}
           onSelectFeature={setSelectedFeature}
           onOpenDoc={open}
         />
@@ -1016,11 +1054,13 @@ function DocsSection() {
   // never a single unscoped /api/docs/features call, which would lose
   // repo association entirely and make content-fetching ambiguous.
   const [projects, setProjects] = useState<string[] | null>(null);
-  const [featureData, setFeatureData] = useState<{ features: Feature[]; overview: FeatureDoc[] } | null>(null);
+  const [featureData, setFeatureData] = useState<{ features: Feature[]; overview: FeatureDoc[]; brand: FeatureDoc[] } | null>(
+    null,
+  );
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openDoc, setOpenDoc] = useState<
-    { format: "md" | "html"; content: string; path: string; repo: string; itemId: string } | null
+    { format: "md" | "html"; content: string; path: string; repo: string; itemId: string; phase: string | null } | null
   >(null);
   const [pendingProposalId, setPendingProposalId] = useState<string | null>(null);
   const [proposalFailureReason, setProposalFailureReason] = useState<string | null>(null);
@@ -1043,13 +1083,14 @@ function DocsSection() {
   useEffect(() => {
     if (!projects) return;
     if (projects.length === 0) {
-      setFeatureData({ features: [], overview: [] });
+      setFeatureData({ features: [], overview: [], brand: [] });
       return;
     }
 
     type RawFeatureResponse = {
       features: Array<{ epic: string; docCount: number; docs: Omit<FeatureDoc, "repo">[] }>;
       overview: Omit<FeatureDoc, "repo">[];
+      brand?: Omit<FeatureDoc, "repo">[];
     };
 
     Promise.all(
@@ -1062,6 +1103,7 @@ function DocsSection() {
       .then((results) => {
         const byEpic = new Map<string, Feature>();
         const overview: FeatureDoc[] = [];
+        const brand: FeatureDoc[] = [];
         for (const { project, body } of results) {
           for (const f of body.features) {
             const docs = f.docs.map((d) => ({ ...d, repo: project }));
@@ -1074,9 +1116,10 @@ function DocsSection() {
             }
           }
           overview.push(...body.overview.map((d) => ({ ...d, repo: project })));
+          brand.push(...(body.brand ?? []).map((d) => ({ ...d, repo: project })));
         }
         const features = Array.from(byEpic.values()).sort((a, b) => a.epic.localeCompare(b.epic));
-        setFeatureData({ features, overview });
+        setFeatureData({ features, overview, brand });
       })
       .catch((e) => setError(e.message));
   }, [projects]);
@@ -1110,7 +1153,14 @@ function DocsSection() {
       const data = await res.json();
       setPendingProposalId(null);
       setProposalFailureReason(null);
-      setOpenDoc({ format: data.format, content: data.content, path: filePath, repo, itemId: data.itemId });
+      setOpenDoc({
+        format: data.format,
+        content: data.content,
+        path: filePath,
+        repo,
+        itemId: data.itemId,
+        phase: data.phase ?? null,
+      });
       loadAuditTrail(data.itemId);
     }
   }
@@ -1151,6 +1201,22 @@ function DocsSection() {
   const empty = featureDataIsEmpty(featureData);
 
   if (openDoc) {
+    // s3 (consus-phase29-brand-decision-review): phase='brand' docs render
+    // through the isolated-iframe FullPageDocViewer instead of DocRenderer
+    // — DocRenderer's own rendering path (and its propose-change wiring)
+    // is otherwise untouched below.
+    if (isFullPageDoc(openDoc.phase)) {
+      return (
+        <div>
+          <div className="consus__section-lead">
+            <button className="doc-back" onClick={() => setOpenDoc(null)}>
+              ← Back to docs
+            </button>
+          </div>
+          <FullPageDocViewer content={openDoc.content} title={openDoc.path} />
+        </div>
+      );
+    }
     return (
       <div>
         <div className="consus__section-lead">
@@ -1192,6 +1258,7 @@ function DocsSection() {
           <FeatureBrowser
             features={featureData.features}
             overview={featureData.overview}
+            brand={featureData.brand}
             onSelectFeature={setSelectedFeature}
             onOpenDoc={open}
           />

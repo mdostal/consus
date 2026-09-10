@@ -41,6 +41,14 @@ interface FeatureDoc {
 interface FeatureGroupedDocs {
   features: Array<{ epic: string; docCount: number; docs: FeatureDoc[] }>;
   overview: FeatureDoc[];
+  /** s3 (consus-phase29-brand-decision-review): phase='brand' rows
+   *  (.pHive/brand/**, s1's scan tagging), epic=null always — a third,
+   *  sibling bucket alongside overview, kept separate rather than folded in
+   *  since the frontend routes these through a different viewer (an
+   *  isolated iframe, not DocRenderer's marked.parse path) and, once s4
+   *  ships, this bucket carries an active pending decision overview never
+   *  does. */
+  brand: FeatureDoc[];
 }
 
 /** The item id a doc's propose-a-change proposals target (s5). One item per
@@ -120,6 +128,10 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutes
 
     const docsByEpic = new Map<string, FeatureDoc[]>();
     const overview: FeatureDoc[] = [];
+    // s3 (consus-phase29-brand-decision-review): phase='brand' rows
+    // (.pHive/brand/**), epic=null always — same fixed-tag shape as
+    // overview above, bucketed separately (see FeatureGroupedDocs.brand).
+    const brand: FeatureDoc[] = [];
 
     for (const repo of scopedRepos) {
       for (const row of queryDocIndex(db, repo)) {
@@ -130,6 +142,8 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutes
         };
         if (row.phase === "overview") {
           overview.push(doc);
+        } else if (row.phase === "brand") {
+          brand.push(doc);
         } else if (row.epic !== null) {
           const docs = docsByEpic.get(row.epic) ?? [];
           docs.push(doc);
@@ -142,7 +156,7 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutes
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([epic, docs]) => ({ epic, docCount: docs.length, docs }));
 
-    const result: FeatureGroupedDocs = { features, overview };
+    const result: FeatureGroupedDocs = { features, overview, brand };
     return result;
   });
 
@@ -193,7 +207,29 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutes
        ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
       ).run(itemId, path, repo, path, now, now);
 
-      return ref ? { repo, path, format, content, itemId, ref } : { repo, path, format, content, itemId };
+      // s3 (consus-phase29-brand-decision-review): the doc's current
+      // doc_index phase tag ('brand', 'overview', 'planning', etc.), looked
+      // up by (repo, path) — the same reliable signal s1's scan already
+      // writes, and the one the frontend needs to pick between DocRenderer's
+      // existing marked.parse path and the new isolated-iframe viewer for a
+      // full-page HTML doc (phase='brand'). Read fresh from doc_index rather
+      // than threaded through from a caller, so it's correct regardless of
+      // how the doc was opened (Brand section, search results, a direct
+      // deep-link) — one server-side source of truth, not per-caller
+      // guesswork. Always looked up against the *current* working-tree row
+      // (not `ref`-scoped) since doc_index isn't ref-aware; null when the
+      // doc isn't (or is no longer) indexed at all, e.g. a path found only
+      // via `ref=` history.
+      const phase =
+        (
+          db.prepare("SELECT phase FROM doc_index WHERE repo = ? AND file_path = ?").get(repo, path) as
+            | { phase: string | null }
+            | undefined
+        )?.phase ?? null;
+
+      return ref
+        ? { repo, path, format, content, itemId, phase, ref }
+        : { repo, path, format, content, itemId, phase };
     },
   );
 

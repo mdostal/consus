@@ -69,6 +69,25 @@ describe("GET /api/docs", () => {
     expect(body.content).toContain("hello world");
   });
 
+  it("returns the doc's current doc_index phase tag alongside its content (s3 of consus-phase29-brand-decision-review)", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/docs/content?repo=consus&path=${encodeURIComponent(join(".pHive", "planning", "prd.md"))}`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().phase).toBe("planning");
+  });
+
+  it("returns phase: null for a doc that resolves on disk but isn't (or is no longer) indexed in doc_index", async () => {
+    writeFileSync(join(repoDir, ".pHive", "planning", "unindexed.md"), "# Not scanned");
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/docs/content?repo=consus&path=${encodeURIComponent(join(".pHive", "planning", "unindexed.md"))}`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().phase).toBeNull();
+  });
+
   it("rejects a path that escapes the repo root (path traversal) with 400, never reading outside the repo", async () => {
     const res = await app.inject({
       method: "GET",
@@ -809,5 +828,81 @@ describe("GET /api/docs/features — .pHive/design/ fold-in (s3 of consus-phase2
     expect(designOnly).toBeDefined();
     expect(designOnly.docCount).toBe(1);
     expect(designOnly.docs[0].file_path).toBe(join(".pHive", "design", "design-only-topic", "brief.md"));
+  });
+});
+
+describe("GET /api/docs/features — .pHive/brand/ bucket (s3 of consus-phase29-brand-decision-review)", () => {
+  let repoDir: string;
+  let db: Database.Database;
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    repoDir = mkdtempSync(join(tmpdir(), "consus-repo-brand-"));
+    mkdirSync(join(repoDir, ".pHive", "brand"), { recursive: true });
+    writeFileSync(join(repoDir, ".pHive", "brand", "brand-guide.html"), "<!DOCTYPE html><html><body>brand</body></html>");
+    // brand-system.yaml sits alongside it but isn't a .md/.html doc — never
+    // indexed, so never appears in the brand[] bucket either.
+    writeFileSync(join(repoDir, ".pHive", "brand", "brand-system.yaml"), "colors: {}\n");
+    mkdirSync(join(repoDir, ".pHive", "epics", "epic-a", "design"), { recursive: true });
+    writeFileSync(join(repoDir, ".pHive", "epics", "epic-a", "design", "design.md"), "# Epic A design");
+    writeFileSync(join(repoDir, "README.md"), "# repo readme");
+
+    db = new Database(":memory:");
+    runMigration(db);
+    scanRepo(db, { repoName: "consus", repoPath: repoDir });
+
+    app = Fastify();
+    registerDocRoutes(app, { db, repos: { consus: repoDir } });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+    rmSync(repoDir, { recursive: true, force: true });
+  });
+
+  it("buckets phase='brand' rows into a separate brand[] array, not folded into overview[] or features[]", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/docs/features?project=consus" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+
+    expect(body.brand).toEqual([
+      expect.objectContaining({ file_path: join(".pHive", "brand", "brand-guide.html") }),
+    ]);
+    expect(body.overview.map((d: { file_path: string }) => d.file_path)).not.toContain(
+      join(".pHive", "brand", "brand-guide.html"),
+    );
+    expect(body.features).toHaveLength(1);
+    expect(body.features[0].epic).toBe("epic-a");
+  });
+
+  it("excludes brand-system.yaml (not a .md/.html doc) from the brand[] bucket", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/docs/features?project=consus" });
+    const body = res.json();
+
+    const paths = body.brand.map((d: { file_path: string }) => d.file_path);
+    expect(paths).not.toContain(join(".pHive", "brand", "brand-system.yaml"));
+  });
+
+  it("returns an empty brand[] array (not undefined, not an error) for a repo with no .pHive/brand/ directory at all", async () => {
+    const bareRepoDir = mkdtempSync(join(tmpdir(), "consus-repo-no-brand-"));
+    mkdirSync(join(bareRepoDir, ".pHive", "planning"), { recursive: true });
+    writeFileSync(join(bareRepoDir, ".pHive", "planning", "prd.md"), "# PRD");
+    try {
+      scanRepo(db, { repoName: "bare", repoPath: bareRepoDir });
+      const bareApp = Fastify();
+      registerDocRoutes(bareApp, { db, repos: { bare: bareRepoDir } });
+      await bareApp.ready();
+      try {
+        const res = await bareApp.inject({ method: "GET", url: "/api/docs/features?project=bare" });
+        expect(res.statusCode).toBe(200);
+        expect(res.json().brand).toEqual([]);
+      } finally {
+        await bareApp.close();
+      }
+    } finally {
+      rmSync(bareRepoDir, { recursive: true, force: true });
+    }
   });
 });
