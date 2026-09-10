@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type {
   CbaPayload,
+  ConceptSelectionPayload,
   DecisionPayload,
   EditProposalPayload,
   FeatureSelectionPayload,
@@ -15,6 +16,7 @@ import { CbaTable } from "./CbaTable";
 import { FreeTextResponse } from "./FreeTextResponse";
 import { RatingScale } from "./RatingScale";
 import { RankingList } from "./RankingList";
+import { ConceptSelection } from "./ConceptSelection";
 
 export interface AnswerControlProps {
   payload:
@@ -24,7 +26,8 @@ export interface AnswerControlProps {
     | CbaPayload
     | FreeTextPayload
     | RatingPayload
-    | RankingPayload;
+    | RankingPayload
+    | ConceptSelectionPayload;
   onVerdict: (verdict: Verdict) => void;
 }
 
@@ -61,6 +64,9 @@ export function AnswerControl({ payload, onVerdict }: AnswerControlProps) {
   }
   if (payload.version === "dostal:ranking/v1") {
     return <RankingList payload={payload} onVerdict={onVerdict} />;
+  }
+  if (payload.version === "dostal:concept-selection/v1") {
+    return <ConceptSelection payload={payload} onVerdict={onVerdict} />;
   }
 
   function toggleMix(id: string) {

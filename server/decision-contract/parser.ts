@@ -157,6 +157,43 @@ export interface RankingPayload {
   research?: ResearchSection[];
 }
 
+/**
+ * dostal:concept-selection/v1 (s2-concept-selection-answer-shape) —
+ * deliberately generalized ("pick one of N named options, each with a
+ * visual preview"), not logo-specific, so any future design decision of
+ * this shape (not just logo concepts) reuses this payload type instead of
+ * a new one being defined. `preview` is a discriminated union on `kind` so
+ * a future "image" variant (reusing the phase28 GET /api/design-assets
+ * pattern) is additive, not a breaking change to this shape.
+ *
+ * SECURITY: `preview.markup` is raw SVG markup rendered via
+ * dangerouslySetInnerHTML by the ConceptSelection renderer. It must only
+ * ever come from server/operator-authored content (e.g. a manifest an
+ * agent or operator writes) — never from end-user input — the same
+ * injection-surface posture noted in this story's design discussion.
+ */
+export interface ConceptSvgPreview {
+  kind: "svg";
+  markup: string;
+}
+
+export type ConceptPreview = ConceptSvgPreview;
+
+export interface Concept {
+  id: string;
+  name: string;
+  description: string;
+  preview: ConceptPreview;
+}
+
+export interface ConceptSelectionPayload {
+  version: "dostal:concept-selection/v1";
+  title: string;
+  context: string;
+  concepts: Concept[];
+  research?: ResearchSection[];
+}
+
 export type Verdict =
   | { kind: "accepted" }
   | { kind: "option_chosen"; optionId: string }
@@ -165,7 +202,8 @@ export type Verdict =
   | { kind: "features_selected"; selected: string[] }
   | { kind: "text_response"; text: string }
   | { kind: "rated"; value: number }
-  | { kind: "ranked"; order: string[] };
+  | { kind: "ranked"; order: string[] }
+  | { kind: "concept_selected"; conceptId: string };
 
 /** Maps a verdict to the ticket status transition (accept/choose/mix/features_selected/text_response/rated/ranked -> done, reject -> in_progress). */
 export function verdictStatus(verdict: Verdict): "done" | "in_progress" {
@@ -191,6 +229,8 @@ export function verdictSummary(verdict: Verdict): string {
       return `Rated ${verdict.value}.`;
     case "ranked":
       return `Ranked: ${verdict.order.join(" > ")}`;
+    case "concept_selected":
+      return `Selected concept ${verdict.conceptId}.`;
   }
 }
 
