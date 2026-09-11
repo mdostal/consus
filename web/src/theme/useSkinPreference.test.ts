@@ -18,9 +18,9 @@ describe("useSkinPreference", () => {
     setDocumentSkinAttr(null);
   });
 
-  it("defaults to 'drafting' (Drafting Table) when nothing is stored", () => {
+  it("defaults to 'granary' (the real brand, consus-phase30) when nothing is stored", () => {
     const { result } = renderHook(() => useSkinPreference());
-    expect(result.current.skin).toBe("drafting");
+    expect(result.current.skin).toBe("granary");
   });
 
   it("reads a previously stored skin from localStorage on mount", () => {
@@ -29,8 +29,14 @@ describe("useSkinPreference", () => {
     expect(result.current.skin).toBe("case-board");
   });
 
-  it("ignores a corrupt/unrecognized stored value and falls back to 'drafting'", () => {
+  it("ignores a corrupt/unrecognized stored value and falls back to 'granary'", () => {
     window.localStorage.setItem(SKIN_STORAGE_KEY, "not-a-real-skin");
+    const { result } = renderHook(() => useSkinPreference());
+    expect(result.current.skin).toBe("granary");
+  });
+
+  it("regression (consus-phase30): an existing install's stored 'drafting' preference is NOT silently overridden by the new granary default", () => {
+    window.localStorage.setItem(SKIN_STORAGE_KEY, "drafting");
     const { result } = renderHook(() => useSkinPreference());
     expect(result.current.skin).toBe("drafting");
   });
@@ -43,7 +49,7 @@ describe("useSkinPreference", () => {
     expect(SKIN_STORAGE_KEY).not.toBe("consus:theme-preference");
   });
 
-  it("applies data-skin to the document root for each of the three skins", () => {
+  it("applies data-skin to the document root for each of the four skins", () => {
     const { result } = renderHook(() => useSkinPreference());
 
     act(() => result.current.setSkin("case-board"));
@@ -54,11 +60,14 @@ describe("useSkinPreference", () => {
 
     act(() => result.current.setSkin("drafting"));
     expect(document.documentElement.getAttribute("data-skin")).toBe("drafting");
+
+    act(() => result.current.setSkin("granary"));
+    expect(document.documentElement.getAttribute("data-skin")).toBe("granary");
   });
 
-  it("applies the default skin ('drafting') to the document root on mount even with no stored preference", () => {
+  it("applies the default skin ('granary') to the document root on mount even with no stored preference", () => {
     renderHook(() => useSkinPreference());
-    expect(document.documentElement.getAttribute("data-skin")).toBe("drafting");
+    expect(document.documentElement.getAttribute("data-skin")).toBe("granary");
   });
 
   it("applies a stored preference to the document root on mount, not just after a setSkin call", () => {

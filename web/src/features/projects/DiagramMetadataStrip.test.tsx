@@ -23,7 +23,7 @@ afterEach(() => {
  */
 describe("DiagramMetadataStrip — one shared component, three skins of the same data", () => {
   it("renders the same top-level component (single wrapper testid) regardless of active skin — real identity, not just similar-looking markup", () => {
-    for (const skin of ["drafting", "case-board", "harness"]) {
+    for (const skin of ["drafting", "case-board", "harness", "granary"]) {
       setSkin(skin);
       const { unmount } = render(<DiagramMetadataStrip repo="consus" date={FIXED_DATE} />);
       const strip = screen.getByTestId("diagram-metadata-strip");
@@ -59,13 +59,23 @@ describe("DiagramMetadataStrip — one shared component, three skins of the same
     expect(screen.queryByTestId("diagram-metadata-strip-case-board")).not.toBeInTheDocument();
   });
 
-  it("defaults to Drafting Table's rendering when no [data-skin] is applied at all (same DEFAULT_SKIN fallback as useSkinPreference)", () => {
+  it("renders Granary's ledger entry only when skin is 'granary' (consus-phase30)", () => {
+    setSkin("granary");
     render(<DiagramMetadataStrip repo="consus" date={FIXED_DATE} />);
-    expect(screen.getByTestId("diagram-metadata-strip-drafting")).toBeInTheDocument();
+    expect(screen.getByTestId("diagram-metadata-strip-granary")).toBeInTheDocument();
+    expect(screen.getByText("Ledger")).toBeInTheDocument();
+    expect(screen.queryByTestId("diagram-metadata-strip-drafting")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("diagram-metadata-strip-case-board")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("diagram-metadata-strip-harness")).not.toBeInTheDocument();
+  });
+
+  it("defaults to Granary's rendering when no [data-skin] is applied at all (same DEFAULT_SKIN fallback as useSkinPreference, consus-phase30)", () => {
+    render(<DiagramMetadataStrip repo="consus" date={FIXED_DATE} />);
+    expect(screen.getByTestId("diagram-metadata-strip-granary")).toBeInTheDocument();
   });
 
   it("shows the real operator, repo, and formatted date in every skin's rendering — same data, different presentation", () => {
-    for (const skin of ["drafting", "case-board", "harness"]) {
+    for (const skin of ["drafting", "case-board", "harness", "granary"]) {
       setSkin(skin);
       const { unmount } = render(<DiagramMetadataStrip repo="my-repo" date={FIXED_DATE} />);
       const strip = screen.getByTestId("diagram-metadata-strip");
@@ -78,7 +88,7 @@ describe("DiagramMetadataStrip — one shared component, three skins of the same
 
   describe("revision/fire count — same underlying counter, reflected identically regardless of active skin", () => {
     it("shows 0 with nothing fired yet, in every skin", () => {
-      for (const skin of ["drafting", "case-board", "harness"]) {
+      for (const skin of ["drafting", "case-board", "harness", "granary"]) {
         setSkin(skin);
         const { unmount } = render(<DiagramMetadataStrip repo="consus" date={FIXED_DATE} />);
         expect(screen.getByTestId("diagram-metadata-strip-revision")).toHaveTextContent("0");
@@ -91,7 +101,7 @@ describe("DiagramMetadataStrip — one shared component, three skins of the same
       incrementDiagramRevision();
       incrementDiagramRevision();
 
-      for (const skin of ["drafting", "case-board", "harness"]) {
+      for (const skin of ["drafting", "case-board", "harness", "granary"]) {
         setSkin(skin);
         const { unmount } = render(<DiagramMetadataStrip repo="consus" date={FIXED_DATE} />);
         const strip = screen.getByTestId("diagram-metadata-strip");

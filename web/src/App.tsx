@@ -28,6 +28,7 @@ import { useSkinPreference } from "./theme/useSkinPreference";
 import { ThemeSkinPicker } from "./theme/ThemeSkinPicker";
 import { SkinBackdrop } from "./theme/skins/SkinBackdrop";
 import { HarnessWindowDots } from "./theme/skins/HarnessWindowDots";
+import { MastheadMark } from "./theme/BrandMark";
 import { CommandPalette } from "./features/command-palette/CommandPalette";
 import { HarnessConnectBanner } from "./features/harness-connect/HarnessConnectBanner";
 import "./theme/tokens.css";
@@ -1637,7 +1638,9 @@ function OnboardingScreen({
 
   return (
     <div className="onboarding">
-      <span className="onboarding__mark">◈</span>
+      <span className="onboarding__mark">
+        <MastheadMark size={36} />
+      </span>
       <h1>Consus</h1>
       <p className="onboarding__lede">
         A knowledgebase, graph, and file editor for any repo's decisions, docs, and architecture —
@@ -1791,7 +1794,9 @@ export function App() {
       <header className="consus__masthead">
         <div className="consus__brand">
           {skin === "harness" ? <HarnessWindowDots /> : null}
-          <span className="consus__brand-mark">◈</span>
+          <span className="consus__brand-mark">
+            <MastheadMark />
+          </span>
           Consus
           <span className="consus__brand-sub">decision &amp; knowledge surface</span>
         </div>

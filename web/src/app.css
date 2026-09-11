@@ -67,6 +67,10 @@ body {
   font-size: 21px;
   letter-spacing: 0.01em;
   color: var(--consus-ink);
+  /* --consus-font-display is additive (only [data-skin="granary"] sets
+   * it) -- falls back to the regular body font for the other 3 skins,
+   * unchanged from before this rule existed. */
+  font-family: var(--consus-font-display, var(--consus-font-body));
 }
 .consus__brand-mark {
   color: var(--consus-accent);
@@ -2474,6 +2478,31 @@ body {
 .diagram-metadata-strip__harness-prompt {
   color: var(--consus-accent);
   font-weight: 700;
+}
+
+/* Granary: a single ruled ledger line — a gold left-rule margin (evoking a
+   physical ledger page) rather than a boxed grid or a rotated stamp,
+   consistent with the brand's "confidence through clarity, not decoration"
+   personality. */
+.diagram-metadata-strip__granary {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 12px 5px 10px;
+  border-left: 2px solid var(--consus-accent-secondary, var(--consus-accent));
+  border-radius: calc(3px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg-subtle);
+}
+.diagram-metadata-strip__granary-label {
+  font-family: var(--consus-font-display, var(--consus-font-body));
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--consus-accent-secondary, var(--consus-accent));
+}
+.diagram-metadata-strip__granary-sep {
+  color: var(--consus-line);
 }
 
 /* ================================================================ */
