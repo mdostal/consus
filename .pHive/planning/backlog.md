@@ -1,11 +1,13 @@
 # Consus Backlog
 
-Structured inventory, refreshed 2026-08-13 alongside `vision-and-way-of-working.md`. Every entry
-cites where it came from — a real commit range, an existing doc, or tonight's conversation. Status
-values: `done` (shipped on `main`/`dev`, both at `213c119` as of tonight) · `planned-not-built`
-(has a design/spec but no code) · `backlogged` (real, identified, not yet scoped) ·
-`superseded-do-not-build` (the old approach is explicitly rejected; the underlying capability may
-still be valid, noted where so).
+Structured inventory, originally built 2026-08-13 alongside `vision-and-way-of-working.md`, refreshed
+2026-09-10 through `consus-phase29-brand-decision-review` (v0.16.2). Every entry cites where it came
+from — a real commit range, an existing doc, or a PR. Status values: `done` (shipped on `main`/`dev`)
+· `planned-not-built` (has a design/spec but no code) · `backlogged` (real, identified, not yet
+scoped) · `superseded-do-not-build` (the old approach is explicitly rejected; the underlying
+capability may still be valid, noted where so). See `CHANGELOG.md` for the authoritative,
+per-version account of everything below — this file groups the same history by capability instead
+of by release.
 
 Two source lineages get cited a lot below by shorthand:
 
@@ -100,3 +102,18 @@ This is the loop's thinnest link today — read the vision doc's core-loop secti
 | Dual-mode server integration tests (standalone vs. Pantheon-plugin mode, exercised end-to-end) | `not-applicable-until-second-mode-exists` — logically un-closeable any other way: VISION.md itself frames "Pantheon-plugin mode" as hypothetical/future, and there is no second mode in this codebase to write an integration test against. Not silently dropped from the backlog and not faked with invented scope — will only become actionable if a real second mode is ever built. | archived-dev, `b67f23a` (PAN-7961) |
 | File attachments on decision items (upload/list/download/delete, local-disk storage) | `done` | consus-phase23-decision-attachments, merged to `dev` via PR #114. Mined during the v0.11.0 OSS-release-readiness `/plugin-hive:grill` pass: of 17 stale branches on `origin`, 14 were already-merged or obsolete Multica-coupling work (deleted); one, `feat/PAN-7819`, contained a complete, standalone-compatible attachment capability never merged before the coupling strip. Ported and re-derived against this build's current schema/conventions (route under `/api/items/`, `actor` as a required field not hardcoded, `.pHive/attachments/` + `CONSUS_ATTACHMENTS_DIR`, new list route, no S3) rather than cherry-picked. |
 | OSS release readiness — LICENSE, package.json metadata, scrubbed personal host/IP, stale docs/version markers, CONTRIBUTING/CODE_OF_CONDUCT/SECURITY | `done` | consus-phase22-oss-release-readiness, merged to `dev` via PR #113. Real `/plugin-hive:review` + adversarial `/plugin-hive:grill` pass — see PR #113 body for the full finding list. The grill pass additionally surfaced 17 stale branches on `origin` still containing pre-strip coupled code; 14 confirmed obsolete/already-merged and deleted from origin, 1 (`feat/PAN-7819`) mined for real value (see the attachments row above) before deletion. |
+
+## consus-phase24 through consus-phase29 (v0.12.0 – v0.16.2)
+
+Added in this refresh — the gap between this file's original 2026-08-13 snapshot and the current
+v0.16.2 tip. Full per-line detail lives in `CHANGELOG.md`; this section is the same capability-index
+shape as the rest of this file.
+
+| Item | Status | Source |
+|---|---|---|
+| Branch-level decision/doc surfacing + doc-diff-vs-default-branch, git-local only (no GitHub API, no auto-fetch) | `done` | consus-phase24-branch-level-surfacing, `v0.12.0`. Branch picker in Projects tab; `GET /api/decisions?branch=`, `POST /api/projects/:project/ingest?ref=`, `GET /api/docs/diff` (default branch resolved from real `origin/HEAD`). New `server/adapters/doc-scanner/git-ref.ts`, `execFileSync` with argument arrays only. PR metadata (title/number/CI status via GitHub's API) explicitly descoped — see VISION.md's "Honest gaps." |
+| Register a new project from the API/UI, with a project-path display, a styled add-project button, and repo discovery (auto-surfaced siblings + a directory browser) | `done` | consus-phase25-project-registration-ux, `v0.15.0`. `POST /api/projects`, `GET /api/projects/discover`, `GET /api/fs/list`. As of v0.16.2, `POST /api/projects` also rejects a path already registered under a different name (409) — a real bug found live (registering the same repo as both "consus" and "work" silently produced duplicate decisions, one per project name). |
+| Native macOS desktop shell (`Consus.app`) | `done` | consus-phase26-desktop-app, `v0.15.0`. Tauri v2, sidecar-spawns the compiled server on an OS-assigned free port, menu-bar tray, single-instance guard, close-to-tray, background update checker against this repo's own GitHub releases. Ported from Heimdall's real `app/src-tauri/` implementation, not reinvented. |
+| Feature-grouped + overview + design-wireframe doc browsing, with approve/deny/propose-change actions | `done` | consus-phase27-feature-doc-review-ui, `v0.15.0`. `FeatureBrowser`/`FeatureDetailView` replace the flat repo→phase doc list; `README.md`/`VISION.md`/root `docs/*.md` scanned for the first time (`phase: "overview"`). Fixed a real data-hygiene bug: `GET /api/docs/features` now excludes deregistered repos (76 orphaned docs found live). |
+| Five more decision/survey answer shapes (edit-proposal, CBA, free-text, rating, ranking), attachment image previews, a shared rendered-visual-diff component, `.pHive/design/` wireframe scanning | `done` | consus-phase28-interaction-completeness, `v0.15.0`. All five follow the proven parser → `AnswerControl` → verdict-recorded pattern. True sequential/gated survey stepping and a Consus-native quorum/agent-voting answer shape were explicitly scoped out (quorum is meant as a future thin external approval-middleware API, not an in-app feature). |
+| Design/brand artifacts (`.pHive/brand/`) become a real, in-app decidable decision — `dostal:concept-selection/v1` answer shape, an isolated full-page HTML doc viewer, manifest-driven decision synthesis | `done` | consus-phase29-brand-decision-review, `v0.16.0`, PR #153. Grounded in a real gap hit live: reviewing Consus's own first brand guide and picking a logo concept had to happen entirely outside Consus, in chat. `concept-selection/v1` is deliberately generalized (not logo-specific) — any future "pick one of N visual options" decision reuses it. Immediately surfaced a real regression, fixed same-day in `v0.16.1`: the payload-dispatch UI had been narrowly typed to the original `decision-request/v1` shape since before seven other payload types were added, crashing the whole app the first time a non-decision-request payload actually reached that render path live. |
