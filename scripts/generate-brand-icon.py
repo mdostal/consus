@@ -13,6 +13,13 @@ icon") -- but that overrode the operator's actual already-recorded choice
 without asking. Found live when the operator opened the shipped app and
 didn't get the icon they picked.
 
+Operator-confirmed split (immediately after the above fix): Abstract Mark
+is intentionally kept for the in-UI masthead glyph (BrandMark.tsx) --
+compact small-size use is exactly what that concept was recommended for --
+while this script's output (dock icon, app bundle icon, favicon) uses
+Monogram, the operator's actual chosen standalone identity. Two different
+concepts on two different surfaces, both deliberate, not an inconsistency.
+
 Mechanism confirmed from the original s4-app-icons pass (commit 70042e9): a
 Python-generated source mark, supersampled at high resolution then downsampled
 for clean edges, piped through `cargo tauri icon` to derive every platform

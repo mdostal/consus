@@ -12,16 +12,21 @@ afterEach(() => {
 });
 
 /**
- * MastheadMark (consus-phase30-brand-theme-integration, s2; corrected
- * same-day, consus-phase30 hotfix) — the real Monogram brand SVG (the
- * concept the operator actually selected via a real recorded verdict,
- * {"kind":"concept_selected","conceptId":"monogram"}) replaces the literal
- * "◈" placeholder ONLY when Granary is active (design-discussion.md's
- * resolved open question); the other 3 skins keep "◈" exactly as before
- * this epic.
+ * MastheadMark (consus-phase30-brand-theme-integration, s2; settled after
+ * two course corrections — see BrandMark.tsx's doc comment for the full
+ * history) — the real Abstract Mark brand SVG replaces the literal "◈"
+ * placeholder ONLY when Granary is active (design-discussion.md's resolved
+ * open question); the other 3 skins keep "◈" exactly as before this epic.
+ *
+ * Deliberate, operator-confirmed split: this in-UI masthead glyph uses
+ * Abstract Mark (compact small-size use, exactly what that concept was
+ * recommended for); the app's external representations (dock icon, app
+ * bundle icon, favicon) use Monogram instead — the concept the operator
+ * actually selected as the primary logo direction. Two different concepts,
+ * two different real surfaces, both correct for where they're used.
  */
 describe("MastheadMark", () => {
-  it("renders the real Monogram SVG when the Granary skin is active", () => {
+  it("renders the real Abstract Mark SVG when the Granary skin is active", () => {
     setSkin("granary");
     render(<MastheadMark />);
     const svg = screen.getByRole("img", { name: "Consus" });
@@ -30,13 +35,14 @@ describe("MastheadMark", () => {
     expect(screen.queryByText("◈")).not.toBeInTheDocument();
   });
 
-  it("renders the operator's actual selected concept (Monogram: an open C arc + kernel), not a different concept substituted by design judgment", () => {
+  it("renders Abstract Mark specifically (compact in-UI use), not Monogram (the app icon/favicon's concept — a different surface, deliberately)", () => {
     setSkin("granary");
     render(<MastheadMark />);
     const svg = screen.getByRole("img", { name: "Consus" });
-    // Monogram's distinguishing feature vs. Abstract Mark: the open "C" arc
-    // path (`A 48,48`), absent from Abstract Mark's geometry.
-    expect(svg.innerHTML).toContain("A 48,48");
+    // Monogram's distinguishing feature is the open "C" arc path (`A 48,48`);
+    // Abstract Mark has no arc at all, just the kernel glyph -- its absence
+    // here confirms the masthead didn't silently pick up Monogram's geometry.
+    expect(svg.innerHTML).not.toContain("A 48,48");
   });
 
   it("renders the literal '◈' placeholder, unchanged, for the drafting skin", () => {
