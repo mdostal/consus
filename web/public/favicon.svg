@@ -1,6 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="32" height="32" role="img" aria-label="Consus">
-  <rect x="0" y="0" width="120" height="120" rx="21.6" fill="#362B6B"/>
-  <path d="M60,14 C76,14 86,38 86,60 C86,82 76,106 60,106 C44,106 34,82 34,60 C34,38 44,14 60,14 Z" fill="#FAF7F0"/>
-  <path d="M60,26 Q68,60 60,94" fill="none" stroke="#362B6B" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
-  <circle cx="60" cy="76" r="8" fill="#362B6B"/>
+  <rect x="0" y="0" width="120" height="120" rx="21.6" fill="#FAF7F0"/>
+  <path d="M 101.57,36 A 48,48 0 1 0 101.57,84" fill="none" stroke="#362B6B" stroke-width="9" stroke-linecap="round"/>
+  <g transform="translate(60,60) scale(0.62) translate(-60,-60)">
+    <path d="M60,14 C76,14 86,38 86,60 C86,82 76,106 60,106 C44,106 34,82 34,60 C34,38 44,14 60,14 Z" fill="#9C6316"/>
+    <path d="M60,26 Q68,60 60,94" fill="none" stroke="#FAF7F0" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
+    <circle cx="60" cy="76" r="8" fill="#FAF7F0"/>
+  </g>
 </svg>
