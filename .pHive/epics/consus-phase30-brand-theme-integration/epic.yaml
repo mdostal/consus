@@ -1,0 +1,58 @@
+name: consus-phase30-brand-theme-integration
+title: Wire the approved Consus brand into the real product -- a new skin, real icons, a real mark
+description: >
+  Closes the gap the operator named directly right after consus-phase29
+  shipped: the brand work so far produced approved artifacts (a decided
+  in-app decision, a brand guide, a branding/ folder) but none of it is
+  actually applied anywhere in the running product. This epic adds a 4th
+  skin ("Granary") built from the real approved palette (Granary Indigo,
+  Threshing Gold, Quern Charcoal, Parchment) and typography (Fraunces
+  display / IBM Plex Sans body, self-hosted -- Consus loads zero webfonts
+  today and stays local-first by explicit project policy), made the default
+  for fresh installs only (an existing install's stored skin preference is
+  never silently overridden); replaces the placeholder "◈" masthead glyph
+  with the real Abstract Mark concept, scoped to the Granary skin only (the
+  other 3 skins keep their own fully-realized decorative identities
+  untouched); regenerates the desktop app's icon set and adds a real web
+  favicon from that same Abstract Mark, replacing the old hub-and-spoke
+  placeholder the brand guide's own text names as due for replacement; and
+  closes with a real, iterated visual-verification pass across every major
+  UI surface (not just a token swap) per the operator's explicit "go back
+  and forth... ensure it is done well" quality bar.
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: classic
+version_bump: minor
+sidecar_retention: committed
+
+git_flow:
+  base_branch: dev
+  branch_strategy: per-epic
+
+planning_team:
+  matched_tags: [theme-integration, design-system, desktop-app-icons]
+  roster: [orchestrator]
+  per_tag_reasoning:
+    theme-integration: "Grounded in a live, file-cited research pass over the real skin-registration code (tokens.css, useSkinPreference.ts, ThemeSkinPicker.tsx, index.html bootstrap script) before design -- direct design discussion resolving the one real open question (masthead-mark scope) plus story decomposition, proportionate to a medium-scope set of largely-independent vertical slices."
+  confidence: high
+  gate_decisions:
+    hv_planning: skipped
+    structured_outline: skipped
+    reason: "Medium scope -- four stories, mostly independent (skin tokens, masthead mark, icon regeneration, final QA pass), each reusing an existing proven pattern (the 3-state skin CSS pattern, the confirmed prior icon-gen mechanism) rather than inventing new architecture."
+
+stories:
+  - id: s1-granary-skin-tokens-and-typography
+    title: Add the Granary skin (brand palette + typography), default for fresh installs only
+    complexity: medium
+    depends_on: []
+  - id: s2-granary-masthead-mark
+    title: Replace the placeholder masthead glyph with the real brand mark, Granary skin only
+    complexity: low
+    depends_on: [s1-granary-skin-tokens-and-typography]
+  - id: s3-brand-app-icons-and-favicon
+    title: Regenerate the desktop app icon set and add a web favicon from the approved Abstract Mark
+    complexity: medium
+    depends_on: []
+  - id: s4-granary-visual-verification-pass
+    title: Full-surface visual QA pass on the Granary skin, iterated until it looks finished
+    complexity: medium
+    depends_on: [s1-granary-skin-tokens-and-typography, s2-granary-masthead-mark, s3-brand-app-icons-and-favicon]
