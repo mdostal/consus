@@ -8,6 +8,7 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
 ];
 
 const SKIN_OPTIONS: { value: SkinPreference; label: string }[] = [
+  { value: "granary", label: "Granary" },
   { value: "drafting", label: "Drafting Table" },
   { value: "case-board", label: "Case Board" },
   { value: "harness", label: "Harness" },

@@ -124,6 +124,25 @@ function HarnessStatusLine({ repo, revision, operator, date }: FieldsProps) {
   );
 }
 
+/** Granary's ledger entry — a single ruled line with a small-caps "LEDGER"
+ *  label, evoking brand-system.yaml's own description of Parchment as
+ *  "ledger paper rather than clinical white." Kept as one clean line rather
+ *  than Drafting's boxed grid or Case Board's rotated stamp — Granary's
+ *  personality is "confidence through clarity, not decoration". */
+function GranaryLedgerEntry({ repo, revision, operator, date }: FieldsProps) {
+  return (
+    <div className="diagram-metadata-strip__granary" data-testid="diagram-metadata-strip-granary">
+      <span className="diagram-metadata-strip__granary-label">Ledger</span>
+      <span className="diagram-metadata-strip__granary-entry">
+        {repo} <span className="diagram-metadata-strip__granary-sep">&middot;</span> rev{" "}
+        <span data-testid="diagram-metadata-strip-revision">{revision}</span>{" "}
+        <span className="diagram-metadata-strip__granary-sep">&middot;</span> recorded by {operator}{" "}
+        <span className="diagram-metadata-strip__granary-sep">&middot;</span> {date}
+      </span>
+    </div>
+  );
+}
+
 export function DiagramMetadataStrip({ repo, date = new Date() }: DiagramMetadataStripProps) {
   const skin = useActiveSkin();
   const revision = useDiagramRevisionCount();
@@ -139,8 +158,10 @@ export function DiagramMetadataStrip({ repo, date = new Date() }: DiagramMetadat
         <DraftingTitleBlock {...fields} />
       ) : skin === "case-board" ? (
         <CaseBoardStamp {...fields} />
-      ) : (
+      ) : skin === "harness" ? (
         <HarnessStatusLine {...fields} />
+      ) : (
+        <GranaryLedgerEntry {...fields} />
       )}
     </div>
   );
