@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.17.2] - 2026-09-11
+
+### Changed
+
+- **Operator-confirmed brand-mark split** — the previous release swapped the masthead's brand
+  glyph from Abstract Mark to Monogram along with the dock/app icon and favicon; the operator
+  clarified the masthead should stay Abstract Mark (compact in-UI use), while the dock/app icon
+  and favicon stay Monogram (their actual selected logo direction). Two concepts, two surfaces,
+  both deliberate.
+
 ## [0.17.1] - 2026-09-11
 
 ### Fixed
