@@ -98,3 +98,37 @@ describe("app.css — answer-shape renderers (consus-phase30 s4 regression)", ()
     expect(block).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
   });
 });
+
+// consus-phase30 hotfix — found live: "buttons and things need to be
+// updated" (operator feedback after the theme integration shipped).
+// Buttons across the app had a static fill/border and cursor:pointer with
+// no hover, press, or visible-keyboard-focus feedback at all. Fixed with a
+// single base-layer rule (filter:brightness(), works regardless of which
+// --consus-* color a given button actually uses) rather than a
+// per-component selector list, so it applies under all 4 skins at once.
+describe("app.css — global button interactive affordance (consus-phase30 hotfix)", () => {
+  it("gives every non-disabled button hover and active/press feedback", () => {
+    expect(css).toMatch(/button:not\(:disabled\):hover\s*\{[^}]*filter:\s*brightness\(/);
+    expect(css).toMatch(/button:not\(:disabled\):active\s*\{[^}]*filter:\s*brightness\(/);
+  });
+
+  it("gives keyboard focus a visible outline, distinct from mouse hover/click", () => {
+    expect(css).toMatch(/button:focus-visible\s*\{[^}]*outline:[^}]*var\(--consus-accent\)/);
+  });
+
+  it("does not add a second @media (prefers-reduced-motion: reduce) block -- the button transition/press-transform override lives inside the one existing canonical block, so source-level tests that pin that block's contents (above) keep matching the right one", () => {
+    // Matches only real rule openings (followed by "{"), not this file's own
+    // prose comments that happen to mention the media-query name.
+    const blocks = css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{/g) ?? [];
+    expect(blocks.length).toBe(1);
+  });
+
+  it("disables the button transition and press-transform under reduced motion, inside the one canonical block", () => {
+    const mediaBlockMatch = css.match(
+      /@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/
+    );
+    const mediaBlock = mediaBlockMatch![1];
+    expect(mediaBlock).toMatch(/button:not\(:disabled\)\s*\{[^}]*transition:\s*none/);
+    expect(mediaBlock).toMatch(/button:not\(:disabled\):active\s*\{[^}]*transform:\s*none/);
+  });
+});

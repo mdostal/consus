@@ -40,6 +40,34 @@ body {
   display: block;
 }
 
+/* --- interactive affordance (consus-phase30 hotfix) -- found live: buttons
+   across the app had a static fill/border plus cursor:pointer and nothing
+   else -- no hover, no press feedback, no visible keyboard focus. This is a
+   base-layer rule so it applies everywhere, all 4 skins, not just Granary;
+   filter:brightness() works regardless of which --consus-* color a given
+   button actually uses, so one rule covers every button without needing a
+   per-component selector list. Any existing, more specific :hover rule
+   elsewhere in this file (e.g. .consus__nav-btn:hover) still wins by normal
+   CSS specificity -- this only fills the gap where nothing existed. */
+button:not(:disabled) {
+  transition: filter 0.1s ease, transform 0.05s ease;
+}
+button:not(:disabled):hover {
+  filter: brightness(0.94);
+}
+button:not(:disabled):active {
+  filter: brightness(0.88);
+  transform: translateY(1px);
+}
+button:focus-visible {
+  outline: 2px solid var(--consus-accent);
+  outline-offset: 2px;
+}
+/* Reduced-motion override lives in the single canonical
+   @media (prefers-reduced-motion: reduce) block further down (search for
+   "s3 (consus-phase20)") rather than a second block here -- app.css.test.ts
+   asserts there is exactly one such block and pins its full contents. */
+
 /* --- app shell --- */
 .consus {
   min-height: 100vh;
@@ -2760,6 +2788,16 @@ body {
 @media (prefers-reduced-motion: reduce) {
   [data-skin="harness"] .consus__brand-sub::after {
     animation: none;
+  }
+  /* consus-phase30 hotfix: the global button hover/press affordance
+     (top of file, "interactive affordance") disables its transition and
+     press-transform under reduced motion, same rationale as the Harness
+     cursor above -- keep the feedback, drop the animation. */
+  button:not(:disabled) {
+    transition: none;
+  }
+  button:not(:disabled):active {
+    transform: none;
   }
 }
 [data-skin="harness"] .consus__masthead {

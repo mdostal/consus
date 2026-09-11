@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-09-11
+
+### Fixed
+
+- **The masthead mark, app icon, and favicon used the wrong logo concept** — found live right
+  after `v0.17.0` shipped: the operator's real, recorded verdict on the brand decision was
+  Monogram (`{"kind":"concept_selected","conceptId":"monogram"}`), but `consus-phase30`'s
+  design-discussion substituted "Abstract Mark" instead, reasoning from a sub-recommendation in
+  the brand guide's own text rather than the operator's actual choice. All three surfaces
+  (`BrandMark.tsx`, the icon-generation script, `web/public/favicon.{svg,ico}`) now render the
+  real selected Monogram concept, verified via a real `cargo tauri build` + `.icns` inspection.
+- **Buttons had no hover, press, or visible-keyboard-focus feedback anywhere in the app** — a
+  single base-layer rule (`filter: brightness()`, works under any skin's actual button color)
+  now gives every button real interactive states, across all 4 skins at once.
+
 ## [0.17.0] - 2026-09-11
 
 ### Added
