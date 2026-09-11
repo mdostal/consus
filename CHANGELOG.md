@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.16.2] - 2026-09-10
+
+### Fixed
+
+- **Registering the same repo path under two project names silently created duplicate decisions
+  forever** — found live right after the brand-decision-review feature shipped: this machine's own
+  `consus-projects.json` had `consus` and `work` both pointing at the same repo path, and every
+  scan synthesized a separate decision per project *name* (`decision:<project-name>:<file-path>`),
+  so the same brand decision showed up twice in the queue. `POST /api/projects` validated name
+  uniqueness but never path uniqueness. Now returns `409` naming the existing project when the
+  resolved path is already registered under a different name.
+
+### Changed
+
+- `docs/api-reference.md` — documented `GET`/`POST /api/surveys` and `GET /api/surveys/:id`
+  (previously shipped, undocumented), and the new path-uniqueness check on `POST /api/projects`.
+
 ## [0.16.1] - 2026-09-10
 
 ### Fixed

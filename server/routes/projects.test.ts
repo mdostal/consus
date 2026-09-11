@@ -218,6 +218,45 @@ describe("POST /api/projects", () => {
     expect(res.json()).toEqual({ error: 'project "consus" is already registered' });
   });
 
+  it("rejects a path that's already registered under a different name (found live: duplicate decisions from the same repo scanned under two project names)", async () => {
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { name: "new-repo", path: newRepoDir },
+    });
+    expect(first.statusCode).toBe(201);
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { name: "same-repo-different-name", path: newRepoDir },
+    });
+
+    expect(second.statusCode).toBe(409);
+    expect(second.json()).toEqual({
+      error: `path ${newRepoDir} is already registered as project "new-repo"`,
+    });
+    expect(repos["same-repo-different-name"]).toBeUndefined();
+  });
+
+  it("rejects a path that's already registered under a different name, even given as a relative/unresolved variant", async () => {
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { name: "new-repo", path: newRepoDir },
+    });
+    expect(first.statusCode).toBe(201);
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { name: "same-repo-trailing-slash", path: `${newRepoDir}/` },
+    });
+
+    expect(second.statusCode).toBe(409);
+    expect(repos["same-repo-trailing-slash"]).toBeUndefined();
+  });
+
   it("rejects a path that doesn't exist on disk", async () => {
     const res = await app.inject({
       method: "POST",

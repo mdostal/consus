@@ -63,7 +63,11 @@ Registers a new project: names it, points it at a repo path on disk, persists th
 path and must exist on disk.
 
 **Response 201:** `{ "project": string, "path": string, "docsScanned": number, "eventsCreated": number }`.
-**400** for a missing/invalid `name` or `path` that doesn't exist. **409** if `name` is already registered.
+**400** for a missing/invalid `name` or `path` that doesn't exist. **409** if `name` is already
+registered, or if the resolved `path` is already registered under a *different* name (found live:
+registering the same repo under two names silently produced duplicate decisions, one per name,
+since decision ids are `decision:<project-name>:<file-path>` — this is a real path-identity check,
+not just a name check).
 
 ### `POST /api/projects/scan-all`
 Sweeps every configured project in one action — the same scan `POST /api/projects/:project/ingest`
@@ -411,6 +415,35 @@ Full draft version history for one entry, oldest first (drafts are kept even aft
 submitted, so this can show more than just the current unsaved draft).
 
 **Response 200:** array of `{ id, kb_entry_id, content, author, created_at, ... }`
+
+## Surveys (grouping decision items into a named batch)
+
+A survey is a lightweight named container over existing decision items (rows with a non-null
+`decision_payload`) — batching, say, every decision from one planning session so the UI can show
+"3 of 7 answered" instead of a flat list. It does not create or change any decision itself.
+
+### `GET /api/surveys`
+Lists every survey with its member counts.
+
+**Response 200:** array of
+`{ id, title, description, created_at, total, answered }` — `total` counts member items with a
+`decision_payload`; `answered` further restricts to `decided_at IS NOT NULL`.
+
+### `POST /api/surveys`
+Creates a named survey. Optionally assigns pre-existing decision items to it via `decision_ids`.
+
+**Body:** `{ "title": string, "description"?: string, "decision_ids"?: string[] }`. An id in
+`decision_ids` that doesn't exist, or belongs to an item with no `decision_payload`, is silently
+skipped — not a 404 — keeping create+assign a single side-effect-free call.
+
+**Response 201:** `{ id, title, description, created_at, members: [{ id, title, status, decided_at }] }`.
+**400** if `title` is missing.
+
+### `GET /api/surveys/:id`
+Returns one survey and its current member decisions.
+
+**Response 200:** `{ id, title, description, created_at, members: [...] }` (same member shape as
+above). **404** if the survey doesn't exist.
 
 ## Proposals (propose a change, fire it to a harness)
 

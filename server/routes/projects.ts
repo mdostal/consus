@@ -282,6 +282,13 @@ export function registerProjectRoutes(
       return reply.code(400).send({ error: `path does not exist or is not a directory: ${repoPath}` });
     }
 
+    const existingName = Object.entries(repos).find(([, existingPath]) => resolve(existingPath) === repoPath)?.[0];
+    if (existingName) {
+      return reply
+        .code(409)
+        .send({ error: `path ${repoPath} is already registered as project "${existingName}"` });
+    }
+
     repos[name] = repoPath;
     saveProjectRegistry(projectsConfigPath, repos);
 
