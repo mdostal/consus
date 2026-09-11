@@ -15,7 +15,7 @@ a fixed boundary, not an open question (see below).
 
 ---
 
-## ① Current — where it is now (v0.16.2)
+## ① Current — where it is now (v0.17.0)
 
 Consus runs as a **Fastify server on `:8722`**, bound to `127.0.0.1` by default, backed by a local
 **SQLite** file (`.pHive/consus.sqlite`), started with `npm run dev` (server + Vite web) or
@@ -50,9 +50,14 @@ Consus runs as a **Fastify server on `:8722`**, bound to `127.0.0.1` by default,
   delete edges, with a structured changeset and a "Fire to harness" action reusing the same
   proposal mechanism as doc edits. A collapsible, derived (never independently-editable) Mermaid
   source preview sits alongside it.
-- **A real visual system** — a manual light/dark/system theme control, and three switchable visual
-  skins (Drafting Table, Case Board, Harness) — genuine per-skin decoration, not just recolored
-  chrome. A universal `⌘K` command palette covers the keyboard-shortcut floor.
+- **A real visual system** — a manual light/dark/system theme control, and four switchable visual
+  skins (Granary, the real approved brand and default for fresh installs; Drafting Table; Case
+  Board; Harness) — genuine per-skin decoration, not just recolored chrome. A universal `⌘K`
+  command palette covers the keyboard-shortcut floor.
+- **The real Consus brand, live in the product.** `consus-phase30-brand-theme-integration` closed
+  the loop on `consus-phase29`'s in-app brand decision: the Granary skin above, a real brand mark
+  in the masthead, and a real desktop app icon/favicon — not just an approved artifact sitting in
+  `branding/`.
 - **Multi-repo event pipeline** — scanning any project (single or `scan-all`) detects `doc_changed`
   and `decision_needed` triggers, each becoming a reviewable event (diff + composed prompt) with a
   manual status lifecycle, archived out of the active queue once resolved. An event can graduate
