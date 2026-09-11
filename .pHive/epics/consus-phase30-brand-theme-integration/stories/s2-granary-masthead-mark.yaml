@@ -1,0 +1,88 @@
+id: s2-granary-masthead-mark
+epic: consus-phase30-brand-theme-integration
+title: Replace the placeholder masthead glyph with the real brand mark, Granary skin only
+status: pending
+complexity: low
+methodology: classic
+depends_on: [s1-granary-skin-tokens-and-typography]
+
+description: |
+  Confirmed via direct research: "◈" is a literal Unicode character at exactly
+  2 masthead-relevant call sites -- web/src/App.tsx:1794 (main masthead,
+  className="consus__brand-mark") and web/src/App.tsx:1640 (onboarding
+  screen, className="onboarding__mark"). A third site,
+  HarnessConnectBanner.tsx:42, is a connect-banner icon shown identically
+  across all skins, not masthead branding -- explicitly OUT of scope for this
+  story per the epic's design-discussion.
+
+  Resolved design question (design-discussion.md): the real mark replaces
+  "◈" ONLY when [data-skin="granary"] is active -- the other 3 skins
+  (Drafting Table, Case Board, Harness) each have their own fully-realized
+  decorative identity that a literal brand-mark SVG would visually intrude
+  on, and forcing it into all 4 wasn't part of what the operator actually
+  approved (the brand decision was a logo DIRECTION, not "replace every
+  skin's masthead"). "◈" stays exactly as-is for drafting/case-board/harness.
+
+  The mark used is Abstract Mark (the grain-kernel glyph alone), from
+  .pHive/brand/logo-concepts.yaml's "abstract-mark" concept -- NOT Monogram.
+  logo-concepts.yaml's own description explicitly recommends Abstract Mark
+  for small-size UI use ("holds up at 16px... candidate for the dock icon,
+  tray icon, and favicon"); a masthead glyph sits at a comparably small size
+  next to the wordmark text, the same constraint. Monogram remains the
+  primary logo direction used in branding/'s own presentation -- this story
+  does not touch that.
+
+acceptance_criteria:
+  - "Given [data-skin=\"granary\"] is active, the main masthead (App.tsx's consus__brand-mark) renders the real Abstract Mark inline SVG instead of the literal \"◈\" character"
+  - "Given [data-skin=\"granary\"] is active, the onboarding screen's mark (App.tsx's onboarding__mark) renders the same real Abstract Mark SVG"
+  - "Given any of the other 3 skins (drafting/case-board/harness) is active, both masthead call sites render \"◈\" exactly as before this story -- zero visual change, verified by a regression test/snapshot"
+  - "Given HarnessConnectBanner.tsx's own \"◈\" glyph, it is completely untouched by this story regardless of active skin"
+  - "Given the Abstract Mark SVG markup, it is sourced directly from .pHive/brand/logo-concepts.yaml's abstract-mark concept (byte-identical path/fill values), not redrawn or approximated"
+  - "Given the mark renders at masthead scale (roughly 20-28px), it remains legible and correctly proportioned -- verified visually via a Playwright screenshot of the real running app, not just by code inspection"
+
+steps:
+  - id: research
+    description: Confirm the exact JSX at App.tsx:1794 and App.tsx:1640 as they stand now on this branch (line numbers may have shifted since s1 landed), and extract the exact abstract-mark SVG markup from .pHive/brand/logo-concepts.yaml.
+    agent: researcher
+  - id: implement
+    description: Add a small MastheadMark component (or inline conditional) that renders the Abstract Mark SVG when the active skin is granary, and "◈" otherwise, at both call sites. Read the active skin via the existing useSkinPreference hook -- do not introduce a second source of truth for skin state.
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Add tests asserting the mark renders correctly per-skin at both call sites, and that HarnessConnectBanner's own glyph is unaffected regardless of skin.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm the other 3 skins render byte-identical "◈" output (no accidental leakage of the new mark), confirm the SVG markup matches logo-concepts.yaml exactly, confirm no new skin-state source of truth was introduced.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase30-brand-theme-integration.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: web/src/App.tsx
+      purpose: "Lines ~1794 and ~1640 -- the two masthead-relevant literal ◈ call sites this story makes skin-conditional"
+    - path: web/src/theme/useSkinPreference.ts
+      purpose: "The existing hook this story reads from -- do not duplicate skin-state tracking"
+    - path: .pHive/brand/logo-concepts.yaml
+      purpose: "Source of the exact Abstract Mark SVG markup to use, byte-identical"
+
+files_to_modify:
+  - file: web/src/App.tsx
+    change: Make both masthead-relevant "◈" call sites skin-conditional (Abstract Mark SVG for granary, unchanged "◈" for the other 3 skins)
+
+design_decisions:
+  - decision: Granary-only, not all 4 skins
+    rationale: "The other 3 skins already have their own complete decorative identity; a literal brand mark wasn't part of the approved logo-direction decision and would visually clash -- see design-discussion.md's resolution of this exact open question"
+  - decision: Abstract Mark, not Monogram
+    rationale: "logo-concepts.yaml itself recommends Abstract Mark specifically for small-size UI use (16px legibility, dock/tray/favicon candidate) -- a masthead glyph is the same size class"
+
+references:
+  - path: .pHive/epics/consus-phase30-brand-theme-integration/docs/design-discussion.md
+    relevant_excerpt: |
+      Decision for this epic: Granary-only, not all 4 skins... The mark used:
+      Abstract Mark (the grain-kernel glyph alone), not Monogram.

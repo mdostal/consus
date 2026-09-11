@@ -22,6 +22,31 @@
  */
 
 /* ================================================================ */
+/* Self-hosted brand typography (Granary skin only) — both files are  */
+/* variable fonts (wght axis), so one file per family covers every    */
+/* weight the Granary skin uses (400/500/600/700). Bundled locally    */
+/* (web/public/fonts/, SIL OFL license text alongside) rather than    */
+/* fetched from a font CDN at runtime, consistent with Consus's own   */
+/* local-first / no-network-by-default policy (VISION.md).            */
+/* ================================================================ */
+
+@font-face {
+  font-family: "Fraunces Variable";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/fraunces-variable.woff2") format("woff2-variations"), url("/fonts/fraunces-variable.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Variable";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/ibm-plex-sans-variable.woff2") format("woff2-variations"), url("/fonts/ibm-plex-sans-variable.woff2") format("woff2");
+}
+
+/* ================================================================ */
 /* Default skin: Drafting Table — architectural blueprint feel       */
 /* (cool blueprint blues/greys, precise/sharp edges, monospace-       */
 /* forward chrome). This IS the un-skinned :root fallback, since       */
@@ -226,6 +251,79 @@
   --consus-warn: #e0c341;
   --consus-bad: #ff6b5e;
   --consus-line: #1f2b23;
+}
+
+/* ================================================================ */
+/* Granary — the real Consus brand (consus-phase29-brand-decision-    */
+/* review's decided output, wired in by consus-phase30). Parchment/   */
+/* Granary Indigo/Threshing Gold, Fraunces display + IBM Plex Sans    */
+/* body. Default skin for FRESH installs only — useSkinPreference     */
+/* only ever consults DEFAULT_SKIN when localStorage has no stored    */
+/* value, so an existing install's chosen skin is never overridden.   */
+/* No bespoke decorative component (brand personality is "confidence  */
+/* through clarity, not decoration" per brand-system.yaml) — clean by */
+/* design, not an oversight.                                          */
+/*                                                                      */
+/* --consus-accent-secondary (Threshing Gold) is additive — only       */
+/* Granary defines it; components that want a secondary accent must    */
+/* fall back gracefully: var(--consus-accent-secondary, var(--consus-  */
+/* accent))) so they still theme correctly under the other 3 skins.    */
+/*                                                                      */
+/* All hex values here were checked for >=4.5:1 contrast against their */
+/* paired background (ink-on-bg, accent-on-bg) in both light and dark  */
+/* — see .pHive/epics/consus-phase30-brand-theme-integration/docs/     */
+/* design-discussion.md for the computed ratios.                       */
+/* ================================================================ */
+
+[data-skin="granary"] {
+  --consus-bg: #faf7f0;
+  --consus-bg-subtle: #f1ead9;
+  --consus-ink: #46414f;
+  --consus-ink-muted: #6b6577;
+  --consus-accent: #362b6b;
+  --consus-accent-secondary: #9c6316;
+  --consus-good: #4b7443;
+  --consus-warn: #a6551c;
+  --consus-bad: #9c3b30;
+  --consus-line: #e3d9c2;
+
+  --consus-font-body: "IBM Plex Sans Variable", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --consus-font-display: "Fraunces Variable", "Fraunces", Georgia, ui-serif, serif;
+  --consus-font-ui: "IBM Plex Sans Variable", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --consus-font-mono: ui-monospace, "SFMono-Regular", "IBM Plex Mono", Menlo, Consolas, monospace;
+
+  /* A considered, moderate radius — not Drafting's sharp 0.2, not Case
+   * Board's organic 1.3. Precise, trustworthy, unshowy. */
+  --consus-radius-scale: 0.75;
+  --consus-edge-style: straight;
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-skin="granary"]:not([data-theme="light"]) {
+    --consus-bg: #1a1530;
+    --consus-bg-subtle: #221c3d;
+    --consus-ink: #f2ede0;
+    --consus-ink-muted: #b8afc9;
+    --consus-accent: #9c90d9;
+    --consus-accent-secondary: #c98a34;
+    --consus-good: #7fb56e;
+    --consus-warn: #e0a15c;
+    --consus-bad: #e2867a;
+    --consus-line: #332b52;
+  }
+}
+
+[data-skin="granary"][data-theme="dark"] {
+  --consus-bg: #1a1530;
+  --consus-bg-subtle: #221c3d;
+  --consus-ink: #f2ede0;
+  --consus-ink-muted: #b8afc9;
+  --consus-accent: #9c90d9;
+  --consus-accent-secondary: #c98a34;
+  --consus-good: #7fb56e;
+  --consus-warn: #e0a15c;
+  --consus-bad: #e2867a;
+  --consus-line: #332b52;
 }
 
 body {

@@ -1,0 +1,86 @@
+id: s4-granary-visual-verification-pass
+epic: consus-phase30-brand-theme-integration
+title: Full-surface visual QA pass on the Granary skin, iterated until it looks finished
+status: pending
+complexity: medium
+methodology: classic
+depends_on: [s1-granary-skin-tokens-and-typography, s2-granary-masthead-mark, s3-brand-app-icons-and-favicon]
+
+description: |
+  Operator's explicit quality bar for this epic: "go back and forth, plan it
+  and ensure it is done well so that all of the controls and parts are
+  looking right." A mechanical CSS-token swap (s1) plus a masthead mark swap
+  (s2) risks looking unfinished next to 3 other skins that were each built
+  with a full decorative pass -- buttons, inputs, badges, and complex
+  surfaces (the decision detail view, the diagram canvas, the command
+  palette) may not have been designed WITH the new palette/typography in
+  mind, only tokens that happen to cascade into them.
+
+  This story is a real verification loop, not a rubber stamp: run the actual
+  built app (via the real sidecar's HTTP endpoint, per this session's
+  established safe-verification precedent -- Playwright navigating directly
+  to the served content, never risky full-desktop screenshots), switch to
+  the Granary skin, and screenshot every major surface. For each surface
+  found to look wrong, incomplete, or inconsistent (unstyled native form
+  controls, a component that hardcodes a color literal instead of a
+  --consus-* token, insufficient contrast, a spacing/radius value that
+  clashes with the rest of the skin), fix it directly and re-verify. Repeat
+  until the skin reads as a complete, considered visual identity -- not just
+  "the background changed color."
+
+  Surfaces to check at minimum: the masthead + nav, the Decisions two-pane
+  layout (list + detail, including every answer-shape renderer --
+  decision-request options, feature checklist, CBA table, rating scale,
+  concept-selection cards), the Projects tab, the diagram editor canvas
+  (both the epic/story cascade and the architecture diagram), the KB
+  backlog browser, the Docs/FeatureBrowser tab, the command palette (⌘K),
+  form inputs and buttons generally, badges/pills (status, triage-bucket),
+  and both light AND dark variants of Granary.
+
+acceptance_criteria:
+  - "Given the Granary skin active in light mode, every major surface listed above is screenshotted via Playwright against the real running app and visually reviewed"
+  - "Given the Granary skin active in dark mode, the same full pass is repeated -- dark is not assumed correct just because light is"
+  - "Given any surface found to look wrong (unstyled control, hardcoded non-token color, contrast issue, inconsistent radius/spacing), it is fixed directly in this story, not just logged as a future item"
+  - "Given a hardcoded color literal is found anywhere in a component that should instead reference a --consus-* token, it is converted to use the token so it correctly themes across all 4 skins going forward, not just patched for Granary specifically"
+  - "Given the final state, a second full screenshot pass confirms every previously-found issue is actually resolved -- not just attempted"
+  - "Given the other 3 skins (drafting/case-board/harness), a final spot-check confirms none of this story's fixes altered their rendering (a shared-component fix must theme correctly across all 4 skins, never hardcode Granary-specific values into a shared component)"
+
+steps:
+  - id: implement
+    description: Run the real built app, switch to Granary (light), screenshot every listed surface via Playwright against the actual sidecar HTTP endpoint. Fix any issue found directly (missing token usage, contrast, unstyled controls, inconsistent shape values). Repeat for dark. Iterate until clean.
+    agent: developer
+  - id: test
+    description: Add/extend any regression tests uncovered by fixes (e.g. a component that previously hardcoded a color and now must reference a token -- assert it renders correctly under a non-default skin too, proving the fix isn't Granary-specific).
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Independently re-run the full screenshot pass (both light and dark) against the final build and confirm it genuinely reads as finished, not just "technically themed." Confirm the other 3 skins are unaffected via spot-check screenshots.
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase30-brand-theme-integration.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: web/src/app.css
+      purpose: "~80 occurrences of --consus-* token usage across every component -- the most likely place a hardcoded literal would be found and need converting"
+    - path: web/src/theme/tokens.css
+      purpose: "The Granary token definitions from s1 that every component's CSS ultimately reads"
+
+files_to_modify: []
+
+design_decisions:
+  - decision: This is a real iteration loop with a fix-and-reverify cycle, not a single screenshot-and-report pass
+    rationale: "Operator's own words: 'go back and forth... ensure it is done well.' A one-shot visual check would satisfy the letter of a QA story but not the actual bar set for this epic."
+  - decision: Verify via Playwright against the real sidecar HTTP endpoint, not full-desktop screenshots
+    rationale: "Established this session as the safe verification pattern -- isolated, reproducible, and avoids capturing unrelated windows/other sessions that a full-desktop screenshot risks"
+
+references:
+  - path: .pHive/epics/consus-phase30-brand-theme-integration/docs/design-discussion.md
+    relevant_excerpt: |
+      Risks: Visual drift from "done well" -- a mechanical CSS-token swap
+      alone risks looking unfinished next to 3 fully-realized skins.
+      Mitigation: explicit story for full-surface visual verification.

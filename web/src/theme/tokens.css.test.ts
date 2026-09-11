@@ -10,7 +10,7 @@ import path from "node:path";
 const cssPath = path.join(process.cwd(), "web/src/theme/tokens.css");
 const css = readFileSync(cssPath, "utf8");
 
-const SKINS = ["drafting", "case-board", "harness"];
+const SKINS = ["drafting", "case-board", "harness", "granary"];
 
 describe("tokens.css", () => {
   it("defines the light palette tokens on a bare :root", () => {

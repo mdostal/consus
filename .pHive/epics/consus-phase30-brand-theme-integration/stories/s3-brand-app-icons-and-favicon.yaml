@@ -1,0 +1,100 @@
+id: s3-brand-app-icons-and-favicon
+epic: consus-phase30-brand-theme-integration
+title: Regenerate the desktop app icon set and add a web favicon from the approved Abstract Mark
+status: pending
+complexity: medium
+methodology: classic
+depends_on: []
+
+description: |
+  Confirmed via direct research: app/src-tauri/icons/{32x32.png,128x128.png,
+  128x128@2x.png,icon.icns,icon.ico} currently render the OLD placeholder --
+  a generic hub-and-spoke graph on indigo (commit 70042e9, story
+  consus-phase26-desktop-app/s4-app-icons.yaml) -- which
+  branding/brand-guide.html's own text explicitly calls out by name as a
+  placeholder to replace once a real brand exists. No generation script is
+  checked into the repo; the confirmed prior mechanism (from the commit
+  history and story file) was a Python/Pillow-generated source mark
+  (supersampled at high resolution, then downsampled for clean edges) piped
+  through `cargo tauri icon` to derive every platform-required size, with
+  extra outputs (iOS/Android/Appx) manually pruned to match this repo's
+  5-file icon shape. This story reuses that exact mechanism, swapping only
+  the source mark.
+
+  web/index.html has zero <link rel="icon"> today -- no favicon exists at
+  all, confirmed by direct grep. Add one using the same Abstract Mark.
+
+  Source mark: .pHive/brand/logo-concepts.yaml's "abstract-mark" concept --
+  the same mark used for the Granary masthead in s2, for visual consistency
+  across the product's icon surfaces (dock icon, tray icon, favicon,
+  masthead all read as the same identity).
+
+acceptance_criteria:
+  - "Given app/src-tauri/icons/{32x32.png,128x128.png,128x128@2x.png,icon.icns,icon.ico}, all 5 files are regenerated from the Abstract Mark concept and no longer contain the old hub-and-spoke-on-indigo placeholder"
+  - "Given the regeneration mechanism, it follows the confirmed prior approach (Pillow-generated source mark, supersampled/downsampled, piped through `cargo tauri icon`) rather than a new, undocumented mechanism"
+  - "Given app/src-tauri/tauri.conf.json's bundle.icon array, it continues to reference the same 5 file paths -- no path/config change needed, only the file contents"
+  - "Given a real `cargo tauri build`, the resulting .app bundle's Dock/Finder icon visibly shows the new Abstract Mark, verified by actually building and inspecting the bundle, not just checking the source PNGs"
+  - "Given web/index.html, it now has a real <link rel=\"icon\"> pointing at a favicon built from the same Abstract Mark"
+  - "Given the icon at small sizes (16px, 32px), it remains legible -- this was the explicit design intent documented in logo-concepts.yaml for this specific concept, verify it holds true in the actual rendered output, not just assumed from the source SVG"
+
+steps:
+  - id: research
+    description: Re-confirm the exact prior icon-generation approach from commit 70042e9's diff and story consus-phase26-desktop-app/s4-app-icons.yaml, and extract the abstract-mark SVG markup from .pHive/brand/logo-concepts.yaml.
+    agent: researcher
+  - id: implement
+    description: Write (and keep, this time, checked into the repo under scripts/) a small Pillow-based icon-source generator from the Abstract Mark SVG, supersampled/downsampled per the confirmed prior approach; run it, then run `cargo tauri icon` to regenerate all 5 app/src-tauri/icons/* files; add a favicon + <link rel="icon"> to web/index.html.
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Verify all 5 icon files changed (not byte-identical to the old placeholder), verify tauri.conf.json's icon references are unchanged, verify web/index.html's favicon link resolves to a real file that builds correctly.
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Do a real `cargo tauri build` and visually confirm the Dock/Finder icon shows the new mark, confirm legibility at small sizes, confirm the generation script is checked in (not a one-off, unrepeatable local step).
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feat/consus-phase30-brand-theme-integration.
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  key_files:
+    - path: app/src-tauri/icons/
+      purpose: "The 5 files this story regenerates"
+    - path: app/src-tauri/tauri.conf.json
+      purpose: "bundle.icon array -- confirm paths stay unchanged, only contents regenerate"
+    - path: .pHive/brand/logo-concepts.yaml
+      purpose: "Source of the exact Abstract Mark SVG markup"
+    - path: web/index.html
+      purpose: "Needs a new <link rel=\"icon\"> added -- none exists today"
+
+files_to_modify:
+  - file: app/src-tauri/icons/32x32.png
+    change: Regenerate from Abstract Mark
+  - file: app/src-tauri/icons/128x128.png
+    change: Regenerate from Abstract Mark
+  - file: app/src-tauri/icons/128x128@2x.png
+    change: Regenerate from Abstract Mark
+  - file: app/src-tauri/icons/icon.icns
+    change: Regenerate from Abstract Mark
+  - file: app/src-tauri/icons/icon.ico
+    change: Regenerate from Abstract Mark
+  - file: scripts/ (new icon-gen script)
+    change: Check in the Pillow-based source-mark generator so this is repeatable, not a one-off local step
+  - file: web/index.html
+    change: Add a real <link rel="icon"> favicon
+
+design_decisions:
+  - decision: Reuse the exact prior generation mechanism (Pillow + cargo tauri icon) rather than inventing a new one
+    rationale: "Confirmed working, confirmed to produce this repo's exact 5-file icon shape (already pruned to match Heimdall's precedent) -- no reason to risk a different toolchain for a mark swap"
+  - decision: Check the generation script into the repo this time
+    rationale: "The original phase26 pass left no script checked in, making this exact situation (needing to regenerate with a new mark) harder to reproduce faithfully -- fixing that gap while doing the regeneration"
+
+references:
+  - path: .pHive/epics/consus-phase26-desktop-app/stories/s4-app-icons.yaml
+    relevant_excerpt: |
+      Minimal app icon set -- confirmed mechanism was a Pillow-generated
+      source mark, supersampled then downsampled, run through
+      `cargo tauri icon`.

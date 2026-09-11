@@ -24,12 +24,13 @@ describe("ThemeSkinPicker", () => {
     expect(screen.getByRole("option", { name: /system/i })).toBeInTheDocument();
   });
 
-  it("renders a skin control offering all three skins: Drafting Table, Case Board, Harness", () => {
+  it("renders a skin control offering all four skins: Granary, Drafting Table, Case Board, Harness", () => {
     render(<ThemeSkinPicker />);
     expect(screen.getByLabelText(/skin/i)).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /^granary$/i })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /drafting table/i })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /case board/i })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: /harness/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /^harness$/i })).toBeInTheDocument();
   });
 
   it("selecting a theme option applies data-theme to the document root", () => {

@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
 
-export type SkinPreference = "drafting" | "case-board" | "harness";
+export type SkinPreference = "drafting" | "case-board" | "harness" | "granary";
 
 /** Namespaced "consus:" prefix, distinct from the theme preference's own
  *  key — the two axes are independent and must never collide. */
 export const SKIN_STORAGE_KEY = "consus:skin-preference";
 
-/** Default skin (Drafting Table) — unlike theme's "system" default, skin
- *  always resolves to a concrete value; there's no OS-level "system skin". */
-export const DEFAULT_SKIN: SkinPreference = "drafting";
+/** Default skin — Granary (consus-phase30), the real approved brand, for a
+ *  FRESH install with no stored preference. readStored() below only ever
+ *  falls back to this constant when localStorage genuinely has nothing (or
+ *  an unrecognized value) stored — an existing install's own choice is read
+ *  first and always wins, so upgrading never silently changes anyone's
+ *  active skin out from under them. */
+export const DEFAULT_SKIN: SkinPreference = "granary";
 
 function isSkinPreference(value: unknown): value is SkinPreference {
-  return value === "drafting" || value === "case-board" || value === "harness";
+  return value === "drafting" || value === "case-board" || value === "harness" || value === "granary";
 }
 
 /** Reads the stored skin, defaulting to Drafting Table for a fresh install

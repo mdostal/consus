@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-09-11
+
+### Added
+
+- **The approved Consus brand is now wired into the real product** (`consus-phase30-brand-theme-integration`,
+  4 stories, directly following `consus-phase29`'s in-app brand decision):
+  - **A new "Granary" skin** — a 4th option alongside Drafting Table/Case Board/Harness, built from
+    the approved palette (Granary Indigo/Threshing Gold/Quern Charcoal/Parchment) with a real,
+    contrast-checked dark companion (every color verified >=4.5:1, not a literal inversion) and
+    self-hosted Fraunces + IBM Plex Sans (variable fonts, zero external font-CDN requests — stays
+    consistent with Consus's local-first policy). Granary is the default skin for **fresh installs
+    only** — an existing install's stored skin choice is never overridden.
+  - **The real brand mark in the masthead** — the approved Abstract Mark concept replaces the
+    placeholder "◈" glyph, Granary skin only; the other 3 skins keep their own decorative identity
+    unchanged. Mark fills use live `--consus-accent`/`--consus-bg` tokens rather than the source
+    SVG's static hex values, so it stays legible in both light and dark (the static color had only
+    1.4:1 contrast against Granary's dark background).
+  - **Real desktop app icons + a first-ever web favicon** — regenerated `app/src-tauri/icons/*`
+    from the Abstract Mark (replacing the old placeholder hub-and-spoke-on-indigo glyph), with the
+    generation script checked into the repo this time (`scripts/generate-brand-icon.py`) so it's
+    actually repeatable going forward. Verified via a real `cargo tauri build` and `.icns`
+    inspection, not just the source PNGs.
+  - **A full-surface visual QA pass, both themes** — walked every major surface (masthead, nav,
+    forms, the diagram canvas, KB, Docs, command palette) live. Found and fixed a real,
+    pre-existing, skin-agnostic gap along the way: 7 of 8 decision answer-shape renderers had never
+    had dedicated CSS since they first shipped, relying on bare browser defaults under every skin —
+    most visibly, `CbaTable`'s real `<table>` rendered as unstyled run-together text. Styled all
+    seven using the same token language the original `AnswerControl` already proved.
+
 ## [0.16.2] - 2026-09-10
 
 ### Fixed
