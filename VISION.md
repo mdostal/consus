@@ -15,7 +15,7 @@ a fixed boundary, not an open question (see below).
 
 ---
 
-## ① Current — where it is now (v0.11.0)
+## ① Current — where it is now (v0.16.2)
 
 Consus runs as a **Fastify server on `:8722`**, bound to `127.0.0.1` by default, backed by a local
 **SQLite** file (`.pHive/consus.sqlite`), started with `npm run dev` (server + Vite web) or
@@ -67,26 +67,30 @@ Consus runs as a **Fastify server on `:8722`**, bound to `127.0.0.1` by default,
 
 **Honest gaps right now:**
 
-- **PR/branch-level surfacing is not started.** Most work-in-progress lives on feature branches
-  before reaching `main`; surfacing a branch's or PR's own docs/CBA/decisions the way merged-to-main
-  state is surfaced today is a real, explicitly deferred item — see the backlog's dedicated theme.
-  **Do not scope this until explicitly asked.**
-- **Interaction polish / accessibility pass** on the newer surfaces (the diagram editor, the skin
-  system) is backlogged, not started.
-- **Dual-mode integration tests** (standalone vs. a future Pantheon-plugin mode) are backlogged —
-  worth revisiting once there's an actual second mode to test against; today's mainline has only
-  ever run standalone.
+- **PR metadata (title, number, CI status via GitHub's API) is not surfaced.** Branch-level
+  decision/doc surfacing itself shipped (`consus-phase24-branch-level-surfacing`) — git-local only,
+  no GitHub API, no auto-fetch. Pulling in a PR's own metadata on top of that was explicitly
+  descoped as a separate, later item. **Do not scope this until explicitly asked.**
+- **Dual-mode integration tests** (standalone vs. a future Pantheon-plugin mode) remain
+  not-applicable — there is still no second mode in this codebase to test against; revisit only if
+  one is ever actually built.
+- Interaction polish / accessibility passes are done for the surfaces that existed when each pass
+  ran (`consus-phase20-diagram-editor-a11y` audited the diagram editor + command palette;
+  `consus-phase28-interaction-completeness` added attachment previews and rendered visual diffs) —
+  not a standing guarantee that every *future* surface ships accessible by default; audit newer
+  surfaces as they mature, same as those two passes did.
 
 ---
 
 ## ② Goals — near-term next steps
 
-The backlog is intentionally thin right now — most of what was tracked as a near-term gap shipped
-in tonight's run (see `.pHive/planning/backlog.md` for the full, cited history). The one item kept
-visible but explicitly *not* queued is PR/branch-level surfacing (above) — real, not forgotten, but
-not to be scoped until the operator asks for it by name. Beyond that, near-term direction is
-operator-driven rather than a standing queue; see **Good first contributions** below for concrete,
-safe-to-pick-up work that doesn't require a new design decision first.
+The backlog is intentionally thin right now — nearly every item tracked in
+`.pHive/planning/backlog.md` as a near-term gap has since shipped (see that file for the full,
+cited history through `consus-phase29-brand-decision-review`). The one item kept visible but
+explicitly *not* queued is PR metadata surfacing (above) — real, not forgotten, but not to be
+scoped until the operator asks for it by name. Beyond that, near-term direction is operator-driven
+rather than a standing queue; see **Good first contributions** below for concrete, safe-to-pick-up
+work that doesn't require a new design decision first.
 
 ---
 
@@ -98,8 +102,9 @@ repo's own architecture legible and editable without digging through files by ha
 
 - **A shared-truth knowledge base.** Every approved decision, CBA, and doc becomes durable,
   versioned, searchable KB — grounding future decisions in what's already been decided.
-- **PR/branch-level surfacing.** Extend today's merged-to-main view down to in-progress,
-  cross-branch work, once there's real demand to scope it.
+- **PR metadata surfacing.** Branch-level decision/doc surfacing itself already shipped
+  (git-local); layering in a PR's own title/number/CI status via GitHub's API is the remaining
+  piece, once there's real demand to scope it.
 - **Cross-system integration stays out of Consus's own codebase.** If Consus ever needs to talk to
   another system, that integration lives one layer up (e.g. a future Pantheon L2 adapter) and
   reaches Consus over the same generic seams — `HarnessTransport`, plain REST — any other harness
@@ -123,8 +128,6 @@ These are settled, not open questions:
 
 ## Good first contributions
 
-- **Interaction polish / accessibility pass** on the diagram editor and the 3-skin visual system —
-  a real backlogged item, not yet scoped into stories.
 - **Decided-store reconciliation semantics**, if a concrete need for a "defer" concept (distinct
   from Consus's simple `decided_at` timestamp) ever comes up in practice — closed as not-needed for
   now per an explicit operator call, but the door isn't nailed shut if a real case appears.
