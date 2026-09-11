@@ -45,3 +45,56 @@ describe("app.css", () => {
     expect(mediaBlock).not.toContain("0.12s");
   });
 });
+
+// consus-phase30 s4 — found live during the Granary visual QA pass: 7 of 8
+// answer-shape renderers (every one except AnswerControl itself) had never
+// had dedicated CSS since they first shipped (phase15/28/29), across EVERY
+// skin, not just Granary. Most visibly broken: CbaTable's real <table>
+// rendered as unstyled run-together text (no default UA table-cell spacing
+// at all). Regression-tests the fix, one representative assertion per
+// component's real class names (from each component's own .tsx source),
+// not an exhaustive style audit.
+describe("app.css — answer-shape renderers (consus-phase30 s4 regression)", () => {
+  it("styles CbaTable's real <table> (the most visibly broken case — was completely unstyled)", () => {
+    expect(css).toMatch(/\.cba-table__grid\s*\{[^}]*border-collapse:\s*collapse/);
+    expect(css).toMatch(/\.cba-table__grid td\s*\{[^}]*border-bottom:/);
+  });
+
+  it("styles FeatureChecklist (badge + per-feature cards)", () => {
+    expect(css).toMatch(/\.feature-checklist__badge\s*\{[^}]*background:/);
+    expect(css).toMatch(/\.feature-checklist__feature\s*\{[^}]*border:/);
+  });
+
+  it("styles RatingScale, including the selected (aria-pressed) state", () => {
+    expect(css).toMatch(/\.rating-scale__value\s*\{[^}]*border:/);
+    expect(css).toContain('.rating-scale__value[aria-pressed="true"]');
+  });
+
+  it("styles RankingList's draggable rows and rank badge", () => {
+    expect(css).toMatch(/\.ranking-list__item\s*\{[^}]*border:/);
+    expect(css).toMatch(/\.ranking-list__item-rank\s*\{[^}]*border-radius:/);
+  });
+
+  it("styles FreeTextResponse's textarea", () => {
+    expect(css).toMatch(/\.free-text-response textarea\s*\{[^}]*border:/);
+  });
+
+  it("styles ConceptSelection's card grid", () => {
+    expect(css).toMatch(/\.concept-selection__concepts\s*\{[^}]*grid-template-columns:/);
+    expect(css).toMatch(/\.concept-selection__concept\s*\{[^}]*border:/);
+  });
+
+  it("styles EditProposalView's diff lines using --consus-good/--consus-bad, not hardcoded colors", () => {
+    expect(css).toMatch(/\.edit-proposal-view__line--added\s*\{[^}]*var\(--consus-good\)/);
+    expect(css).toMatch(/\.edit-proposal-view__line--removed\s*\{[^}]*var\(--consus-bad\)/);
+  });
+
+  it("uses only --consus-* tokens in the new answer-shape block, no hardcoded hex literals (must theme correctly under all 4 skins, not just Granary)", () => {
+    const start = css.indexOf("consus-phase30 s4");
+    const end = css.indexOf("Comment thread (REQ-04)", start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const block = css.slice(start, end);
+    expect(block).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+  });
+});

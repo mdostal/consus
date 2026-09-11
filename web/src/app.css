@@ -525,6 +525,376 @@ body {
 }
 
 /* ============================================================= */
+/* Other answer-shape renderers (consus-phase30 s4) -- found live */
+/* during the Granary visual QA pass: 7 of 8 answer-shape         */
+/* components (every one except AnswerControl itself) had never   */
+/* had dedicated CSS since they first shipped, across phase15/28/ */
+/* 29 -- relying entirely on bare browser defaults under EVERY    */
+/* skin, not just Granary. Most obviously broken: CbaTable's      */
+/* <table> rendered as unstyled run-together text (no default UA  */
+/* table-cell spacing at all). Styled here using the exact same   */
+/* --consus-* token language AnswerControl already proved above.  */
+/* ============================================================= */
+
+.cba-table,
+.feature-checklist,
+.rating-scale,
+.ranking-list,
+.free-text-response,
+.concept-selection {
+  font-family: var(--consus-font-ui);
+}
+.cba-table__context,
+.rating-scale__context,
+.ranking-list__context,
+.free-text-response__context,
+.concept-selection__context {
+  color: var(--consus-ink-muted);
+  margin: 0 0 8px;
+}
+
+/* -- CBA table -- */
+.cba-table__grid {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0 16px;
+}
+.cba-table__grid th {
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--consus-ink-muted);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--consus-line);
+}
+.cba-table__grid td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--consus-line);
+  color: var(--consus-ink);
+  vertical-align: top;
+}
+.cba-table__option {
+  font-weight: 600;
+}
+
+/* -- Feature checklist -- */
+.feature-checklist__badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--consus-accent);
+  background: color-mix(in srgb, var(--consus-accent) 12%, transparent);
+  padding: 4px 10px;
+  border-radius: calc(20px * var(--consus-radius-scale, 1));
+  margin: 0 0 14px;
+}
+.feature-checklist__features {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.feature-checklist__feature {
+  padding: 12px 14px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg);
+}
+.feature-checklist__feature label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.feature-checklist__feature-name {
+  font-weight: 600;
+  color: var(--consus-ink);
+}
+.feature-checklist__feature-desc {
+  display: block;
+  margin: 4px 0 0 24px;
+  font-size: 12.5px;
+  color: var(--consus-ink-muted);
+}
+
+/* -- Rating scale -- */
+.rating-scale__prompt {
+  font-weight: 600;
+  color: var(--consus-ink);
+  margin: 0 0 14px;
+}
+.rating-scale__values {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.rating-scale__value {
+  background: var(--consus-bg);
+  border: 1px solid var(--consus-line);
+  color: var(--consus-ink);
+  padding: 8px 14px;
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  font-weight: 600;
+  cursor: pointer;
+  font: inherit;
+}
+.rating-scale__value[aria-pressed="true"] {
+  background: var(--consus-accent);
+  border-color: var(--consus-accent);
+  color: var(--consus-bg);
+}
+
+/* -- Ranking list -- */
+.ranking-list__prompt {
+  font-weight: 600;
+  color: var(--consus-ink);
+  margin: 0 0 14px;
+}
+.ranking-list__items {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ranking-list__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg);
+  cursor: grab;
+}
+.ranking-list__item-rank {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--consus-ink) 10%, transparent);
+  color: var(--consus-ink);
+  border-radius: calc(6px * var(--consus-radius-scale, 1));
+  font-weight: 700;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.ranking-list__item-label {
+  flex: 1;
+  color: var(--consus-ink);
+}
+.ranking-list__item button {
+  background: var(--consus-bg-subtle);
+  border: 1px solid var(--consus-line);
+  color: var(--consus-ink);
+  width: 26px;
+  height: 26px;
+  border-radius: calc(6px * var(--consus-radius-scale, 1));
+  cursor: pointer;
+  font: inherit;
+}
+.ranking-list__item button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* -- Free-text response -- */
+.free-text-response__prompt {
+  display: block;
+  font-weight: 600;
+  color: var(--consus-ink);
+  margin: 0 0 8px;
+}
+.free-text-response textarea {
+  width: 100%;
+  min-height: 100px;
+  background: var(--consus-bg);
+  border: 1px solid var(--consus-line);
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
+  color: var(--consus-ink);
+  padding: 10px;
+  font: inherit;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+/* -- Concept selection -- */
+.concept-selection__concepts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 14px;
+}
+.concept-selection__concept {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg);
+}
+.concept-selection__preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 110px;
+}
+.concept-selection__concept-name {
+  font-weight: 600;
+  color: var(--consus-ink);
+}
+.concept-selection__concept-description {
+  font-size: 12.5px;
+  color: var(--consus-ink-muted);
+  margin: 0;
+}
+.concept-selection__concept button {
+  margin-top: 4px;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+/* -- Edit proposal (diff view) -- */
+.edit-proposal-view {
+  font-family: var(--consus-font-mono);
+  font-size: 13px;
+}
+.edit-proposal-view__context {
+  font-family: var(--consus-font-ui);
+  color: var(--consus-ink-muted);
+  margin: 0 0 14px;
+}
+.edit-proposal-view__diff {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 10px 0;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg);
+  overflow-x: auto;
+}
+.edit-proposal-view__line {
+  display: flex;
+  gap: 10px;
+  padding: 2px 14px;
+  white-space: pre-wrap;
+}
+.edit-proposal-view__line-marker {
+  flex-shrink: 0;
+  width: 12px;
+  color: var(--consus-ink-muted);
+  font-weight: 700;
+}
+.edit-proposal-view__line-text {
+  color: var(--consus-ink);
+}
+.edit-proposal-view__line--added {
+  background: color-mix(in srgb, var(--consus-good) 14%, transparent);
+}
+.edit-proposal-view__line--added .edit-proposal-view__line-marker {
+  color: var(--consus-good);
+}
+.edit-proposal-view__line--removed {
+  background: color-mix(in srgb, var(--consus-bad) 14%, transparent);
+}
+.edit-proposal-view__line--removed .edit-proposal-view__line-marker {
+  color: var(--consus-bad);
+}
+
+/* -- Shared accept/submit + reject/iterate action row, reused by  */
+/* every answer-shape above that has this pairing (CBA, feature    */
+/* checklist, rating, ranking, free-text, edit-proposal). Concept  */
+/* selection is the one exception (its buttons are per-concept, not*/
+/* a single accept/reject row) -- styled separately above.         */
+.cba-table__actions,
+.feature-checklist__actions,
+.edit-proposal-view__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 16px;
+  align-items: start;
+}
+.rating-scale__actions,
+.ranking-list__actions,
+.free-text-response__actions {
+  margin-top: 4px;
+}
+.cba-table__actions > button,
+.feature-checklist__actions > button,
+.edit-proposal-view__actions > button,
+.rating-scale__actions > button,
+.ranking-list__actions > button,
+.free-text-response__actions > button {
+  background: var(--consus-accent);
+  border: 1px solid var(--consus-accent);
+  color: var(--consus-bg);
+  padding: 9px 18px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
+  font-weight: 600;
+  cursor: pointer;
+  font: inherit;
+}
+.cba-table__actions > button:disabled,
+.feature-checklist__actions > button:disabled,
+.edit-proposal-view__actions > button:disabled,
+.rating-scale__actions > button:disabled,
+.ranking-list__actions > button:disabled,
+.free-text-response__actions > button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cba-table__reject,
+.feature-checklist__reject,
+.edit-proposal-view__reject {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cba-table textarea,
+.feature-checklist textarea,
+.edit-proposal-view textarea {
+  width: 100%;
+  min-height: 60px;
+  background: var(--consus-bg);
+  border: 1px solid var(--consus-line);
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
+  color: var(--consus-ink);
+  padding: 9px;
+  font: inherit;
+  font-size: 13px;
+}
+.cba-table__reject button,
+.feature-checklist__reject button,
+.edit-proposal-view__reject button {
+  background: var(--consus-bg-subtle);
+  color: var(--consus-ink);
+  border: 1px solid var(--consus-line);
+  padding: 8px 14px;
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  cursor: pointer;
+  font-weight: 600;
+  font: inherit;
+}
+.cba-table__reject button:disabled,
+.feature-checklist__reject button:disabled,
+.edit-proposal-view__reject button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ============================================================= */
 /* Comment thread (REQ-04)                                       */
 /* ============================================================= */
 .comment-thread {
