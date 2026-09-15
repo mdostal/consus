@@ -9,15 +9,6 @@ Consus is fully standalone — the server has zero live network coupling to any 
 
 ---
 
-source. All routes are relative to the server's base URL (default `http://localhost:8722`,
-override via `PORT`/`HOST`).
-
-Consus is fully standalone — the server has zero live network coupling to any other system. It
-reads and writes only local SQLite (`server/db/`) and the local filesystem (doc scanner, epic/story
-YAML). The one integration seam is `HarnessTransport` (`server/harness/transport.ts`), used by the
-Proposals routes below: a generic `invoke(method, params)` call to whatever local command is
-configured, with no knowledge of what's on the other end.
-
 ## Health
 
 ### `GET /health`
