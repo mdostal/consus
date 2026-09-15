@@ -57,12 +57,12 @@ jobs:
       # MkDocs + Material theme — no separate Node dep; mkdocs.yml at repo root.
       - run: pip install mkdocs-material
       - run: mkdocs build
-        # Output: docs_site/  (configured in mkdocs.yml)
+        # Output: docs_site/  (configured in mkdocs.yml))
 
       - uses: actions/upload-artifact@v4
         with:
           name: docs-artifact
-          path: docs_site/
+          path: docs_site/)
           retention-days: 1
 
   # ── Job C: Merge both artifacts and deploy ────────────────────────────────

@@ -40,4 +40,4 @@ The core loop closes with a **shared-truth KB** — approved decisions and docs 
 - [API Reference](api/index.md) — full HTTP contract; a harness author can use Consus from this doc alone
 - [Agent Integration: Claude Code Skill](agent-integration/skill.md) — wire up a Claude Code session in one command
 - [Configuration](configuration.md) — environment variables and config files
-- [Architecture](concepts/architecture.md) — Fastify · SQLite · Vite + React · zero external coupling)
+- [Architecture](concepts/architecture.md) — Fastify · SQLite · Vite + React · zero external coupling))
