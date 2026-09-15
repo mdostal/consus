@@ -1,0 +1,71 @@
+/* Consus brand — Granary Indigo + Threshing Gold on Parchment */
+
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:wght@700&family=IBM+Plex+Mono:wght@400&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+/* Custom color tokens for Material theme */
+:root {
+  --md-primary-fg-color:        #362B6B; /* Granary Indigo */
+  --md-primary-fg-color--light: #4d4090;
+  --md-primary-fg-color--dark:  #241d4d;
+  --md-accent-fg-color:         #9C6316; /* Threshing Gold */
+  --md-default-bg-color:        #FAF7F0; /* Parchment */
+}
+
+[data-md-color-scheme="default"] {
+  --md-default-fg-color:        #46414F; /* Quern Charcoal */
+  --md-default-fg-color--light: #6b6575;
+  --md-default-bg-color:        #FAF7F0;
+  --md-code-bg-color:           #241d4d;
+  --md-code-fg-color:           #FAF7F0;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color:        #1a1530;
+  --md-accent-fg-color:         #c4882b;
+}
+
+/* Fraunces for all headings */
+h1, h2, h3,
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 700;
+}
+
+/* Warm body background */
+.md-main {
+  background-color: var(--md-default-bg-color);
+}
+
+/* Code blocks — dark surface with parchment text */
+.md-typeset code,
+.md-typeset pre {
+  background-color: #241d4d;
+  color: #FAF7F0;
+}
+
+/* Accent links in Threshing Gold */
+.md-typeset a {
+  color: #9C6316;
+}
+
+.md-typeset a:hover {
+  color: #7a4d10;
+}
+
+/* Nav header */
+.md-header {
+  background-color: #362B6B;
+}
+
+/* Site title font */
+.md-header__title {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 700;
+}
+
+/* Admonition accent */
+.md-typeset .admonition {
+  border-left-color: #9C6316;
+}
