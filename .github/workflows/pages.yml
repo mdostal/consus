@@ -17,30 +17,18 @@ concurrency:
 
 jobs:
 
-  # ── Job A: Build the project page ─────────────────────────────────────────
+  # ── Job A: Package the project page ───────────────────────────────────────
   build-page:
-    name: Build project page
+    name: Package project page
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-
-      - run: npm ci
-
-      # Vite outputs to dist-web/ (vite.config.ts: build.outDir = "../dist-web", root = "web").
-      # VITE_BASE_URL sets the asset base path to the GitHub Pages subpath.
-      - run: npm run build:web
-        env:
-          VITE_BASE_URL: /consus/
-
+      # www/ is hand-authored static HTML/CSS — no build step required.
       - uses: actions/upload-artifact@v4
         with:
           name: page-artifact
-          path: dist-web/
+          path: www/
           retention-days: 1
 
   # ── Job B: Build the docs site ────────────────────────────────────────────
