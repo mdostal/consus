@@ -1,0 +1,420 @@
+# Changelog
+
+## [Unreleased]
+
+## [0.17.2] - 2026-09-11
+
+### Changed
+
+- **Operator-confirmed brand-mark split** — the previous release swapped the masthead's brand
+  glyph from Abstract Mark to Monogram along with the dock/app icon and favicon; the operator
+  clarified the masthead should stay Abstract Mark (compact in-UI use), while the dock/app icon
+  and favicon stay Monogram (their actual selected logo direction). Two concepts, two surfaces,
+  both deliberate.
+
+## [0.17.1] - 2026-09-11
+
+### Fixed
+
+- **The masthead mark, app icon, and favicon used the wrong logo concept** — found live right
+  after `v0.17.0` shipped: the operator's real, recorded verdict on the brand decision was
+  Monogram (`{"kind":"concept_selected","conceptId":"monogram"}`), but `consus-phase30`'s
+  design-discussion substituted "Abstract Mark" instead, reasoning from a sub-recommendation in
+  the brand guide's own text rather than the operator's actual choice. All three surfaces
+  (`BrandMark.tsx`, the icon-generation script, `web/public/favicon.{svg,ico}`) now render the
+  real selected Monogram concept, verified via a real `cargo tauri build` + `.icns` inspection.
+- **Buttons had no hover, press, or visible-keyboard-focus feedback anywhere in the app** — a
+  single base-layer rule (`filter: brightness()`, works under any skin's actual button color)
+  now gives every button real interactive states, across all 4 skins at once.
+
+## [0.17.0] - 2026-09-11
+
+### Added
+
+- **The approved Consus brand is now wired into the real product** (`consus-phase30-brand-theme-integration`,
+  4 stories, directly following `consus-phase29`'s in-app brand decision):
+  - **A new "Granary" skin** — a 4th option alongside Drafting Table/Case Board/Harness, built from
+    the approved palette (Granary Indigo/Threshing Gold/Quern Charcoal/Parchment) with a real,
+    contrast-checked dark companion (every color verified >=4.5:1, not a literal inversion) and
+    self-hosted Fraunces + IBM Plex Sans (variable fonts, zero external font-CDN requests — stays
+    consistent with Consus's local-first policy). Granary is the default skin for **fresh installs
+    only** — an existing install's stored skin choice is never overridden.
+  - **The real brand mark in the masthead** — the approved Abstract Mark concept replaces the
+    placeholder "◈" glyph, Granary skin only; the other 3 skins keep their own decorative identity
+    unchanged. Mark fills use live `--consus-accent`/`--consus-bg` tokens rather than the source
+    SVG's static hex values, so it stays legible in both light and dark (the static color had only
+    1.4:1 contrast against Granary's dark background).
+  - **Real desktop app icons + a first-ever web favicon** — regenerated `app/src-tauri/icons/*`
+    from the Abstract Mark (replacing the old placeholder hub-and-spoke-on-indigo glyph), with the
+    generation script checked into the repo this time (`scripts/generate-brand-icon.py`) so it's
+    actually repeatable going forward. Verified via a real `cargo tauri build` and `.icns`
+    inspection, not just the source PNGs.
+  - **A full-surface visual QA pass, both themes** — walked every major surface (masthead, nav,
+    forms, the diagram canvas, KB, Docs, command palette) live. Found and fixed a real,
+    pre-existing, skin-agnostic gap along the way: 7 of 8 decision answer-shape renderers had never
+    had dedicated CSS since they first shipped, relying on bare browser defaults under every skin —
+    most visibly, `CbaTable`'s real `<table>` rendered as unstyled run-together text. Styled all
+    seven using the same token language the original `AnswerControl` already proved.
+
+## [0.16.2] - 2026-09-10
+
+### Fixed
+
+- **Registering the same repo path under two project names silently created duplicate decisions
+  forever** — found live right after the brand-decision-review feature shipped: this machine's own
+  `consus-projects.json` had `consus` and `work` both pointing at the same repo path, and every
+  scan synthesized a separate decision per project *name* (`decision:<project-name>:<file-path>`),
+  so the same brand decision showed up twice in the queue. `POST /api/projects` validated name
+  uniqueness but never path uniqueness. Now returns `409` naming the existing project when the
+  resolved path is already registered under a different name.
+
+### Changed
+
+- `docs/api-reference.md` — documented `GET`/`POST /api/surveys` and `GET /api/surveys/:id`
+  (previously shipped, undocumented), and the new path-uniqueness check on `POST /api/projects`.
+
+## [0.16.1] - 2026-09-10
+
+### Fixed
+
+- **Live app crash: blank screen the instant a non-`decision-request/v1` decision was opened** —
+  found live, immediately after shipping `consus-phase29-brand-decision-review`'s new
+  `concept-selection/v1` payload: `App.tsx`'s own `DecisionItem` interface had been typed as only
+  the original `decision-request/v1` shape this whole time, silently surviving seven more payload
+  types added across earlier phases because none of them had ever actually reached this exact
+  render path in a live session until the newly-synthesized brand decision did. The unguarded
+  `payload.options.find(...)` then threw `TypeError: Cannot read properties of undefined (reading
+  'find')` with no error boundary, unmounting the whole React tree. Fixed by widening the type to a
+  proper `AnyDecisionPayload` union and adding real `isDecisionRequest` narrowing at all three
+  unsafe access points; added a regression test carrying a concept-selection payload with no
+  `options` field, the same shape that crashed live.
+
+## [0.16.0] - 2026-09-10
+
+### Added
+
+- **Design/brand artifacts become real, decidable decisions in Consus** (`consus-phase29-brand-decision-review`,
+  4 dependency-tracked stories, grounded in a real gap hit live this session — Consus's first brand
+  system had to be reviewed and decided on entirely outside the app):
+  - **`.pHive/brand/` scan root** — mirrors the existing overview/design scan-root pattern, tagging
+    brand docs `phase: "brand"`, `epic: null` (repo-wide, like overview).
+  - **New generalized answer shape, `dostal:concept-selection/v1`** — "pick one of N named options,
+    each with a visual preview," deliberately not logo-specific so any future design decision of this
+    shape reuses it. Eighth payload type on the proven parser → `AnswerControl` → verdict pattern.
+  - **Isolated full-page HTML doc viewer** — `DocRenderer`'s existing markdown-parse path silently
+    mangles a genuine self-contained HTML page (fonts, styles, structure all stripped when injected
+    as `<div>` children). A new `<iframe srcDoc>`-based viewer renders `phase="brand"` docs correctly,
+    with a dedicated full-height layout and an "open in new tab" fallback. A new "Brand" section
+    surfaces alongside Overview in the docs UI.
+  - **Manifest-driven decision synthesis** — `.pHive/brand/logo-concepts.yaml` conforms to the new
+    payload's `concepts[]` shape; scanning a repo with this manifest present idempotently creates a
+    real, pending decision. Backfilled with the actual 5 logo concepts from this session's brand
+    guide (verified byte-for-byte against the source HTML) — the monogram decision is waiting in
+    Consus's own UI now, closing the loop the operator asked for directly.
+
+## [0.15.5] - 2026-09-08
+
+### Fixed
+
+- **Native folder picker was still fully blocked after the previous fix** — found three
+  independent, stacked causes by injecting real DOM clicks and raw IPC calls directly into the
+  webview: (1) the non-blocking `pick_folder()` call still needed to run on the main thread via
+  `AppHandle::run_on_main_thread`, not a command-handler thread; (2) Tauri v2 gates the app's own
+  commands through the same ACL as plugin commands — `invoke()` was rejected outright until
+  `build.rs` declared the command via `AppManifest`; (3) the capability only covered Tauri's
+  bundled local origin, but this app navigates to `http://127.0.0.1:<port>` once the sidecar is
+  healthy, so every capability-gated API was silently inert post-navigation — fixed by adding a
+  `remote` URL scope to the capability. Verified end-to-end: a real native panel now appears.
+
+## [0.15.4] - 2026-09-08
+
+### Fixed
+
+- **"Open in Finder…" silently hung instead of showing a dialog** — root cause: the native
+  folder picker called `blocking_pick_folder()`, whose own doc comment warns it deadlocks the
+  event loop when called off the main thread (exactly what a Tauri command handler does). Fixed
+  by switching to the non-blocking `pick_folder(callback)` API bridged to the command's async
+  return via a oneshot channel — confirmed a real native panel now appears. Also drops the
+  now-unused `@tauri-apps/plugin-dialog` package and `dialog:allow-open` capability grant, since
+  the picker now calls this app's own command directly instead of the plugin's JS API.
+
+## [0.15.3] - 2026-09-07
+
+### Fixed
+
+- **Recording a verdict 404'd on nearly every real decision** — found live: decision ids are
+  shaped `decision:<repo>:<file_path>`, and a file path almost always contains `/`. Several fetch
+  call sites (verdict submission, comments, audit trail, attachments) interpolated the raw,
+  un-encoded id into the URL, which breaks the server's single-segment route into extra path
+  segments and 404s. Fixed every site to `encodeURIComponent` the id first.
+
+## [0.15.2] - 2026-09-07
+
+### Fixed
+
+- **Project registration silently did nothing** — found live: none of `AddProjectForm`'s
+  non-typed path sources (discovered-repo select, in-app directory browser) ever filled the
+  Name field, only path. The submit button stays disabled until both fields are non-empty, so
+  picking a repo and clicking "Add project" did nothing, with no visible explanation. Fixed by
+  auto-filling Name from the picked source (the candidate's own name, or a sanitized folder
+  basename) whenever Name is still empty, without ever overwriting a manually-typed name.
+
+### Added
+
+- **Native "Open in Finder…" folder picker** on the desktop app — Tauri's own dialog (already a
+  dependency since `consus-phase26-desktop-app`, now wired on the JS side), alongside the
+  existing in-app directory browser, which remains the fallback in plain-browser dev mode.
+
+## [0.15.1] - 2026-09-07
+
+### Fixed
+
+- **First-run onboarding dead end** — found live on a freshly-installed `Consus.app`: the
+  onboarding screen's only action was a button hardcoded to `POST /api/projects/consus/ingest`,
+  a pre-`consus-phase25-project-registration-ux` dev-mode assumption. A packaged install starts
+  with an empty project registry, so the button 404'd with no recourse. Now branches on whether
+  any project is registered: zero projects renders the existing `AddProjectForm` (type a path,
+  pick a discovered candidate, or browse the filesystem interactively) instead of assuming a
+  project named "consus" exists; the one-already-registered case keeps the one-click ingest flow,
+  scoped to that project's real name instead of a hardcoded literal.
+
+## [0.15.0] - 2026-09-06
+
+### Added
+
+- **`consus-rich-decisions`:** three structural gaps in `dostal:decision-request/v1` closed via a
+  5-story epic (issues #122–#126, PRs #129–#133):
+  - **Structured research inline with options** — `ResearchSection` interface (`{ title, body,
+    sources? }`) added to both `DecisionPayload` (server parser + web types) and
+    `FeatureSelectionPayload`. `DecisionCard` renders research sections as collapsible `<details>`
+    panels between the recommendation and the options list; sources render as a `<ul>` beneath each
+    body. Fully optional and backward-compatible (no existing payloads break).
+  - **Feature-selection checklist** — `dostal:feature-selection/v1` is now a first-class parallel
+    payload type alongside `decision-request/v1`. `FeatureSelectionPayload` carries an ordered
+    `features` array (`{ id, name, description, default? }`). `POST /api/decisions` accepts and
+    validates it (≥1 feature required). `AnswerControl` dispatches to a new `FeatureChecklist`
+    component when `payload.version === "dostal:feature-selection/v1"`: checkboxes pre-seeded from
+    `default`, a live "N selected" badge, Confirm (emits `{ kind: "features_selected", selected }`
+    verdict) and Reject buttons. `verdictSummary` in interactions.ts handles the new kind.
+  - **Multi-question surveys** — `surveys` table + nullable `survey_id` FK on `items` (additive
+    migration, no existing rows touched). Four new routes: `POST /api/surveys` (create),
+    `GET /api/surveys/:id` (fetch with items), `POST /api/surveys/:id/items` (add question),
+    `GET /api/surveys` (list). `SurveyView` stepped UI: one question per screen, back/next
+    navigation, progress indicator (`Question N of M`), submit on the final step.
+
+- **Register a new project from the API/UI** (`POST /api/projects`, an `AddProjectForm` in the
+  Projects tab): names a project, points it at a repo path on disk, persists it to
+  `.pHive/consus-projects.json`, and runs an immediate scan.
+- **`consus-phase25-project-registration-ux`:** three real gaps found by live-testing the above —
+  selecting a project surfaced no way to see where it actually lives on disk, the add-project
+  button was completely unstyled (zero CSS rule targeted it), and there was no way to find a repo
+  to register beyond typing its exact absolute path from memory. Fixed via a fully planned +
+  executed epic (`/plan` → adversarial `/grill` → `/execute`, 5 dependency-tracked stories):
+  `GET /api/projects` now returns each project's `paths`, shown as a labeled `Project path` field
+  when selected; the add-project submit button now matches the app's existing accent-fill
+  convention (`.diagram-view__header button`) across all 3 skins; a new
+  `GET /api/fs/list?path=` (generic, loopback-only, one-level directory listing) backs both a
+  zero-config `GET /api/projects/discover` (auto-surfaces sibling repos of already-registered
+  projects, plus an optional `CONSUS_DISCOVERY_ROOTS` env var) and a new interactive
+  `DirectoryBrowser` component — navigate from the home directory, breadcrumb back up, select any
+  directory regardless of whether it's repo-flagged. All three path-filling methods (manual entry,
+  discovered-candidates select, browser) are additive; none is a hard requirement.
+- **`Consus.app` — a native macOS desktop shell** (`consus-phase26-desktop-app`, 6 dependency-tracked
+  stories, planned and built by directly reading Heimdall's real, shipped `app/src-tauri/`
+  implementation and adapting it, not reinventing it): a Tauri v2 app that spawns Consus's own
+  compiled server as a background sidecar (spawn/health-check-via-`GET /health`/idempotent kill
+  across every quit path, login-shell `PATH` capture, an OS-assigned free port), a menu-bar tray
+  (Open Consus / Check for Updates… / Launch at Login / Quit), a single-instance guard so a second
+  launch focuses the existing window instead of colliding on the shared app-local sqlite file,
+  close-to-tray window behavior, a minimal app icon set, a real `cargo tauri build` release
+  packaging pipeline that stages both `dist-server/` and `dist-web/` into the bundle (the one place
+  Consus's real two-artifact build genuinely diverges from Heimdall's single-artifact one), and a
+  background update checker against this repo's own GitHub releases. Runs with its own fresh,
+  empty state under `~/Library/Application Support/com.mdostal.consus/` — never the operator's live
+  decisions data — so the operator registers projects themselves on first launch.
+- **Feature-scoped doc browsing and review** (`consus-phase27-feature-doc-review-ui`, 5
+  dependency-tracked stories, grounded in a live research pass over the real schema/UI/data
+  before design): the flat repo→phase doc list is replaced by two real groupings — per-feature
+  (a `FeatureBrowser` list + `FeatureDetailView` showing every doc for one epic together,
+  reusing the existing `DocRenderer`) and per-overview (`README.md`/`VISION.md`/root `docs/*.md`,
+  now scanned into `doc_index` for the first time as a distinct `phase: "overview"` bucket — they
+  were never indexed at all before this). Docs can now be approved, denied, or have a change
+  proposed directly from the feature view, firing back through the same `POST /api/proposals`
+  mechanism already proven for diagrams and events — closing a real gap (`App.tsx`'s own prior
+  comment: docs were "Read-only here (no propose-change wiring)"). Also fixes a real data-hygiene
+  bug found during research: `GET /api/docs/features` now excludes repos no longer in the active
+  project registry (found live: 76 orphaned docs across 29 epics from a deregistered repo).
+
+- **Decision/survey interaction completeness, wireframe visibility, and rendered diffs**
+  (`consus-phase28-interaction-completeness`, 5 dependency-tracked stories, grounded in a deep-dive
+  research pass against `VISION.md` that also caught and fixed a real `dev`/`main` divergence — see
+  below):
+  - **Attachment image previews** — `AttachmentItem` now renders an inline `<img>` thumbnail for
+    `image/*` attachments (the server already served them with `Content-Disposition: inline`; the
+    frontend never used it), falling back to the existing extension pill on load failure.
+  - **Rendered visual diffs** — a single shared `VisualDiff` component (`web/src/features/diff/`)
+    renders add/remove/change/move rows with one consistent visual language, used both for a doc
+    section's live colored diff preview while editing (`DocRenderer`) and for the diagram
+    changeset panel (`DiagramChangeset`, covering both `DiagramView` and `ArchitectureDiagramView`).
+    Both flows already computed diff data purely to embed in `POST /api/proposals`; neither had ever
+    rendered it visually before this.
+  - **`.pHive/design/` wireframe scanning** — a fourth doc-scanner root (mirroring phase27's
+    overview-scan pattern) indexes a repo's Hive `/design`-skill wireframe topics into `doc_index`
+    (`phase: "design"`), folding into `FeatureBrowser`/`FeatureDetailView` as a "Design" badge
+    rather than a separate nav item. A new `GET /api/design-assets` route (mirroring
+    `attachments.ts`'s safety posture: extension allowlist, server-derived Content-Type, path
+    resolution that rejects both deep traversal and the sibling-directory-prefix gap) serves the
+    wireframe images a design doc references — previously invisible to Consus entirely.
+  - **Five new/completed decision answer shapes** — the classifier already emitted `edit`/`cba`
+    labels with no renderer (falling back to the generic options UI); added real ones
+    (`dostal:edit-proposal/v1` diff-styled proposed-change view, `dostal:cba/v1` structured
+    cost/benefit table). Also added three previously-missing interaction types:
+    `dostal:free-text/v1` (open-ended response), `dostal:rating/v1` (numeric scale), and
+    `dostal:ranking/v1` (drag-to-reorder, with an accessible up/down-button fallback). All five
+    follow the same parser-validates → `AnswerControl`-dispatches → verdict-recorded pattern
+    already proven by `decision-request/v1` and `feature-selection/v1`.
+  - True sequential/gated survey stepping and a Consus-native quorum/agent-voting answer shape were
+    explicitly scoped out — quorum in particular is intended as a future thin external
+    approval-middleware API another system calls into, not an in-app feature.
+  - **Pre-flight PR reconciliation:** found that `main` had accrued a mature decisions/survey
+    feature stream (`SurveyView`, survey grouping, `feature-selection/v1`, attachments, research
+    sections) via a series of direct-to-main PRs that never flowed back through `dev`, while `dev`'s
+    own tip held an independent, functionally-redundant reimplementation of the same
+    `FeatureChecklist` feature built against stale code. Reconciled via a real merge (`main` → a
+    branch → `dev`, no rebase, main's versions kept as the verified superset), plus retargeted and
+    merged a stray PR that had been wrongly opened straight against `main`. The merge itself
+    introduced two silent semantic breaks (two independent fixes for the same bug landing on
+    non-conflicting lines: a variable referenced before its declaration in `routes/projects.ts`, and
+    a duplicated early-return in `AnswerControl.tsx` that was a genuine conditional-hooks-call
+    violation) — both caught via full build+test and fixed directly.
+
+### Changed
+
+- **`consus-phase26-desktop-app` release finalization.** Applied the epic's planned `minor` version
+  bump (`0.12.0` → `0.13.0`) and kept `package.json`, `app/src-tauri/tauri.conf.json`, and
+  `app/src-tauri/Cargo.toml` in lockstep.
+- **`consus-phase27-feature-doc-review-ui` release finalization.** Applied the epic's planned
+  `minor` version bump (`0.13.0` → `0.14.0`) and kept `package.json`, `app/src-tauri/tauri.conf.json`,
+  and `app/src-tauri/Cargo.toml` in lockstep.
+- **`consus-phase28-interaction-completeness` release finalization.** Applied the epic's planned
+  `minor` version bump (`0.14.0` → `0.15.0`) and kept `package.json`, `app/src-tauri/tauri.conf.json`,
+  and `app/src-tauri/Cargo.toml` in lockstep.
+
+## [0.12.0] - 2026-08-19
+
+### Added
+
+- **OSS release readiness:** LICENSE (MIT) + full `package.json` metadata (license/author/repository/homepage/bugs); CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md.
+- **`consus-phase23-decision-attachments`:** file attachments on decision items — attach a screenshot, PDF, or exported doc directly to a decision. `POST/GET /api/items/:id/attachments`, `GET/DELETE /api/attachments/:id`, local-disk storage under `.pHive/attachments/` (override via `CONSUS_ATTACHMENTS_DIR`). Drag-drop/file-picker upload, list with previews, delete gated behind a real confirmation step — all wired into the decision detail view. Ported and adapted from a complete, standalone-compatible capability found on a stale pre-strip branch (`feat/PAN-7819`) that was never merged before the Multica/Minerva coupling strip — re-derived against this build's current schema/conventions, not cherry-picked.
+- **`consus-phase24-branch-level-surfacing`:** branch-level decision surfacing and doc-diff-vs-main, git-local only (no GitHub API, no auto-fetch — zero new external coupling). A branch picker in the Projects tab scopes the decisions list to a feature branch's own open decisions (`GET /api/decisions?branch=`, `POST /api/projects/:project/ingest?ref=`); an inline "view diff" action shows what a doc actually changed relative to the project's real default branch (`GET /api/docs/diff`, default branch resolved from `origin/HEAD`, never hardcoded to `main`). New `server/adapters/doc-scanner/git-ref.ts` shells out to `git` via `execFileSync` with argument arrays only.
+
+### Fixed
+
+- Scrubbed a personal Tailscale IP + SSH username committed across 7 planning/docs files; deleted an orphaned, un-stripped duplicate `docs/VISION.md` still describing live pre-strip coupling; fixed stale v0.9.0 version markers and a factually wrong `docs/api-reference.md` claim that `decision_type`/`triage_bucket` weren't wired into any route.
+- **Security (found via a post-ship adversarial review of the two features above):** a pre-existing path-traversal gap in `GET /api/docs/content` (no boundary check on the requested path — could read arbitrary files outside the repo) is now closed; the client-supplied attachment `Content-Type` was stored and replayed verbatim, letting a spoofed multipart type on an otherwise-allowlisted file execute as stored XSS when its raw download URL was opened directly — the served type is now always derived server-side from the file's extension, non-image types are forced to download rather than render inline, and `X-Content-Type-Options: nosniff` is set on every attachment response; deleting an attachment now actually frees its file from disk (the storage layer's own delete function existed and was tested, but was never called from the route).
+
+## [0.11.0] - 2026-08-18
+
+### Added
+
+- **`consus-phase21-codex-cli-support`:** `npm run agent:init`/`agent:status` now also install Consus's agent-facing skill to Codex CLI (`$CODEX_HOME/skills/consus/SKILL.md`, defaulting to `~/.codex/skills/consus/SKILL.md`), alongside the existing Claude Code support — a real, primary-source-confirmed mechanism (Codex's own bundled `skill-installer` skill documents this exact convention), not guessed at. A new `--harness claude`/`--harness codex` flag narrows a run to one harness; the other is genuinely never even read when narrowed, not just skipped for writing.
+
+### Fixed
+
+- **`consus-phase20-diagram-editor-a11y`:** three real, verified accessibility findings from a hands-on audit of the diagram editor and command palette. The diagram editor's node move and edge delete are now keyboard-accessible (arrow keys on a focused node, Enter/Space on a focused edge — both reusing the exact same change-producing logic the pointer paths already use). The command palette's focus trap is now genuine — `role="dialog" aria-modal="true"` previously implemented no real containment (live-reproduced: Tab escaped to an unrelated page element); it now traps Tab/Shift+Tab with full wrap and restores focus to whatever actually had it before opening. The Harness skin's terminal cursor blink now respects `prefers-reduced-motion` (a static, still-visible cursor instead of an unconditional infinite blink).
+
+## [0.10.0] - 2026-08-18
+
+### Added
+
+- **`consus-phase19-agent-harness-onboarding`:** `npm run agent:init`/`agent:status` — a real install action for Consus's agent-facing skill, dropping `skills/consus/SKILL.md` into `~/.claude/skills/consus/SKILL.md` (Claude Code's real skill-discovery location) so any Claude Code session on the machine can use it, regardless of which repo it's running from. Idempotent (a real byte-level content comparison, not existence/mtime), never creates `~/.claude/` itself if absent, reports three distinct outcomes (installed / already up to date / updated). A new `HarnessConnectBanner` in the app shell surfaces this prominently on every tab, collapsible to a small reopenable affordance whose state persists across reloads. Scoped to Claude Code only for v1.
+
+### Fixed
+
+- **The production server now serves its own built dashboard.** `GET /` was previously a bare 404 — no static-file-serving route existed anywhere, so only the JSON API was reachable in production; every shipped frontend feature was unreachable through the actual server. Fixes #105.
+
+### Changed
+
+- README, VISION, `docs/api-reference.md`, and `skills/consus/SKILL.md` brought current with real v0.9.0 capability — all had drifted behind real shipped code (stale read-only-diagram framing, a v0.6.0 version marker, missing routes, and leftover references to the pre-strip Pantheon/Minerva coupling). Removed the `mermaid` npm dependency and its own now-dead `mermaidTheme.ts` helper, both fully unused since consus-phase18 replaced Mermaid rendering with React Flow.
+
+## [0.9.0] - 2026-08-18
+
+### Added
+
+- **`consus-phase18-diagram-editor-and-skin-system`:** diagrams (both the epic/story cascade and the architecture diagram) are now directly editable — drag nodes, edit labels, add/remove nodes, connect or delete edges (click-to-snip or multi-select) — with a real structured changeset and a "Fire to harness" action that reuses the existing `POST /api/proposals` mechanism unchanged. Powered by a real editable canvas (`@xyflow/react`), replacing the previous read-only Mermaid rendering. Alongside this, Consus gets its first-ever manual theme control (light/dark/system — previously OS-preference-only, with no override) and a new, fully independent visual-skin system with three real, switchable skins: Drafting Table (blueprint/drafting-table), Case Board (corkboard/case-file), and Harness (terminal/IDE) — each with genuine per-skin decoration, not just recolored chrome. A collapsible, read-only Mermaid source preview (regenerated live, never a second editable surface) and a universal ⌘K command palette with keyboard shortcuts round out the pass. Design synthesized from three independent, blind design-agent mockups plus a real cost-benefit analysis on the editing library (both artifacts live in the epic's `docs/`).
+
+## [0.8.0] - 2026-08-17
+
+### Added
+
+- **`consus-phase15-wire-decision-classifier`:** `classifyItem` (the existing, fully tested decision-type + triage-bucket classifier) is now actually called — previously no route invoked it, so `decision_type`/`triage_bucket` were always `null` in every API response. Wired into `POST /api/decisions` (classify on create), `GET /api/decisions` (opportunistic backfill for any row whose `decision_type` is still `null`, leaving already-classified rows untouched), and the `decision_needed` event-detection pass (classifies inline, including on content-drift re-upserts). No changes to the classifier's own logic.
+- **`consus-phase16-two-pane-decisions-layout`:** the Decisions tab is now a two-pane layout — a scannable left list and an independently-scrolling right detail panel — instead of one long flat page-scrolling list. The current selection is addressable via `?selected=<id>` on the URL (a hand-rolled hook, no router dependency added). The detail pane reuses the existing, richer `DecisionView` unchanged. Missing/unknown `?selected=` falls back to the first open decision, then first decided, then an empty state, without rewriting the URL; selection persists across a verdict-triggered reload. Collapses to a single column below 768px.
+- **`consus-phase17-architecture-diagram-endpoint`:** a new `GET /api/diagrams/:repo/architecture` renders a repo's actual directory structure as a Mermaid diagram (top-level + a richer depth-2 view folding in file paths mentioned in planning docs), distinct from the existing epic/story dependency cascade at `GET /api/diagrams` (unchanged). Generated fresh on every request — no cache table, given the bounded/capped local scan and this project's single-operator scale. Rendered via a new `ArchitectureDiagramView` alongside the existing diagram/docs views on a project's page.
+
+### Fixed
+
+- **The HTTP server's bind host is now configurable via `HOST`** (default `127.0.0.1`, unchanged for standalone/local-dev). Previously hardcoded, which meant a containerized deploy's `127.0.0.1` bind was unreachable from outside the container — confirmed live via Pantheon's containerized deploy testing. Fixes #100.
+
+## [0.7.0] - 2026-08-16
+
+### Added
+
+- **`consus-phase13-multirepo-doc-resolution` (REQ-20):** a `gitdocs` adapter (`extractDocCandidates` -> `resolveInRepos` -> `readGitDoc`) resolves a doc path across every configured repo, not just the one currently open, and can read it at a specific git ref via `git show` (`execFileSync` argument-array form — no shell, immune to metacharacter injection). `GET /api/docs/content` gains an optional `ref` param; a new `GET /api/docs/resolve` finds which configured repo a text reference actually points at. `resolveInRepos`'s path-traversal boundary check was independently code-reviewed (not just test-verified) before merging.
+- **`consus-phase14-multirepo-event-pipeline`:** a new `POST /api/projects/scan-all` sweeps every configured project in one action (per-project ingest stays available alongside it). Every scan — all-projects or single-project — now runs two detection passes: `doc_changed` (a doc's content changed or is new) and `decision_needed` (an unresolved decision-request block). Each hit becomes a reviewable `events` row — deliberately a new table, separate from `proposals` (a proposal always means "fired at a harness"; an event is a pre-decision review-queue item that may never become one) — carrying a diff and a composed prompt (diff + surrounding doc content + area context), built once at detection time. Events have a manual status lifecycle (`new -> in_progress -> done/dismissed`), with `done`/`dismissed` automatically archived out of the active queue (`GET /api/events/history` surfaces the archive). An event can optionally graduate into a real proposal (`POST /api/events/:id/propose`, reusing the existing propose-a-change mechanism unmodified) — the seam a future Pantheon L2 ticket-adapter would consume for automatic dispatch in paired mode, deliberately not built here. Also ships a new Events tab (filters, sort, scan-all button, archived view, a purpose-built propose composer) and cross-repo doc search (`GET /api/docs/search`, path + live-content match, plus a search box on the Docs tab).
+- A support section in `README.md`.
+
+## [0.6.0] - 2026-08-15
+
+### Changed
+
+- **Consus is now fully standalone.** Removed every adapter, transport, and client class tied to a specific external system (Multica, Minerva, Auriga, Vesta, Votem) — `server/adapters/` now contains only the local `doc-scanner`. Consus's server has zero live network coupling to anything outside itself; it reads and writes only local SQLite + the filesystem. The generic `HarnessTransport` seam (`server/harness/transport.ts`) is the sole, optional, system-agnostic integration point for the propose-a-change mechanism — it defaults to a no-op. The prior Multica/Minerva-coupled work is preserved for reference on `archive/pantheon-coupled-consus`.
+- `dev` and `main` were reconciled after diverging into two incompatible histories (a separate, more deeply Multica/Minerva-coupled development line had accumulated on `dev`). That line is preserved on `archive/dev-2026-08-11-pantheon-coupled`; `dev` now tracks `main`'s standalone lineage going forward, with the conventional feature-branch → `dev` → `main` flow.
+
+### Added
+
+- **`consus-phase6-standalone-onboarding`:** the entire "get started" loop, working standalone for the first time. `POST /api/projects/:project/ingest` wires the existing (previously untriggered) doc-scanner to an on-demand HTTP route; the per-project view now shows a project's diagrams, docs, and KB entries together with an "Ingest repo" action; a first-run onboarding screen replaces the blank tab shell on a fresh install.
+- **`consus-phase7-decision-push-endpoint`:** `POST /api/decisions` — a generic endpoint so any local agent/harness can push a decision or CBA (cost-benefit analysis) into Consus's queue, using the same `decision-request/v1` contract Consus already parses. Documented in `skills/consus/SKILL.md` and `docs/api-reference.md`.
+- **`consus-phase8-doc-editor-fire-action`:** in-place doc editing — an edit/view toggle plus a "Fire to harness" action that computes the diff automatically, replacing the old hand-typed raw-diff box. Reuses the existing `POST /api/proposals` endpoint unchanged.
+- **`consus-phase9-mermaid-diagram-engine`:** the epic/story diagram cascade now renders as a real Mermaid graph (client-side, dynamically imported) instead of a plain nested list, with click-to-detail on individual story nodes.
+- **`consus-phase10-decision-parser-tiers`:** decisions extracted heuristically from free-form prose (rather than a structured fenced block) are now distinguishable from structured ones via an `extractionTier` field, and route to a lower-confidence triage bucket (`agent_task` instead of `open_question`) so a heuristic guess isn't surfaced to a human with the same weight as a deliberate decision.
+- **`consus-phase11-draft-submit-separation`:** KB entries can now be saved as a draft (`PUT /api/kb-entries/:id/draft`) without publishing, then explicitly promoted (`POST /api/kb-entries/:id/submit`) through the existing publish path — "Save ≠ Submit." Also fixes a real bug found along the way: KB search had no filter excluding draft content, which would have leaked unpublished drafts into search results.
+- **`consus-phase12-sectional-diff-view`:** doc editing is now section-scoped (split at markdown heading boundaries) — editing or firing one section can never touch another section's in-progress edit.
+- A living planning backlog (`.pHive/planning/backlog.md`) and refreshed vision doc (`.pHive/planning/vision-and-way-of-working.md`), grounded in a real inventory across every prior Delphi/Consus development line, distinguishing what's actually shipped from what's still open.
+
+### Added
+
+- **Phase 4 (`consus-phase4-close-the-loop`, REQ-16 — fire-agents-to-iterate):** `POST /api/decisions/:key/iterate` ports Delphi's real fire-agent-to-iterate feature — composes a comment with an `[@agentName](mention://agent/<id>)` mention line (the real Multica dispatch trigger, omitted entirely without both `agentId`+`agentName`), posts it through the existing single Multica-write path, optionally flips the issue to `in_progress`, and logs every request to a local traceability log (`GET /api/log`, filterable by issue). A "Fire agent to iterate" trigger and a Versions view (iterate-request history alongside the original content — not a diff UI, that's separate scope) are wired into the decision surface.
+- `HttpMulticaClient` gained `getIssue()`/`updateIssueStatus()` (CLI-based, same as `listIssues()`). `writeCommentAndCache()` gained an optional `cacheItemId`, fixing a real correctness gap where the Multica-side write and the local cache row needed different ids.
+
+### Changed
+
+- **`consus-phase4-close-the-loop` release finalization.** Applied the planned `minor` version bump (`0.4.0` → `0.5.0`) for this epic's completion.
+
+### Added
+
+- **Phase 5 (`consus-phase5-live-and-interactive`):** the standalone loop is now real, not empty. `GET /api/decisions` syncs live from Multica on every read (classified via the existing `decision-request/v1` contract-first classifier, no per-item allowlists); the pre-cutover Multica archive (45 audit entries + 12 KB entries) is preserved and backfilled via a generic, reusable importer; KB entries can be grouped into collections (`marketing`/`boundary-decisions`/`plans`/`artifacts`/`general`), with tabs in the KB backlog browser.
+- A generalized **propose-a-change-and-fire-to-harness** mechanism (`POST /api/proposals`, `POST /api/proposals/:id/result`, `GET /api/proposals`): Consus never writes `.pHive`/repo content directly — a diff + description is dispatched via the Minerva adapter, a harness applies it, and the result comes back as an audit entry. One mechanism shared by diagrams and docs.
+- `GET /api/diagrams?repo=` renders each repo's real epic/story dependency tree from `.pHive/epics/` on disk, with an in-app viewer and a propose-a-change action.
+- Doc viewing gained a propose-a-change mode (`DocRenderer`), reusing the same UI shape as diagrams.
+- A shared audit-trail panel (`GET /api/items/:id/audit-trail`) merges plain decision history with fired proposals (pending/applied/failed) into one timeline, used identically across decisions, diagrams, and docs.
+- 10 stories, live-verified end to end against real Multica/archive data throughout (not just unit tests).
+
+### Changed
+
+- **`consus-phase5-live-and-interactive` release finalization.** Applied the planned `minor` version bump (`0.3.0` → `0.4.0`) for this epic's completion.
+
+## [0.3.0] - 2026-07-25
+
+### Changed
+
+- **`consus-phase2-survey-kb-api` release finalization.** Applied the planned `minor` version bump (`0.2.0` → `0.3.0`) for this epic's completion.
+- Corrected the `decision-request/v1` contract in place to match the real, field-precise spec found in `mdostal/delphi` (options A-Z + tradeoffs + required `recommended`, four-verdict model) — see the `fix:` commit on `consus-v1-core-loop`.
+
+### Added
+
+- **Phase 2 (`consus-phase2-survey-kb-api`):** Minerva survey batching (REQ-26 — N related questions grouped with batch-completion progress), knowledgebase project scoping + cross-project view (REQ-27 — closes PRD GAP-01), a documented API reference + agent-harness skill definition (REQ-28), and `GET /api/decisions` (a real gap closed while writing that documentation — there was no way to list open decisions via HTTP at all).
+- Consus v1 core loop: server + SPA + SQLite scaffold, Doc Scanner (`/api/docs`), KB store with audit log + versioning (decided-store amnesia fix), Minerva Question bridge, Multica comment read-write, Auriga read-only tracker state, `decision-request/v1` contract + deterministic renderer, decision-type taxonomy + triage buckets, Vesta policy adapter, votem quorum router, shared theme-aware `DecisionCard`, comment threads, doc browser + markdown rendering, Artifact linking, KB backlog search/filter/edit, and a living-docs overlay backend (docs + comments sources; idea board flagged as a follow-up).
+- 23 stories total across two epics, 109 passing tests (TDD/BDD throughout).
+
+<!-- pant-24 CD live test: harmless change to verify Pantheon end-to-end deploy loop -->
+<!-- pant-24 CD live test run 2: verifying full deploy cycle -->
