@@ -4,20 +4,20 @@ site_description: Documentation for Consus — the architect tool for any repo
 repo_url: https://github.com/mdostal/consus
 repo_name: mdostal/consus
 docs_dir: docs
-site_dir: docs_site
+site_dir: docs_site)
 
 theme:
   name: material
   palette:
     - scheme: default
       primary: custom
-      accent: custom
+      accent: custom)
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - scheme: slate
       primary: custom
-      accent: custom
+      accent: custom)
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -77,4 +77,4 @@ nav:
   - Contributing: contributing.md
   - Project:
     - Vision: project/vision.md
-    - Changelog: project/changelog.md
+    - Changelog: project/changelog.md)
