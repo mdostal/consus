@@ -1,0 +1,97 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Artifact-based Pages deploy — no gh-pages branch, no git push.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false   # never kill a deploy mid-flight; queue instead
+
+jobs:
+
+  # ── Job A: Build the project page ─────────────────────────────────────────
+  build-page:
+    name: Build project page
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # Vite outputs to dist-web/ (vite.config.ts: build.outDir = "../dist-web", root = "web").
+      # VITE_BASE_URL sets the asset base path to the GitHub Pages subpath.
+      - run: npm run build:web
+        env:
+          VITE_BASE_URL: /consus/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: page-artifact
+          path: dist-web/
+          retention-days: 1
+
+  # ── Job B: Build the docs site ────────────────────────────────────────────
+  build-docs:
+    name: Build docs site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # MkDocs + Material theme — no separate Node dep; mkdocs.yml at repo root.
+      - run: pip install mkdocs-material
+      - run: mkdocs build
+        # Output: docs_site/  (configured in mkdocs.yml)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-artifact
+          path: docs_site/
+          retention-days: 1
+
+  # ── Job C: Merge both artifacts and deploy ────────────────────────────────
+  deploy:
+    name: Merge and deploy
+    needs: [build-page, build-docs]
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download project page
+        uses: actions/download-artifact@v4
+        with:
+          name: page-artifact
+          path: merged/            # page at root → mdostal.github.io/consus/
+
+      - name: Download docs site
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-artifact
+          path: merged/docs/       # docs at /docs/ → mdostal.github.io/consus/docs/
+
+      # Single tarball from the merged/ tree — this is what GitHub Pages deploys.
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: merged/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
