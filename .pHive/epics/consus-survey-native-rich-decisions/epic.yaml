@@ -1,0 +1,55 @@
+name: consus-survey-native-rich-decisions
+title: Wire attachments, artifact-links, and comments into the real survey flow
+description: >
+  Real, narrow gap found live (2026-09-24) while dogfooding a real decision
+  (flayr-super-admin-nav-redesign, firefly-events/flayr): the rich per-item
+  interaction surface a standalone decision already gets -- attachments
+  (AttachmentsPanel), comments (DecisionView's submitComment/loadComments),
+  and artifact-links (a real API + a real UI component, ArtifactLink.tsx --
+  but that component only mounted in the Docs feature) -- was never composed
+  into SurveyView's per-member DecisionCard rendering. Confirmed via direct
+  read of SurveyView.tsx: DecisionCard is called with only question/payload/
+  status/onVerdict, nothing else. So a standalone decision is rich; a survey
+  member is bare question+verdict-buttons. Operator's own words after seeing
+  a one-off external-artifact workaround stand in for this: "THIS IS WHAT
+  CONSUS HAS TO BE!!! ... the consus section should be a whole survey, many
+  questions, lots of context back and forth, interactive artifacts and demos
+  and choices." Surveys, DecisionCard, and all three panels already exist and
+  work independently -- this epic composes them, it does not invent new
+  mechanisms. Explicitly NOT in scope (per consus-phase28's own prior,
+  operator-confirmed deferral): true sequential/gated survey stepping and
+  Consus-native quorum -- neither touched here.
+target_codebase: /Users/mdostal/Documents/work/pantheon/consus
+methodology: classic
+version_bump: minor
+sidecar_retention: transient
+
+git_flow:
+  base_branch: dev
+  branch_strategy: per-story
+
+stories:
+  - id: s1-artifact-link-shared-component
+    title: Generalize ArtifactLink out of features/docs/ so Decisions can use it too
+    complexity: low
+    depends_on: []
+  - id: s2-artifact-links-and-attachments-in-decision-view
+    title: Mount ArtifactLink + AttachmentsPanel in the single-decision DecisionView
+    complexity: low
+    depends_on: [s1-artifact-link-shared-component]
+  - id: s3-rich-panels-in-survey-member-cards
+    title: Mount AttachmentsPanel + ArtifactLink per survey member inside SurveyView
+    complexity: medium
+    depends_on: [s2-artifact-links-and-attachments-in-decision-view]
+  - id: s4-comments-in-survey-member-cards
+    title: Extend per-decision commenting to survey members
+    complexity: medium
+    depends_on: [s3-rich-panels-in-survey-member-cards]
+  - id: s5-survey-creation-ui
+    title: Real "New Survey" flow in the web app (create + group decisions, no raw API calls)
+    complexity: medium
+    depends_on: []
+  - id: s6-dogfood-flayr-nav-survey
+    title: "Dogfood: convert the real flayr-super-admin-nav-redesign decision into a 5-member survey"
+    complexity: low
+    depends_on: [s3-rich-panels-in-survey-member-cards, s4-comments-in-survey-member-cards, s5-survey-creation-ui]
