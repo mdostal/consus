@@ -770,12 +770,20 @@ button:focus-visible {
   border: 1px solid var(--consus-line);
   border-radius: calc(10px * var(--consus-radius-scale, 1));
   background: var(--consus-bg);
+  overflow: hidden;
 }
 .concept-selection__preview {
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 110px;
+  width: 100%;
+  overflow: hidden;
+}
+.concept-selection__preview svg {
+  width: 100%;
+  height: auto;
+  max-height: 110px;
 }
 .concept-selection__concept-name {
   font-weight: 600;
