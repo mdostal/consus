@@ -1,0 +1,62 @@
+id: s5-survey-creation-ui
+epic: consus-survey-native-rich-decisions
+title: Real "New Survey" flow in the web app -- create + group decisions, no raw API calls
+status: pending
+complexity: medium
+methodology: classic
+depends_on: []
+
+description: |
+  server/routes/surveys.ts is a real, complete, already-working API
+  (POST /api/surveys creates a named container and can assign existing
+  decision_ids to it; GET /api/surveys lists real answered/total counts).
+  There is no UI for any of this today -- creating a survey this session
+  required raw curl calls, exactly the kind of workaround this whole epic
+  exists to make unnecessary. This story is independent of s1-s4 (different
+  part of the app: survey creation, not per-item rendering) so it can be
+  built in parallel.
+
+acceptance_criteria:
+  - "Given the web app, when a user wants to create a survey, then there is a real 'New Survey' UI (name + description) reachable without any API tooling"
+  - "Given one or more existing decisions, when creating or editing a survey, then the user can assign/reassign which decisions belong to it, without raw API calls"
+  - "Given a survey with members, when viewed in the surveys list, then it shows the real answered/total counts already served by GET /api/surveys"
+
+steps:
+  - id: research
+    description: Confirm where the surveys list currently renders (if at all) in the real UI -- the API's own doc comment says 'used by DecisionListPane' -- verify this is real and find the real mount point
+    agent: researcher
+  - id: implement
+    description: Build the creation/assignment UI, wire to the real existing POST /api/surveys and item survey_id assignment
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Real tests for create + assign flows
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm the UI doesn't require creating decisions first in a separate, disconnected flow -- a coherent single path from 'nothing' to 'a real multi-question survey'
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit, push, deploy to hive, live-verify by actually creating a real survey through the UI
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  tech_stack: {}
+  key_files:
+    - path: server/routes/surveys.ts
+      purpose: "The real, complete, already-working API this story wires a UI onto"
+
+files_to_modify:
+  - file: web/src/features/decisions/surveys/
+    change: "New: survey creation/assignment UI (exact file layout left to the implementer's judgment, following this codebase's existing feature-folder convention)"
+
+references:
+  - path: server/routes/surveys.ts
+    relevant_excerpt: |
+      app.post<{ Body: CreateSurveyBody }>("/api/surveys", async (request, reply) => {
+        const { title, description, decision_ids } = request.body ?? {};
+        // creates a named survey container, optionally assigns existing decisions
+      });

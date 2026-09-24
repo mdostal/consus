@@ -1,0 +1,67 @@
+id: s6-dogfood-flayr-nav-survey
+epic: consus-survey-native-rich-decisions
+title: "Dogfood: convert the real flayr-super-admin-nav-redesign decision into a 5-member survey"
+status: pending
+complexity: low
+methodology: classic
+depends_on: [s3-rich-panels-in-survey-member-cards, s4-comments-in-survey-member-cards, s5-survey-creation-ui]
+
+description: |
+  The real acceptance test for this whole epic. This session shipped a
+  single, monolithic concept-selection decision (id:
+  flayr-super-admin-nav-redesign, source_repo firefly-events/flayr) covering
+  five genuinely independent decisions about Flayr's super-admin dashboard
+  redesign, then had to build a one-off external claude.ai Artifact to
+  compensate for Consus not natively supporting a real per-feature survey
+  flow. That artifact's actual content (already fully designed, just needs
+  porting into real Consus decision items) is the real spec for this story's
+  five member decisions:
+
+  0. Overall structure (concept-selection, the type already used and
+     verified this session): Accordion groups / Minimal sidebar + top tabs /
+     Dashboard-first + command palette / Icon rail + panel
+  1. Does read-only research get its own category? (A/B keep together vs.
+     C/D split into a separate "Pricing Intelligence" category)
+  2. How far does the Tiers cluster merge? (3-way tab merge / co-located not
+     merged / 2-way merge + separate research page)
+  3. Reviews and Review Moderation: one page or two? (merge into tabs vs.
+     same category, separate pages)
+  4. Feature Toggles vs. Feature Flags: a real 4-way consensus check, not a
+     split -- all four prototypes independently agreed to keep them separate
+     with an inline explanatory note; this member should record that
+     consensus and ask the operator to confirm or override it, not present
+     it as an even A/B/C/D split.
+
+  Once this story lands, the external claude.ai Artifact from this session
+  becomes fully superseded -- the real Consus survey is the actual review
+  surface, matching the operator's own explicit correction.
+
+acceptance_criteria:
+  - "Given the 5 decisions above, when created via the new survey-creation UI (s5), then they form one real named survey with real per-member progress tracking"
+  - "Given the survey, when opened live on hive, then each member shows its own supporting material (the four real prototype screenshots already uploaded this session, plus the four real claude.ai Artifact links) via the panels built in s1-s3"
+  - "Given the survey, when a member is commented on, then the comment thread works per-member (s4)"
+  - "Given this story completes, when compared side by side with the superseded external artifact (https://claude.ai/artifact/2kH56JHe7ZzEBzZZYda79a), then the native survey experience is a genuine, not degraded, replacement -- if it is NOT, that's a real finding to report, not to paper over"
+
+steps:
+  - id: implement
+    description: Create the real survey + 5 member decisions via the s5 UI, using the real content above and this session's real screenshot/artifact-link assets already uploaded to Consus
+    agent: developer
+  - id: review
+    description: Live comparison against the superseded external artifact -- confirm parity or better, report honestly if not
+    agent: reviewer
+    depends_on: [implement]
+  - id: integrate
+    description: Live-verify on hive via Playwright, report the real comparison result
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  tech_stack: {}
+  key_files:
+    - path: server/decision-contract/parser.ts
+      purpose: "ConceptSelectionPayload -- the real, already-used payload type for member 0"
+
+references:
+  - path: https://claude.ai/artifact/2kH56JHe7ZzEBzZZYda79a
+    relevant_excerpt: "The now-superseded external artifact holding the real, already-designed content for all 5 decisions -- port its content, do not redesign from scratch"

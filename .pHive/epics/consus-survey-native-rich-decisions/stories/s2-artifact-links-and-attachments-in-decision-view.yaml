@@ -1,0 +1,52 @@
+id: s2-artifact-links-and-attachments-in-decision-view
+epic: consus-survey-native-rich-decisions
+title: Mount ArtifactLinksPanel in the single-decision DecisionView (AttachmentsPanel already mounted there)
+status: pending
+complexity: low
+methodology: classic
+depends_on: [s1-artifact-link-shared-component]
+
+description: |
+  DecisionView (App.tsx) already mounts AttachmentsPanel for a standalone
+  decision -- confirmed live this session (real image attachments render as
+  real inline <img> thumbnails there). It never mounts anything for
+  artifact-links -- the API has always been callable directly (this session
+  used it via curl), but there was no UI. Mount the new ArtifactLinksPanel
+  (s1) alongside AttachmentsPanel in the same detail view.
+
+acceptance_criteria:
+  - "Given a decision with real artifact-links (e.g. flayr-super-admin-nav-redesign, which has one real link to a claude.ai Artifact from this session), when its DecisionView renders, then the link appears via ArtifactLinksPanel, clickable, opening in a new tab"
+  - "Given the real live app on hive, when this story lands and redeploys, then a Playwright accessibility-tree check (browser_find for the link text/href) confirms it renders -- not just a passing unit test"
+
+steps:
+  - id: implement
+    description: Mount ArtifactLinksPanel in DecisionView next to the existing AttachmentsPanel mount
+    agent: developer
+  - id: test
+    description: Add/extend DecisionView tests to cover the new panel's presence
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm layout doesn't crowd the existing comments/attachments sections
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit, push, deploy to hive (docker compose build/up consus), live-verify via Playwright against the real flayr-super-admin-nav-redesign decision
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  tech_stack: {}
+  key_files:
+    - path: web/src/App.tsx
+      purpose: "DecisionView lives here -- the real single-decision detail pane where AttachmentsPanel is already mounted"
+
+files_to_modify:
+  - file: web/src/App.tsx
+    change: "Mount ArtifactLinksPanel alongside the existing AttachmentsPanel in DecisionView"
+
+risks:
+  - severity: low
+    description: "None significant -- purely additive, existing decision rendering unaffected"
+    mitigation: "n/a"

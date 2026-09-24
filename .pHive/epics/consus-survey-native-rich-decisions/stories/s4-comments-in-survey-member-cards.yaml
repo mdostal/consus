@@ -1,0 +1,60 @@
+id: s4-comments-in-survey-member-cards
+epic: consus-survey-native-rich-decisions
+title: Extend per-decision commenting to survey members
+status: pending
+complexity: medium
+methodology: classic
+depends_on: [s3-rich-panels-in-survey-member-cards]
+
+description: |
+  Real commenting already exists (confirmed live this session via Playwright
+  accessibility-tree inspection of the deployed app: a real "Add a comment" /
+  "Send" control with a submitComment -> loadComments() round trip), but it
+  is wired only into App.tsx's single-decision DecisionView, never into
+  SurveyView's per-member cards. This is the "lots of context back and
+  forth" part of the operator's ask, per-question, not just on a lone
+  decision.
+
+acceptance_criteria:
+  - "Given a survey member card, when it renders, then it includes a real comment thread + add-comment control scoped to that member's own item id"
+  - "Given comments on two different members of the same survey, when both are viewed, then each shows only its own thread -- no cross-member bleed"
+  - "Given a real comment is posted on a real survey member via the live deployed app, when the page is checked via Playwright, then the new comment appears without a full page reload"
+
+steps:
+  - id: research
+    description: Read App.tsx's real submitComment/loadComments implementation and whatever CommentsPanel-equivalent component it uses (if any exists as a separate component, or if it's inlined in DecisionView) before extracting/reusing it
+    agent: researcher
+  - id: implement
+    description: Extract comments into a reusable component (mirroring the s1 pattern for artifact-links) if not already one, mount it per survey member
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Real per-member scoping tests, same discipline as s3
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm no regression to the existing single-decision comment flow
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit, push, deploy to hive, live-verify via Playwright
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  tech_stack: {}
+  key_files:
+    - path: web/src/App.tsx
+      purpose: "Where the real, working comment submit/load round trip currently lives, single-decision-only"
+
+files_to_modify:
+  - file: web/src/App.tsx
+    change: "Extract comment logic into a reusable component if not already separated"
+  - file: web/src/features/decisions/SurveyView.tsx
+    change: "Mount the comments component per survey member"
+
+risks:
+  - severity: low
+    description: "If comments logic is deeply coupled to DecisionView's own state in App.tsx, extraction may take longer than the medium complexity estimate suggests"
+    mitigation: "Research step should surface this before implement begins, so the story can be re-scoped if the coupling is real and significant"
