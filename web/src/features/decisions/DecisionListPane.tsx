@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from "react";
+import { SurveyCreateForm, type CreatedSurvey, type SurveyCreateCandidate } from "./surveys/SurveyCreateForm";
 
 /** Structurally compatible with App.tsx's DecisionItem — duck-typed on
  *  purpose so this file has no import from App.tsx. */
@@ -112,6 +113,7 @@ export function DecisionListPane({
   surveys = [],
   selectedSurveyId = null,
   onSelectSurvey,
+  onSurveyCreated,
 }: {
   items: DecisionListItem[];
   selectedId: string | null;
@@ -119,6 +121,9 @@ export function DecisionListPane({
   surveys?: SurveyListItem[];
   selectedSurveyId?: string | null;
   onSelectSurvey?: (id: string) => void;
+  /** s5: when set, renders the real "New Survey" creation flow above the
+   *  list, grouping any of `items` into a new survey -- no raw API calls. */
+  onSurveyCreated?: (survey: CreatedSurvey) => void;
 }) {
   const open = items.filter((d) => !d.decided_at);
   const decided = items.filter((d) => d.decided_at);
@@ -126,9 +131,16 @@ export function DecisionListPane({
   const completeSurveys = surveys.filter((s) => s.total > 0 && s.answered === s.total);
 
   const needsYouCount = incompleteSurveys.length + open.length;
+  const availableDecisions: SurveyCreateCandidate[] = items.map((d) => ({ id: d.id, title: d.title }));
 
   return (
     <div className="decision-list">
+      {onSurveyCreated ? (
+        <div className="decision-list__survey-create">
+          <SurveyCreateForm availableDecisions={availableDecisions} onCreated={onSurveyCreated} />
+        </div>
+      ) : null}
+
       <p className="group-heading">Needs you ({needsYouCount})</p>
       {needsYouCount === 0 ? (
         <div className="empty">
