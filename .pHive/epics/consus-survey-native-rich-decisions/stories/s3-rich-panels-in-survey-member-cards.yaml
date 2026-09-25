@@ -1,0 +1,78 @@
+id: s3-rich-panels-in-survey-member-cards
+epic: consus-survey-native-rich-decisions
+title: Mount AttachmentsPanel + ArtifactLinksPanel per survey member inside SurveyView
+status: pending
+complexity: medium
+methodology: classic
+depends_on: [s2-artifact-links-and-attachments-in-decision-view]
+
+description: |
+  The real gap this whole epic exists to close. SurveyView.tsx renders each
+  member via DecisionCard with only {question, payload, status, onVerdict}
+  -- no itemId is passed through at all, so neither AttachmentsPanel nor the
+  new ArtifactLinksPanel (both itemId-keyed) can mount per question. A
+  standalone decision is rich; a survey member today is just a question and
+  verdict buttons.
+
+  Real UX call this story must make explicit, not silently decide (per this
+  epic's own design intent): a survey can have many members (this session's
+  own dogfood case has 5), so should the supporting-material panels render
+  inline by default per question, or behind a collapsible "show supporting
+  material" toggle? Recommendation: collapsed by default, since most
+  questions will have zero-to-few attachments and an always-expanded empty
+  AttachmentsPanel per question is visual noise -- but this is a real design
+  decision for whoever implements this story to make and document, not to
+  guess silently past.
+
+acceptance_criteria:
+  - "Given DecisionCard is extended to accept an itemId prop, when SurveyView renders a member, then it passes the member's real id through"
+  - "Given a survey member has real attachments and/or artifact-links, when its card renders, then both panels are reachable from that specific member's card, not just the survey's top level"
+  - "Given a survey member has neither attachments nor artifact-links, when its card renders, then the panels degrade to their real empty states, not hidden entirely -- consistency with how a standalone decision behaves"
+  - "Given the real dogfood survey (s6) once it exists, when a member's card is inspected via Playwright accessibility-tree, then its own attachments/links are scoped correctly to that member, not bleeding across members"
+
+steps:
+  - id: research
+    description: Confirm DecisionCardProps' real current shape and every call site (SurveyView.tsx, and DecisionView in App.tsx from s2) before extending it
+    agent: researcher
+  - id: implement
+    description: Add itemId to DecisionCardProps, mount AttachmentsPanel + ArtifactLinksPanel per member in SurveyView (collapsed-by-default per the UX call above, or whatever the implementer decides and documents), update DecisionView's own call site for the new required prop
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Real tests confirming per-member scoping (member A's attachments never appear under member B's card)
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm the UX decision (inline vs. collapsed) is documented in the PR description, not silently made
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit, push, deploy to hive, live-verify via Playwright against a real multi-member survey
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  tech_stack: {}
+  key_files:
+    - path: web/src/features/decisions/SurveyView.tsx
+      purpose: "Where each member currently renders via DecisionCard with no itemId -- the real, precise site of the gap"
+    - path: web/src/features/decisions/DecisionCard.tsx
+      purpose: "Needs a new itemId prop threaded through"
+
+files_to_modify:
+  - file: web/src/features/decisions/DecisionCard.tsx
+    change: "Add itemId to DecisionCardProps"
+  - file: web/src/features/decisions/SurveyView.tsx
+    change: "Pass member.id as itemId, mount AttachmentsPanel + ArtifactLinksPanel per member"
+  - file: web/src/App.tsx
+    change: "Update DecisionView's DecisionCard call site for the new required prop"
+
+design_decisions:
+  - decision: "Supporting-material panels collapsed by default per survey member (recommended, not mandated)"
+    rationale: "A 5+ member survey with always-expanded empty panels per question is visual noise; most questions won't have attachments. The implementer should confirm this call explicitly in the PR, not silently follow or silently override it."
+
+risks:
+  - severity: medium
+    description: "Threading a new required prop through DecisionCard's existing call sites could break something not caught by existing tests if a call site is missed"
+    mitigation: "grep the whole repo for DecisionCard usages before considering this story done"

@@ -1,0 +1,102 @@
+id: s1-artifact-link-shared-component
+epic: consus-survey-native-rich-decisions
+title: Build a real ArtifactLinksPanel (fetch + list + add), reusing the existing ArtifactLink presentational component
+status: pending
+complexity: low
+methodology: classic
+depends_on: []
+
+description: |
+  Real, precise finding: `web/src/features/docs/ArtifactLink.tsx` is a real,
+  tested, presentational component (renders one `<a>` for one {url, label})
+  but has ZERO usages anywhere in the app today -- not in Docs, not in
+  Decisions. The real API (`server/routes/artifact-links.ts`, REQ-05:
+  `GET/POST /api/items/:id/artifact-links`) has never had a UI consumer at
+  all. This story builds the missing fetch/list/add wrapper -- mirroring
+  `AttachmentsPanel.tsx`'s own real, proven pattern (fetch-on-mount, POST to
+  add, re-fetch rather than trust the POST response shape) -- and moves
+  `ArtifactLink` out of `features/docs/` into a shared location
+  (`features/decisions/artifact-links/` matches the existing sibling
+  `features/decisions/attachments/` convention) since both Decisions (s2/s3)
+  and Docs will consume it.
+
+acceptance_criteria:
+  - "Given a decision item with zero artifact-links, when ArtifactLinksPanel mounts, then it shows a real empty state (not an error) and a real add-link form (url + optional label)"
+  - "Given a real POST to /api/items/:id/artifact-links succeeds, when the panel re-fetches, then the new link renders via ArtifactLink"
+  - "Given the API is unreachable, when the panel mounts, then it shows a clear 'could not load' state, never a crash -- same convention as AttachmentsPanel's listError handling"
+  - "Given the move out of features/docs/, when the existing ArtifactLink.test.tsx is updated for the new path, then it still passes unchanged in substance"
+
+steps:
+  - id: research
+    description: Read AttachmentsPanel.tsx and AttachmentList.tsx in full for the exact fetch/list/add pattern to mirror; read artifact-links.ts's real request/response shapes
+    agent: researcher
+  - id: implement
+    description: Move ArtifactLink.tsx to features/decisions/artifact-links/, build ArtifactLinksPanel.tsx (fetch-on-mount list + add form) mirroring AttachmentsPanel's structure
+    agent: developer
+    depends_on: [research]
+  - id: test
+    description: Update/move ArtifactLink.test.tsx, add real tests for ArtifactLinksPanel (empty state, add flow, error state) mirroring AttachmentsPanel's own test coverage
+    agent: tester
+    depends_on: [implement]
+  - id: review
+    description: Confirm no behavior change to any existing Docs feature (ArtifactLink was unused there, so this is a pure move, not a functional change to Docs)
+    agent: reviewer
+    depends_on: [test]
+  - id: integrate
+    description: Commit and push to feature branch
+    agent: developer
+    depends_on: [review]
+
+context:
+  codebase: /Users/mdostal/Documents/work/pantheon/consus
+  tech_stack: {}
+  key_files:
+    - path: web/src/features/decisions/attachments/AttachmentsPanel.tsx
+      purpose: "The exact fetch/list/add/error pattern to mirror for the new ArtifactLinksPanel"
+    - path: web/src/features/docs/ArtifactLink.tsx
+      purpose: "The real, tested, unused presentational component to move and build a wrapper around"
+    - path: server/routes/artifact-links.ts
+      purpose: "The real, already-working API this panel will call -- GET/POST /api/items/:id/artifact-links"
+
+files_to_modify:
+  - file: web/src/features/decisions/artifact-links/ArtifactLink.tsx
+    change: "Moved from features/docs/, unchanged in substance"
+  - file: web/src/features/decisions/artifact-links/ArtifactLinksPanel.tsx
+    change: "New: fetch-on-mount list + add-link form, mirrors AttachmentsPanel.tsx"
+  - file: web/src/features/docs/ArtifactLink.tsx
+    change: "Deleted (moved)"
+
+code_examples:
+  - title: "Fetch/list/add pattern to mirror (AttachmentsPanel.tsx)"
+    file: web/src/features/decisions/attachments/AttachmentsPanel.tsx
+    snippet: |
+      const loadAttachments = useCallback(async () => {
+        setListError(null);
+        try {
+          const res = await fetch(`/api/items/${encodeURIComponent(itemId)}/attachments`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          setAttachments(await res.json());
+        } catch (e) {
+          setListError(`Could not load attachments: ${(e as Error).message}`);
+          setAttachments([]);
+        }
+      }, [itemId]);
+
+risks:
+  - severity: low
+    description: "Moving a file could break an import path somewhere not caught by tests"
+    mitigation: "grep the whole repo for the old import path before deleting the original file"
+
+references:
+  - path: server/routes/artifact-links.ts
+    relevant_excerpt: |
+      app.post<{ Params: { id: string }; Body: { url: string; label?: string } }>(
+        "/api/items/:id/artifact-links",
+        async (request, reply) => {
+          db.prepare("INSERT INTO artifact_links (item_id, url, label) VALUES (?, ?, ?)").run(id, url, label ?? null);
+          return reply.code(201).send({ ok: true });
+        },
+      );
+      app.get<{ Params: { id: string } }>("/api/items/:id/artifact-links", async (request) => {
+        return db.prepare("SELECT id, url, label FROM artifact_links WHERE item_id = ?").all(id);
+      });
