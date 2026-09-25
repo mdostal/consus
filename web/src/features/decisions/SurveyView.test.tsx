@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { SurveyView } from "./SurveyView";
 import type { SurveyDecisionItem } from "./SurveyView";
 
@@ -51,10 +51,39 @@ const MEMBER_DECIDED: SurveyDecisionItem = {
 };
 
 function makeFetch(members: SurveyDecisionItem[]) {
-  return vi.fn().mockResolvedValue({
-    ok: true,
-    json: () => Promise.resolve(members),
+  return buildSurveyFetchMock(members).fn;
+}
+
+/**
+ * URL-aware fetch mock (s3): once AttachmentsPanel/ArtifactLinksPanel mount
+ * per member, each member fires two more GETs (/api/items/:id/attachments,
+ * /api/items/:id/artifact-links) alongside the members load and any verdict
+ * POST. A call-order-based mock (mockResolvedValueOnce chains) breaks the
+ * moment those extra calls land -- this routes by method+URL instead, same
+ * pattern as App.test.tsx's buildDecisionsFetchMock.
+ */
+function buildSurveyFetchMock(members: SurveyDecisionItem[], opts: { verdict?: { ok: boolean; status?: number } } = {}) {
+  const calls: { method: string; url: string }[] = [];
+
+  const fn = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input.toString();
+    const method = init?.method ?? "GET";
+    calls.push({ method, url });
+
+    if (method === "GET" && url.startsWith("/api/decisions?survey=")) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(members) });
+    }
+    if (method === "POST" && /^\/api\/decisions\/[^/]+\/verdict$/.test(url)) {
+      const v = opts.verdict ?? { ok: true };
+      return Promise.resolve({ ok: v.ok, status: v.status ?? (v.ok ? 200 : 500), json: () => Promise.resolve({}) });
+    }
+    // AttachmentsPanel / ArtifactLinksPanel per-member fetches (s3) -- a
+    // real empty state for every test here that isn't specifically about
+    // supporting material.
+    return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
   });
+
+  return { fn, calls };
 }
 
 describe("SurveyView", () => {
@@ -97,11 +126,7 @@ describe("SurveyView", () => {
   });
 
   it("updates progress when a verdict is submitted", async () => {
-    globalThis.fetch = makeFetch([MEMBER_OPEN, MEMBER_OPEN_2]);
-    globalThis.fetch = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([MEMBER_OPEN, MEMBER_OPEN_2]) })
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) });
+    globalThis.fetch = buildSurveyFetchMock([MEMBER_OPEN, MEMBER_OPEN_2]).fn;
 
     render(<SurveyView surveyId="s-1" surveyTitle="Progress Test" />);
     await waitFor(() => screen.getAllByRole("button", { name: /accept/i }));
@@ -114,10 +139,7 @@ describe("SurveyView", () => {
   });
 
   it("shows 'Survey complete' and verdict summary when all members are answered", async () => {
-    globalThis.fetch = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([MEMBER_OPEN]) })
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) });
+    globalThis.fetch = buildSurveyFetchMock([MEMBER_OPEN]).fn;
 
     render(<SurveyView surveyId="s-1" surveyTitle="Solo Survey" />);
     await waitFor(() => screen.getByRole("button", { name: /accept/i }));
@@ -132,10 +154,7 @@ describe("SurveyView", () => {
 
   it("calls onVerdictRecorded after a successful verdict submission", async () => {
     const onVerdictRecorded = vi.fn();
-    globalThis.fetch = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([MEMBER_OPEN]) })
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) });
+    globalThis.fetch = buildSurveyFetchMock([MEMBER_OPEN]).fn;
 
     render(<SurveyView surveyId="s-1" surveyTitle="Callback Test" onVerdictRecorded={onVerdictRecorded} />);
     await waitFor(() => screen.getByRole("button", { name: /accept/i }));
@@ -160,10 +179,7 @@ describe("SurveyView", () => {
       ...MEMBER_OPEN,
       id: "decision:my-repo:docs/interview-prep/resignation-playbook.md",
     };
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([memberWithRealisticId]) })
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) });
+    const { fn: fetchMock, calls } = buildSurveyFetchMock([memberWithRealisticId]);
     globalThis.fetch = fetchMock;
 
     render(<SurveyView surveyId="s-1" surveyTitle="Encoding Test" />);
@@ -171,18 +187,15 @@ describe("SurveyView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /accept/i }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    const [verdictUrl] = fetchMock.mock.calls[1];
-    expect(verdictUrl).toBe(
+    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+    const verdictCall = calls.find((c) => c.method === "POST");
+    expect(verdictCall?.url).toBe(
       "/api/decisions/decision%3Amy-repo%3Adocs%2Finterview-prep%2Fresignation-playbook.md/verdict",
     );
   });
 
   it("shows an error message when verdict submission fails", async () => {
-    globalThis.fetch = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve([MEMBER_OPEN]) })
-      .mockResolvedValueOnce({ ok: false, status: 500 });
+    globalThis.fetch = buildSurveyFetchMock([MEMBER_OPEN], { verdict: { ok: false, status: 500 } }).fn;
 
     render(<SurveyView surveyId="s-1" surveyTitle="Error Test" />);
     await waitFor(() => screen.getByRole("button", { name: /accept/i }));
@@ -191,6 +204,43 @@ describe("SurveyView", () => {
 
     await waitFor(() => expect(screen.getByTestId("submit-error-m-1")).toBeInTheDocument());
     expect(screen.getByText(/could not record decision/i)).toBeInTheDocument();
+  });
+
+  it("scopes supporting-material panels to each member -- no cross-member bleed (s3)", async () => {
+    const { fn } = (() => {
+      const base = buildSurveyFetchMock([MEMBER_OPEN, MEMBER_OPEN_2]);
+      const fn = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url === "/api/items/m-1/attachments") {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve([
+                { id: "att-1", item_id: "m-1", file_name: "m1-only.png", mime_type: "image/png", size: 10, actor: "Mathew", created_at: "2026-08-12T00:00:00Z" },
+              ]),
+          });
+        }
+        if (url === "/api/items/m-2/attachments") {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+        }
+        return base.fn(input, init);
+      });
+      return { fn };
+    })();
+    globalThis.fetch = fn;
+
+    render(<SurveyView surveyId="s-1" surveyTitle="Scoping Test" />);
+    await waitFor(() => expect(screen.queryByText(/loading survey/i)).not.toBeInTheDocument());
+
+    const member1 = screen.getByTestId("survey-member-m-1");
+    const member2 = screen.getByTestId("survey-member-m-2");
+
+    fireEvent.click(within(member1).getByText(/supporting material/i));
+    fireEvent.click(within(member2).getByText(/supporting material/i));
+
+    await waitFor(() => expect(within(member1).getByText("m1-only.png")).toBeInTheDocument());
+    expect(within(member2).queryByText("m1-only.png")).not.toBeInTheDocument();
+    expect(within(member2).getByText(/no attachments/i)).toBeInTheDocument();
   });
 
   it("shows a fetch error when the member load fails", async () => {
