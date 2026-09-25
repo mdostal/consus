@@ -344,6 +344,11 @@ function DecisionsSection({
     select(id);
   }
 
+  function handleSurveyCreated(survey: { id: string; title: string }) {
+    loadSurveys();
+    handleSelectSurvey(survey.id);
+  }
+
   const selectedSurvey = selectedSurveyId !== null
     ? (surveys ?? []).find((s) => s.id === selectedSurveyId) ?? null
     : null;
@@ -366,6 +371,7 @@ function DecisionsSection({
             surveys={surveys ?? []}
             selectedSurveyId={selectedSurveyId}
             onSelectSurvey={handleSelectSurvey}
+            onSurveyCreated={handleSurveyCreated}
           />
         </div>
         <div className="decisions-two-pane__detail">

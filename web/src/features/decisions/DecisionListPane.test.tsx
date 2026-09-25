@@ -227,4 +227,24 @@ describe("DecisionListPane — surveys", () => {
     fireEvent.keyDown(row, { key: " " });
     expect(onSelectSurvey).toHaveBeenCalledTimes(2);
   });
+
+  it("s5: does not render the New Survey trigger unless onSurveyCreated is passed", () => {
+    render(<DecisionListPane items={[OPEN_ITEM]} selectedId={null} onSelect={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /new survey/i })).not.toBeInTheDocument();
+  });
+
+  it("s5: renders the New Survey trigger, offering every item as a candidate", () => {
+    render(
+      <DecisionListPane
+        items={[OPEN_ITEM, OPEN_ITEM_2]}
+        selectedId={null}
+        onSelect={vi.fn()}
+        onSurveyCreated={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /new survey/i }));
+    expect(screen.getAllByText("Ship v1?").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Pick a DAG engine").length).toBeGreaterThan(0);
+  });
 });
