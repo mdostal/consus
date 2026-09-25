@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { DecisionCard } from "./DecisionCard";
 import { AttachmentsPanel } from "./attachments/AttachmentsPanel";
 import { ArtifactLinksPanel } from "../artifact-links/ArtifactLinksPanel";
+import { CommentsPanel } from "../comments/CommentsPanel";
 import type { DecisionPayload, Verdict } from "./answer-shapes/types";
 
 export interface SurveyDecisionItem {
@@ -209,6 +210,8 @@ export function SurveyView({ surveyId, surveyTitle, onVerdictRecorded }: SurveyV
               <details className="survey-view__member-supporting">
                 <summary>Supporting material</summary>
                 <div className="survey-view__member-supporting-body">
+                  <h4 className="dv__section-title">Discussion</h4>
+                  <CommentsPanel itemId={member.id} />
                   <h4 className="dv__section-title">Attachments</h4>
                   <AttachmentsPanel itemId={member.id} />
                   <h4 className="dv__section-title">Artifact links</h4>

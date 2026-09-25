@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { marked } from "marked";
 import { AnswerControl } from "./features/decisions/answer-shapes/AnswerControl";
-import { CommentThread, type Comment } from "./features/comments/CommentThread";
+import { CommentsPanel } from "./features/comments/CommentsPanel";
 import { GlobalView, type KbEntrySummary } from "./features/projects/GlobalView";
 import { ProjectView } from "./features/projects/ProjectView";
 import { BranchPicker } from "./features/projects/BranchPicker";
@@ -127,19 +127,9 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
     () => marked.parse(payload?.context ?? "", { async: false }) as string,
     [payload?.context],
   );
-  const [comments, setComments] = useState<Comment[]>([]);
   const [recorded, setRecorded] = useState<Verdict | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [auditEntries, setAuditEntries] = useState<AuditTrailEntry[]>([]);
-
-  const loadComments = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/items/${encodeURIComponent(item.id)}/comments`);
-      if (res.ok) setComments(await res.json());
-    } catch {
-      /* comments are best-effort */
-    }
-  }, [item.id]);
 
   const loadAuditTrail = useCallback(async () => {
     try {
@@ -151,33 +141,18 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
   }, [item.id]);
 
   useEffect(() => {
-    loadComments();
     loadAuditTrail();
-  }, [loadComments, loadAuditTrail]);
+  }, [loadAuditTrail]);
 
   async function submitVerdict(verdict: Verdict) {
     setErr(null);
     try {
       await postVerdict(item.id, verdict);
       setRecorded(verdict);
-      loadComments();
       loadAuditTrail();
       onDecided();
     } catch (e) {
       setErr(`Could not record decision: ${(e as Error).message}`);
-    }
-  }
-
-  async function submitComment(body: string) {
-    try {
-      await fetch(`/api/items/${encodeURIComponent(item.id)}/comments`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ author: "Mathew", body }),
-      });
-      loadComments();
-    } catch {
-      setErr("Could not post comment.");
     }
   }
 
@@ -288,7 +263,7 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
 
       <section>
         <h3 className="dv__section-title">Discussion</h3>
-        <CommentThread comments={comments} onSubmit={submitComment} />
+        <CommentsPanel itemId={item.id} />
       </section>
 
       <section>

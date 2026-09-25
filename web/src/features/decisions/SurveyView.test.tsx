@@ -243,6 +243,36 @@ describe("SurveyView", () => {
     expect(within(member2).getByText(/no attachments/i)).toBeInTheDocument();
   });
 
+  it("scopes comment threads to each member -- no cross-member bleed (s4)", async () => {
+    const base = buildSurveyFetchMock([MEMBER_OPEN, MEMBER_OPEN_2]);
+    const fn = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url === "/api/items/m-1/comments") {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([{ id: 1, author: "Mathew", body: "m1-only comment", createdAt: "2026-08-01T00:00:00Z" }]),
+        });
+      }
+      if (url === "/api/items/m-2/comments") {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return base.fn(input, init);
+    });
+    globalThis.fetch = fn;
+
+    render(<SurveyView surveyId="s-1" surveyTitle="Comment Scoping Test" />);
+    await waitFor(() => expect(screen.queryByText(/loading survey/i)).not.toBeInTheDocument());
+
+    const member1 = screen.getByTestId("survey-member-m-1");
+    const member2 = screen.getByTestId("survey-member-m-2");
+
+    fireEvent.click(within(member1).getByText(/supporting material/i));
+    fireEvent.click(within(member2).getByText(/supporting material/i));
+
+    await waitFor(() => expect(within(member1).getByText("m1-only comment")).toBeInTheDocument());
+    expect(within(member2).queryByText("m1-only comment")).not.toBeInTheDocument();
+  });
+
   it("shows a fetch error when the member load fails", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500 });
     render(<SurveyView surveyId="s-bad" surveyTitle="Broken Survey" />);
