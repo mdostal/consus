@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { DecisionCard } from "./DecisionCard";
+import { AttachmentsPanel } from "./attachments/AttachmentsPanel";
+import { ArtifactLinksPanel } from "../artifact-links/ArtifactLinksPanel";
+import { CommentsPanel } from "../comments/CommentsPanel";
 import type { DecisionPayload, Verdict } from "./answer-shapes/types";
 
 export interface SurveyDecisionItem {
@@ -197,6 +200,24 @@ export function SurveyView({ surveyId, surveyTitle, onVerdictRecorded }: SurveyV
                   Could not record decision: {submitErrors[member.id]}
                 </p>
               ) : null}
+
+              {/* Collapsed by default (s3 design call): a multi-member survey with
+                  always-expanded, mostly-empty panels per question is visual noise --
+                  most questions won't have attachments/links. Kept outside the
+                  !sessionVerdict check above so supporting material stays reachable
+                  after answering, matching how a standalone DecisionView never hides
+                  its own Attachments/Artifact links sections once decided. */}
+              <details className="survey-view__member-supporting">
+                <summary>Supporting material</summary>
+                <div className="survey-view__member-supporting-body">
+                  <h4 className="dv__section-title">Discussion</h4>
+                  <CommentsPanel itemId={member.id} />
+                  <h4 className="dv__section-title">Attachments</h4>
+                  <AttachmentsPanel itemId={member.id} />
+                  <h4 className="dv__section-title">Artifact links</h4>
+                  <ArtifactLinksPanel itemId={member.id} />
+                </div>
+              </details>
             </section>
           );
         })}
