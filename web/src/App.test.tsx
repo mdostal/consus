@@ -1352,6 +1352,17 @@ describe("App — Decisions tab two-pane layout (phase16 s1)", () => {
     expect(within(detailPane as HTMLElement).getByRole("heading", { name: "Decision One" })).toBeInTheDocument();
   });
 
+  it("mounts ArtifactLinksPanel in the detail view alongside Attachments (s2)", async () => {
+    const { fn } = buildDecisionsFetchMock([DECISION_ONE, DECISION_TWO]);
+    vi.stubGlobal("fetch", fn);
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Decision One" });
+
+    expect(screen.getByRole("heading", { name: "Artifact links", level: 3 })).toBeInTheDocument();
+    expect(await screen.findByText(/no artifact links yet/i)).toBeInTheDocument();
+  });
+
   it("pre-selects the decision named by ?selected= on mount, without requiring a click", async () => {
     window.history.pushState({}, "", "/?selected=item-2");
     const { fn } = buildDecisionsFetchMock([DECISION_ONE, DECISION_TWO]);

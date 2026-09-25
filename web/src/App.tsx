@@ -24,6 +24,7 @@ import { useSelectedDecisionId } from "./features/decisions/useSelectedDecisionI
 import { DecisionListPane, type DecisionListItem, type SurveyListItem } from "./features/decisions/DecisionListPane";
 import { SurveyView } from "./features/decisions/SurveyView";
 import { AttachmentsPanel } from "./features/decisions/attachments/AttachmentsPanel";
+import { ArtifactLinksPanel } from "./features/artifact-links/ArtifactLinksPanel";
 import { useSkinPreference } from "./theme/useSkinPreference";
 import { ThemeSkinPicker } from "./theme/ThemeSkinPicker";
 import { SkinBackdrop } from "./theme/skins/SkinBackdrop";
@@ -293,6 +294,11 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
       <section>
         <h3 className="dv__section-title">Attachments</h3>
         <AttachmentsPanel itemId={item.id} />
+      </section>
+
+      <section>
+        <h3 className="dv__section-title">Artifact links</h3>
+        <ArtifactLinksPanel itemId={item.id} />
       </section>
 
       <section>
