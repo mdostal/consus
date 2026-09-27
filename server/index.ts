@@ -33,6 +33,29 @@ import { createStorageAdapter } from "./storage/index.js";
  *  (cwd = repo root) or a container's `WORKDIR` (see mdostal/consus#105). */
 const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../dist-web");
 
+/** Selects the correct HarnessTransport based on environment variables.
+ *  Extracted for unit testability (server/harness/transport-selection.test.ts). */
+export function selectHarnessTransport(env: {
+  CONSUS_HARNESS?: string;
+  PANTHEON_API_URL?: string;
+  CONSUS_HARNESS_COMMAND?: string;
+  CONSUS_HARNESS_ARGS?: string;
+}): HarnessTransport {
+  if (env.CONSUS_HARNESS === "pantheon") {
+    if (!env.PANTHEON_API_URL) {
+      throw new Error("PANTHEON_API_URL is required when CONSUS_HARNESS=pantheon");
+    }
+    return new PantheonHarnessTransport(env.PANTHEON_API_URL);
+  }
+  if (env.CONSUS_HARNESS_COMMAND) {
+    return new StdioHarnessTransport(
+      env.CONSUS_HARNESS_COMMAND,
+      env.CONSUS_HARNESS_ARGS ? env.CONSUS_HARNESS_ARGS.split(",") : [],
+    );
+  }
+  return NOOP_HARNESS_TRANSPORT;
+}
+
 export interface BuildServerOptions {
   dbPath: string;
   /** repo name -> absolute path on disk, scanned for generated docs */
@@ -158,18 +181,7 @@ if (isMain) {
   // system-agnostic. CONSUS_HARNESS=pantheon selects the built-in Pantheon
   // HTTP adapter (requires PANTHEON_API_URL). Otherwise a configured command
   // path (CONSUS_HARNESS_COMMAND) selects the stdio transport. Default: noop.
-  if (process.env.CONSUS_HARNESS === "pantheon" && !process.env.PANTHEON_API_URL) {
-    throw new Error("PANTHEON_API_URL is required when CONSUS_HARNESS=pantheon");
-  }
-  const transport: HarnessTransport =
-    process.env.CONSUS_HARNESS === "pantheon"
-      ? new PantheonHarnessTransport(process.env.PANTHEON_API_URL!)
-      : process.env.CONSUS_HARNESS_COMMAND
-        ? new StdioHarnessTransport(
-            process.env.CONSUS_HARNESS_COMMAND,
-            process.env.CONSUS_HARNESS_ARGS ? process.env.CONSUS_HARNESS_ARGS.split(",") : [],
-          )
-        : NOOP_HARNESS_TRANSPORT;
+  const transport = selectHarnessTransport(process.env);
 
   const app = buildServer({ dbPath, repos, transport, attachmentsDir, projectsConfigPath, discoveryRoots });
 
