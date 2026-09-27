@@ -300,6 +300,9 @@ function DecisionsSection({
   const [selectedId, select] = useSelectedDecisionId();
   const [surveys, setSurveys] = useState<SurveyListItem[] | null>(null);
   const [selectedSurveyId, setSelectedSurveyId] = useState<string | null>(null);
+  // The survey just created via the "New survey" form, whose view should take
+  // keyboard focus when it mounts (PANT-812). Cleared by any other selection.
+  const [justCreatedSurveyId, setJustCreatedSurveyId] = useState<string | null>(null);
 
   const loadSurveys = useCallback(() => {
     fetch("/api/surveys")
@@ -333,6 +336,7 @@ function DecisionsSection({
   const selected = effectiveId !== null ? (decisions.find((d) => d.id === effectiveId) ?? null) : null;
 
   function handleSelectSurvey(id: string) {
+    setJustCreatedSurveyId(null);
     setSelectedSurveyId(id);
     // Clear decision selection when a survey is chosen so the right pane
     // shows SurveyView and not a stale DecisionView.
@@ -340,6 +344,7 @@ function DecisionsSection({
   }
 
   function handleSelectDecision(id: string) {
+    setJustCreatedSurveyId(null);
     setSelectedSurveyId(null);
     select(id);
   }
@@ -347,6 +352,7 @@ function DecisionsSection({
   function handleSurveyCreated(survey: { id: string; title: string }) {
     loadSurveys();
     handleSelectSurvey(survey.id);
+    setJustCreatedSurveyId(survey.id);
   }
 
   const selectedSurvey = selectedSurveyId !== null
@@ -380,6 +386,7 @@ function DecisionsSection({
               key={selectedSurveyId}
               surveyId={selectedSurveyId}
               surveyTitle={selectedSurvey.title}
+              focusHeadingOnMount={selectedSurveyId === justCreatedSurveyId}
               onVerdictRecorded={() => {
                 reload();
                 loadSurveys();

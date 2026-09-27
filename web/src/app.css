@@ -185,6 +185,29 @@ button:focus-visible {
 .state--err {
   color: var(--consus-bad);
 }
+/* Screen-reader-only text: live-region announcements (PANT-812) and
+   off-screen context such as "(opens in a new tab)". */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* SurveyCreateForm's visibly labelled fields (PANT-812). */
+.survey-create__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  font-family: var(--consus-font-ui);
+  font-size: 13px;
+  color: var(--consus-ink-muted);
+}
 .empty {
   font-family: var(--consus-font-ui);
   border: 1px dashed var(--consus-line);
