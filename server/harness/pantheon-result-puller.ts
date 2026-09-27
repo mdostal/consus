@@ -27,6 +27,9 @@ export class PantheonResultPuller {
   constructor(
     private readonly pantheonApiUrl: string,
     private readonly db: Database.Database,
+    /** Injectable for tests; resolved at call time so `vi.stubGlobal("fetch")`
+     *  still works when omitted. */
+    private readonly fetchImpl?: typeof globalThis.fetch,
   ) {}
 
   async poll(): Promise<void> {
@@ -37,7 +40,7 @@ export class PantheonResultPuller {
 
     let changes: ChangeView[];
     try {
-      const res = await fetch(url.toString());
+      const res = await (this.fetchImpl ?? globalThis.fetch)(url.toString());
       if (!res.ok) return;
       const data = (await res.json()) as { changes: ChangeView[] };
       changes = data.changes;
@@ -69,6 +72,11 @@ export class PantheonResultPuller {
   }
 
   start(intervalMs: number): ReturnType<typeof setInterval> {
-    return setInterval(() => void this.poll(), intervalMs);
+    // Fetch errors are swallowed inside poll(), but reportProposalResult can
+    // still reject — catch here so a bad row never becomes an unhandled
+    // rejection that takes the server down.
+    return setInterval(() => {
+      this.poll().catch((err) => console.error("[result-puller] poll failed", err));
+    }, intervalMs);
   }
 }

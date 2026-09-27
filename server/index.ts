@@ -21,8 +21,7 @@ import { registerDesignAssetRoutes } from "./routes/design-assets.js";
 import { registerSurveyRoutes } from "./routes/surveys.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
 import { StdioHarnessTransport, FileHarnessTransport, PantheonHarnessTransport, NOOP_HARNESS_TRANSPORT, type HarnessTransport } from "./harness/transport.js";
-import { PantheonResultPuller } from "./harness/pantheon-result-puller.js";
-import { PantheonQuestionPuller } from "./pantheon/question-puller.js";
+import { startPantheonSync } from "./pantheon/start-sync.js";
 import { createStorageAdapter } from "./storage/index.js";
 
 /** The built web SPA (`vite.config.ts`'s `build.outDir: "../dist-web"`)
@@ -196,20 +195,7 @@ if (isMain) {
   if (transport instanceof PantheonHarnessTransport) {
     const pantheonUrl = process.env.PANTHEON_API_URL!;
 
-    const pullerDb = openDb(dbPath);
-    const puller = new PantheonResultPuller(pantheonUrl, pullerDb);
-    const pullerHandle = puller.start(60_000);
-
-    const questionPullerDb = openDb(dbPath);
-    const questionPuller = new PantheonQuestionPuller(pantheonUrl, questionPullerDb);
-    const questionPullerHandle = questionPuller.start(60_000);
-
-    app.addHook("onClose", async () => {
-      clearInterval(pullerHandle);
-      clearInterval(questionPullerHandle);
-      pullerDb.close();
-      questionPullerDb.close();
-    });
+    startPantheonSync(app, { dbPath, pantheonUrl });
   }
   app.listen({ port, host }).then(() => {
     // eslint-disable-next-line no-console
