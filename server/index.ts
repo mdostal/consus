@@ -22,6 +22,7 @@ import { registerSurveyRoutes } from "./routes/surveys.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
 import { StdioHarnessTransport, NOOP_HARNESS_TRANSPORT, PantheonHarnessTransport, type HarnessTransport } from "./harness/transport.js";
 import { PantheonResultPuller } from "./harness/pantheon-result-puller.js";
+import { PantheonQuestionPuller } from "./pantheon/question-puller.js";
 import { createStorageAdapter } from "./storage/index.js";
 
 /** The built web SPA (`vite.config.ts`'s `build.outDir: "../dist-web"`)
@@ -173,12 +174,21 @@ if (isMain) {
   const app = buildServer({ dbPath, repos, transport, attachmentsDir, projectsConfigPath, discoveryRoots });
 
   if (transport instanceof PantheonHarnessTransport) {
+    const pantheonUrl = process.env.PANTHEON_API_URL!;
+
     const pullerDb = openDb(dbPath);
-    const puller = new PantheonResultPuller(process.env.PANTHEON_API_URL!, pullerDb);
-    const handle = puller.start(60_000);
+    const puller = new PantheonResultPuller(pantheonUrl, pullerDb);
+    const pullerHandle = puller.start(60_000);
+
+    const questionPullerDb = openDb(dbPath);
+    const questionPuller = new PantheonQuestionPuller(pantheonUrl, questionPullerDb);
+    const questionPullerHandle = questionPuller.start(60_000);
+
     app.addHook("onClose", async () => {
-      clearInterval(handle);
+      clearInterval(pullerHandle);
+      clearInterval(questionPullerHandle);
       pullerDb.close();
+      questionPullerDb.close();
     });
   }
   app.listen({ port, host }).then(() => {

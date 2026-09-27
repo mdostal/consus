@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import Database from "better-sqlite3";
 import { runMigration } from "../db/migrate.js";
 import { registerInteractionRoutes } from "./interactions.js";
+import { pullQuestions } from "../pantheon/question-adapter.js";
 
 function insertDecision(db: Database.Database, id: string, title: string, sourceBody: string | null = null) {
   const now = new Date().toISOString();
@@ -285,6 +286,104 @@ describe("POST /api/decisions/:id/verdict", () => {
         decided_at: null;
       };
       expect(row.decided_at).toBeNull();
+    });
+  });
+
+  describe("s6-consus-pantheon-question-adapter: question-linked items route to partial/submit, not seed", () => {
+    it("does NOT fire the seed bridge for a question-linked item verdict", async () => {
+      // Seed a question-linked item via pullQuestions
+      const feedBody = {
+        questions: [{
+          ticket_id: "pant-ticket-1",
+          identifier: "PANT-1",
+          status: "todo",
+          questions: [
+            { qid: "q1", text: "Pick one", kind: "single-select", options: ["Yes", "No"] },
+          ],
+        }],
+      };
+      let fetchCallCount = 0;
+      const allCalls: CapturedCall[] = [];
+      const seededFetch = (url: string | URL | Request, init?: RequestInit) => {
+        allCalls.push({ url: String(url), init: init ?? {} });
+        fetchCallCount++;
+        return Promise.resolve(new Response(JSON.stringify(feedBody), { status: 200 }));
+      };
+      await pullQuestions(db, { pantheonApiUrl: "http://core-api:3012", fetch: seededFetch });
+
+      const item = db.prepare("SELECT id FROM items WHERE decision_payload IS NOT NULL").get() as { id: string };
+
+      allCalls.length = 0; // clear seed call
+      bridgeCalls.length = 0;
+
+      const res = await app.inject({
+        method: "POST",
+        url: `/api/decisions/${item.id}/verdict`,
+        payload: { verdict: { kind: "option_chosen", optionId: "A" } },
+      });
+      expect(res.statusCode).toBe(200);
+
+      await new Promise((r) => setTimeout(r, 0));
+
+      // Must NOT have called the seed endpoint
+      const seedCalls = bridgeCalls.filter((c) => c.url.includes("/api/events/decisions"));
+      expect(seedCalls).toHaveLength(0);
+
+      // Must have called the partial endpoint
+      const partialCalls = bridgeCalls.filter((c) => c.url.includes("/partial"));
+      expect(partialCalls).toHaveLength(1);
+      expect(partialCalls[0].url).toBe("http://core-api:3012/api/feed/questions/pant-ticket-1/partial");
+
+      const body = JSON.parse(partialCalls[0].init.body as string);
+      expect(body.qid).toBe("q1");
+      expect(body.answer).toBe("A");
+    });
+
+    it("fires submit when the only question-linked item is decided", async () => {
+      const feedBody = {
+        questions: [{
+          ticket_id: "pant-ticket-2",
+          identifier: "PANT-2",
+          status: "todo",
+          questions: [
+            { qid: "qa", text: "Single question", kind: "free-text" },
+          ],
+        }],
+      };
+      await pullQuestions(db, {
+        pantheonApiUrl: "http://core-api:3012",
+        fetch: () => Promise.resolve(new Response(JSON.stringify(feedBody), { status: 200 })),
+      });
+
+      const item = db.prepare("SELECT id FROM items WHERE survey_id IN (SELECT id FROM surveys WHERE title LIKE '%PANT-2%')").get() as { id: string };
+      bridgeCalls.length = 0;
+
+      await app.inject({
+        method: "POST",
+        url: `/api/decisions/${item.id}/verdict`,
+        payload: { verdict: { kind: "text_response", text: "It depends" } },
+      });
+
+      await new Promise((r) => setTimeout(r, 0));
+
+      const submitCalls = bridgeCalls.filter((c) => c.url.includes("/submit"));
+      expect(submitCalls).toHaveLength(1);
+    });
+
+    it("unlinked decisions still fire the seed bridge", async () => {
+      insertDecision(db, "unlinked-dec", "Regular decision");
+      bridgeCalls.length = 0;
+
+      await app.inject({
+        method: "POST",
+        url: "/api/decisions/unlinked-dec/verdict",
+        payload: { verdict: { kind: "accepted" } },
+      });
+
+      await new Promise((r) => setTimeout(r, 0));
+
+      const seedCalls = bridgeCalls.filter((c) => c.url.includes("/api/events/decisions"));
+      expect(seedCalls).toHaveLength(1);
     });
   });
 
