@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { pullQuestions } from "./question-adapter.js";
+import { recordSyncFailure, recordSyncSuccess, safeRecord } from "./sync-status.js";
 
 /**
  * Polls Pantheon's question feed on an interval and imports new question
@@ -16,8 +17,10 @@ export class PantheonQuestionPuller {
   async poll(): Promise<void> {
     try {
       await pullQuestions(this.db, { pantheonApiUrl: this.pantheonApiUrl, fetch: this.fetchImpl });
+      safeRecord(() => recordSyncSuccess(this.db, "question_pull"));
     } catch (err) {
       console.error("[question-puller] poll failed", err);
+      safeRecord(() => recordSyncFailure(this.db, "question_pull", err));
     }
   }
 

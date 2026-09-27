@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { Verdict } from "../decision-contract/parser.js";
+import { recordSyncFailure, recordSyncSuccess, safeRecord } from "./sync-status.js";
 
 // --- Pantheon feed types ---
 
@@ -207,11 +208,34 @@ export async function postQuestionVerdict(
     .get(itemId) as { decision_payload: string | null } | undefined;
   const answer = verdictToAnswer(verdict, item?.decision_payload ?? null);
 
-  await doFetch(`${opts.pantheonApiUrl}/api/feed/questions/${link.ticketId}/partial`, {
+  try {
+    const failure = await postPartialAndSubmit(db, link, answer, actor, opts.pantheonApiUrl, doFetch);
+    safeRecord(() =>
+      failure ? recordSyncFailure(db, "question_push", failure) : recordSyncSuccess(db, "question_push"),
+    );
+  } catch (err) {
+    safeRecord(() => recordSyncFailure(db, "question_push", err));
+    throw err;
+  }
+}
+
+/** Returns a failure message when Pantheon answered non-2xx, null on success. */
+async function postPartialAndSubmit(
+  db: Database.Database,
+  link: QuestionLink,
+  answer: string,
+  actor: string,
+  pantheonApiUrl: string,
+  doFetch: typeof globalThis.fetch,
+): Promise<string | null> {
+  let failure: string | null = null;
+
+  const partialRes = await doFetch(`${pantheonApiUrl}/api/feed/questions/${link.ticketId}/partial`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ qid: link.qid, answer, actor }),
   });
+  if (!partialRes.ok) failure = `Pantheon question partial failed: ${partialRes.status}`;
 
   // Post submit once all survey members have a decided_at
   const { total } = db
@@ -227,10 +251,13 @@ export async function postQuestionVerdict(
     .get(link.surveyId) as { answered: number };
 
   if (total > 0 && answered >= total) {
-    await doFetch(`${opts.pantheonApiUrl}/api/feed/questions/${link.ticketId}/submit`, {
+    const submitRes = await doFetch(`${pantheonApiUrl}/api/feed/questions/${link.ticketId}/submit`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ actor }),
     });
+    if (!submitRes.ok) failure = `Pantheon question submit failed: ${submitRes.status}`;
   }
+
+  return failure;
 }
