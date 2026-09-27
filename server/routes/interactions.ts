@@ -58,6 +58,9 @@ export function registerInteractionRoutes(
         .prepare("SELECT id, title, status, source_body, created_at AS createdAt FROM items WHERE id = ?")
         .get(id) as { id: string; title: string; status: string; source_body: string | null; createdAt: string } | undefined;
       if (!item) return reply.code(404).send({ error: "decision not found" });
+      // Closed via POST /api/questions/:ticket/close — the upstream ticket is
+      // gone, so there is nothing left to answer.
+      if (item.status === "closed") return reply.code(409).send({ error: "decision is closed" });
 
       const now = new Date().toISOString();
       const nextStatus = verdictStatus(verdict);

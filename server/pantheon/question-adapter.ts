@@ -4,7 +4,7 @@ import type { Verdict } from "../decision-contract/parser.js";
 
 // --- Pantheon feed types ---
 
-interface QuestionItem {
+export interface QuestionItem {
   qid: string;
   text: string;
   kind: string;
@@ -77,12 +77,125 @@ function buildDecisionPayload(q: QuestionItem): object | null {
   }
 }
 
+// --- Import (shared by pull and push) ---
+
+/** One Pantheon question ticket, as carried by the feed and by
+ *  POST /api/questions/import. */
+export interface QuestionTicketInput {
+  ticket_id: string;
+  identifier?: string | null;
+  questions: QuestionItem[];
+}
+
+export type ImportResult =
+  | { status: "created"; surveyId: string; itemIds: string[] }
+  | { status: "exists"; surveyId: string }
+  | { status: "unmappable" };
+
+/**
+ * Import one question ticket as a survey with one decision item per question
+ * we can map to an answer shape. Idempotent on ticket_id: a ticket already
+ * tracked in question_links returns its existing survey without writing.
+ * Both the feed puller and POST /api/questions/import go through here.
+ */
+export function importQuestionTicket(db: Database.Database, ticket: QuestionTicketInput): ImportResult {
+  const existing = db
+    .prepare("SELECT survey_id FROM question_links WHERE ticket_id = ? LIMIT 1")
+    .get(ticket.ticket_id) as { survey_id: string } | undefined;
+  if (existing) return { status: "exists", surveyId: existing.survey_id };
+
+  const mapped = ticket.questions
+    .map((q) => ({ q, payload: buildDecisionPayload(q) }))
+    .filter((m): m is { q: QuestionItem; payload: object } => m.payload !== null);
+  if (mapped.length === 0) return { status: "unmappable" };
+
+  const surveyId = randomUUID();
+  const now = new Date().toISOString();
+  const itemIds: string[] = [];
+
+  const tx = db.transaction(() => {
+    db.prepare("INSERT INTO surveys (id, title, description, created_at) VALUES (?, ?, ?, ?)").run(
+      surveyId,
+      `Questions: ${ticket.identifier ?? ticket.ticket_id}`,
+      null,
+      now,
+    );
+
+    for (const { q, payload } of mapped) {
+      const itemId = randomUUID();
+      db.prepare(
+        `INSERT INTO items (id, type, title, status, created_at, updated_at, decision_payload, survey_id)
+         VALUES (?, 'decision_request', ?, 'open', ?, ?, ?, ?)`,
+      ).run(itemId, q.text, now, now, JSON.stringify(payload), surveyId);
+
+      db.prepare(
+        "INSERT INTO question_links (item_id, ticket_id, qid, survey_id) VALUES (?, ?, ?, ?)",
+      ).run(itemId, ticket.ticket_id, q.qid, surveyId);
+      itemIds.push(itemId);
+    }
+  });
+  tx();
+
+  return { status: "created", surveyId, itemIds };
+}
+
+// --- Close ---
+
+export type CloseResult =
+  | { found: false }
+  | { found: true; surveyId: string; closedItemIds: string[] };
+
+/**
+ * Close every still-open item linked to a question ticket — for a ticket that
+ * was cancelled or answered somewhere other than Consus. Nothing is deleted:
+ * each closed item gets status 'closed', an audit_log row, and a comment
+ * carrying the reason. Already-decided or already-closed items are left
+ * alone, so a repeat call is a no-op.
+ */
+export function closeQuestionTicket(
+  db: Database.Database,
+  ticketId: string,
+  reason: string,
+  actor = "pantheon",
+): CloseResult {
+  const link = db
+    .prepare("SELECT survey_id FROM question_links WHERE ticket_id = ? LIMIT 1")
+    .get(ticketId) as { survey_id: string } | undefined;
+  if (!link) return { found: false };
+
+  const open = db
+    .prepare(
+      `SELECT i.id, i.status FROM items i
+       JOIN question_links ql ON ql.item_id = i.id
+       WHERE ql.ticket_id = ? AND i.decided_at IS NULL AND i.status != 'closed'`,
+    )
+    .all(ticketId) as Array<{ id: string; status: string }>;
+
+  const now = new Date().toISOString();
+  const tx = db.transaction(() => {
+    for (const item of open) {
+      db.prepare("UPDATE items SET status = 'closed', updated_at = ? WHERE id = ?").run(now, item.id);
+      db.prepare(
+        "INSERT INTO audit_log (item_id, actor, field, old_value, new_value, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run(item.id, actor, "status", item.status, "closed", now);
+      db.prepare("INSERT INTO comments (item_id, author, body, created_at) VALUES (?, ?, ?, ?)").run(
+        item.id,
+        actor,
+        `Closed upstream: ${reason}`,
+        now,
+      );
+    }
+  });
+  tx();
+
+  return { found: true, surveyId: link.survey_id, closedItemIds: open.map((i) => i.id) };
+}
+
 // --- Pull ---
 
 /**
- * Pull pending questions from Pantheon's feed and create one survey per
- * question ticket, with one decision item per question. Idempotent: tickets
- * already tracked in question_links are skipped without error.
+ * Pull pending questions from Pantheon's feed and import each ticket via
+ * importQuestionTicket — the same path as POST /api/questions/import.
  */
 export async function pullQuestions(
   db: Database.Database,
@@ -97,40 +210,7 @@ export async function pullQuestions(
 
   let surveysCreated = 0;
   for (const ticket of data.questions) {
-    // Skip already-imported tickets (idempotency guard)
-    const existing = db
-      .prepare("SELECT item_id FROM question_links WHERE ticket_id = ? LIMIT 1")
-      .get(ticket.ticket_id);
-    if (existing) continue;
-
-    // Skip tickets with no questions we can map
-    const mappable = ticket.questions.filter((q) => buildDecisionPayload(q) !== null);
-    if (mappable.length === 0) continue;
-
-    const surveyId = randomUUID();
-    const now = new Date().toISOString();
-
-    db.prepare("INSERT INTO surveys (id, title, description, created_at) VALUES (?, ?, ?, ?)").run(
-      surveyId,
-      `Questions: ${ticket.identifier ?? ticket.ticket_id}`,
-      null,
-      now,
-    );
-
-    for (const q of mappable) {
-      const payload = buildDecisionPayload(q)!;
-      const itemId = randomUUID();
-      db.prepare(
-        `INSERT INTO items (id, type, title, status, created_at, updated_at, decision_payload, survey_id)
-         VALUES (?, 'decision_request', ?, 'open', ?, ?, ?, ?)`,
-      ).run(itemId, q.text, now, now, JSON.stringify(payload), surveyId);
-
-      db.prepare(
-        "INSERT INTO question_links (item_id, ticket_id, qid, survey_id) VALUES (?, ?, ?, ?)",
-      ).run(itemId, ticket.ticket_id, q.qid, surveyId);
-    }
-
-    surveysCreated++;
+    if (importQuestionTicket(db, ticket).status === "created") surveysCreated++;
   }
 
   return { surveysCreated };

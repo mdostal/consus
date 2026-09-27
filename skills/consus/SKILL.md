@@ -123,10 +123,37 @@ difference is what happens around them when Consus runs with `CONSUS_HARNESS=pan
 `PANTHEON_API_URL`:
 
 - Pending Pantheon question tickets show up in `GET /api/decisions` as items grouped into a
-  survey, pulled every 60 seconds.
+  survey, pulled every 60 seconds — unless `CONSUS_PANTHEON_POLL=0`, in which case they only
+  arrive when pushed (below).
 - A deciding `POST /api/decisions/:id/verdict` on one of those items is forwarded to Pantheon as a
   partial answer, then as a submit once every item in the ticket is answered. Other decided items
   are posted to Pantheon's `/api/events/decisions`.
 
 Forwarding is fire-and-forget: the verdict response is the same whether or not Pantheon is
 reachable.
+
+### Pushing question tickets in (no polling)
+
+Any harness can push a question ticket in directly — the same shape as one entry of Pantheon's
+question feed:
+
+```
+POST /api/questions/import
+Body: { "ticket_id": "t-123", "identifier": "PANT-123",
+        "questions": [{ "qid": "q1", "text": "Which DB?", "kind": "single-select", "options": ["Postgres", "SQLite"] }] }
+```
+
+201 `{ ticket_id, survey_id, item_ids }` on create; 200 `{ ticket_id, survey_id }` if the ticket
+is already imported; 422 if no question maps (`single-select` needs ≥2 options, `multi` ≥1,
+`free-text` always maps).
+
+When the ticket is cancelled or answered somewhere else, close it so its survey doesn't stay open:
+
+```
+POST /api/questions/:ticket/close
+Body: { "reason": "ticket cancelled", "actor"?: "<your identity, default pantheon>" }
+```
+
+Every undecided item is marked `closed` (audited, never deleted) and leaves the queue; a verdict
+on it then returns 409. Repeating the call is a no-op (`closed_item_ids: []`); an unknown ticket
+is 404.
