@@ -20,7 +20,7 @@ import { registerAttachmentRoutes } from "./routes/attachments.js";
 import { registerDesignAssetRoutes } from "./routes/design-assets.js";
 import { registerSurveyRoutes } from "./routes/surveys.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
-import { StdioHarnessTransport, NOOP_HARNESS_TRANSPORT, PantheonHarnessTransport, type HarnessTransport } from "./harness/transport.js";
+import { StdioHarnessTransport, FileHarnessTransport, PantheonHarnessTransport, NOOP_HARNESS_TRANSPORT, type HarnessTransport } from "./harness/transport.js";
 import { PantheonResultPuller } from "./harness/pantheon-result-puller.js";
 import { PantheonQuestionPuller } from "./pantheon/question-puller.js";
 import { createStorageAdapter } from "./storage/index.js";
@@ -34,10 +34,18 @@ import { createStorageAdapter } from "./storage/index.js";
 const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../dist-web");
 
 /** Selects the correct HarnessTransport based on environment variables.
- *  Extracted for unit testability (server/harness/transport-selection.test.ts). */
+ *  Extracted for unit testability (server/harness/transport-selection.test.ts).
+ *
+ *  Priority order (mutually exclusive transports, first match wins):
+ *    1. CONSUS_HARNESS=pantheon  — hosted Pantheon integration (requires PANTHEON_API_URL)
+ *    2. CONSUS_HARNESS_FILE_DIR  — standalone file transport (no Pantheon, s9)
+ *    3. CONSUS_HARNESS_COMMAND   — stdio transport (legacy/custom harness)
+ *    4. (default)                — NOOP (proposals fail immediately with NO_ADAPTER)
+ */
 export function selectHarnessTransport(env: {
   CONSUS_HARNESS?: string;
   PANTHEON_API_URL?: string;
+  CONSUS_HARNESS_FILE_DIR?: string;
   CONSUS_HARNESS_COMMAND?: string;
   CONSUS_HARNESS_ARGS?: string;
 }): HarnessTransport {
@@ -46,6 +54,9 @@ export function selectHarnessTransport(env: {
       throw new Error("PANTHEON_API_URL is required when CONSUS_HARNESS=pantheon");
     }
     return new PantheonHarnessTransport(env.PANTHEON_API_URL);
+  }
+  if (env.CONSUS_HARNESS_FILE_DIR) {
+    return new FileHarnessTransport(env.CONSUS_HARNESS_FILE_DIR);
   }
   if (env.CONSUS_HARNESS_COMMAND) {
     return new StdioHarnessTransport(
@@ -177,10 +188,7 @@ if (isMain) {
     ? process.env.CONSUS_DISCOVERY_ROOTS.split(",")
     : [];
 
-  // Harness dispatch (the propose-a-change mechanism) is opt-in and
-  // system-agnostic. CONSUS_HARNESS=pantheon selects the built-in Pantheon
-  // HTTP adapter (requires PANTHEON_API_URL). Otherwise a configured command
-  // path (CONSUS_HARNESS_COMMAND) selects the stdio transport. Default: noop.
+  // Harness dispatch — see selectHarnessTransport() for priority order.
   const transport = selectHarnessTransport(process.env);
 
   const app = buildServer({ dbPath, repos, transport, attachmentsDir, projectsConfigPath, discoveryRoots });
