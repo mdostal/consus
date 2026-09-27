@@ -29,6 +29,7 @@ export interface ProposalRow {
   resolved_at: string | null;
   applied_diff: string | null;
   failure_reason: string | null;
+  harness_ticket_id: string | null;
 }
 
 export interface ProposeChangeInput {
@@ -70,6 +71,11 @@ export async function proposeChange(
     db.prepare(
       "UPDATE proposals SET status = 'failed', resolved_at = ?, failure_reason = ? WHERE id = ?",
     ).run(new Date().toISOString(), reason, proposalId);
+  } else {
+    const ticketId = (dispatched.result as { ticket_id?: string } | null | undefined)?.ticket_id;
+    if (ticketId) {
+      db.prepare("UPDATE proposals SET harness_ticket_id = ? WHERE id = ?").run(ticketId, proposalId);
+    }
   }
 
   return { ok: true, proposalId };
