@@ -20,7 +20,7 @@ import { registerAttachmentRoutes } from "./routes/attachments.js";
 import { registerDesignAssetRoutes } from "./routes/design-assets.js";
 import { registerSurveyRoutes } from "./routes/surveys.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
-import { StdioHarnessTransport, NOOP_HARNESS_TRANSPORT, type HarnessTransport } from "./harness/transport.js";
+import { StdioHarnessTransport, FileHarnessTransport, NOOP_HARNESS_TRANSPORT, type HarnessTransport } from "./harness/transport.js";
 import { createStorageAdapter } from "./storage/index.js";
 
 /** The built web SPA (`vite.config.ts`'s `build.outDir: "../dist-web"`)
@@ -153,9 +153,12 @@ if (isMain) {
     : [];
 
   // Harness dispatch (the propose-a-change mechanism) is opt-in and
-  // system-agnostic — a plain configured command, nothing hardcoded.
-  const transport =
-    process.env.CONSUS_HARNESS_COMMAND
+  // system-agnostic. CONSUS_HARNESS_FILE_DIR selects the file transport
+  // (standalone, no Pantheon); CONSUS_HARNESS_COMMAND selects the stdio
+  // transport. If neither is set, the NOOP transport is used.
+  const transport: HarnessTransport = process.env.CONSUS_HARNESS_FILE_DIR
+    ? new FileHarnessTransport(process.env.CONSUS_HARNESS_FILE_DIR)
+    : process.env.CONSUS_HARNESS_COMMAND
       ? new StdioHarnessTransport(
           process.env.CONSUS_HARNESS_COMMAND,
           process.env.CONSUS_HARNESS_ARGS ? process.env.CONSUS_HARNESS_ARGS.split(",") : [],

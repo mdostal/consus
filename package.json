@@ -17,6 +17,9 @@
   "bugs": {
     "url": "https://github.com/mdostal/consus/issues"
   },
+  "bin": {
+    "consus-handoff": "./bin/handoff.mjs"
+  },
   "scripts": {
     "dev:web": "vite",
     "dev:server": "tsx watch server/index.ts",
@@ -28,7 +31,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "agent:init": "node scripts/agent-init.mjs init",
-    "agent:status": "node scripts/agent-init.mjs status"
+    "agent:status": "node scripts/agent-init.mjs status",
+    "handoff": "node bin/handoff.mjs"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.1",

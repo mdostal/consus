@@ -64,6 +64,10 @@ time. The running app itself surfaces this same command in a banner at the top o
 targets Claude Code only; see [`skills/consus/SKILL.md`](skills/consus/SKILL.md) for the full
 agent-facing contract.
 
+**Standalone (no Pantheon) — file transport:** Set `CONSUS_HARNESS_FILE_DIR=.pHive/handoffs` when
+starting Consus. Proposals are written as JSON files; a harness reads and acts on them via
+`node bin/handoff.mjs` (or `npm run handoff`). No live integration required.
+
 ## How it fits
 
 Consus is a standalone tool today — it does not reach out to any other system's API or client library (see `package.json`'s dependency list). Any agent harness that understands `skills/consus/SKILL.md` can drive it over plain HTTP: read the decision queue, push a decision or CBA, propose a doc/diagram change. Cross-system integration (e.g. a future Pantheon L2 adapter layer) is explicitly out of Consus's own codebase — if it ever exists, it talks to Consus over these same generic HTTP routes, the same as any other harness would.
@@ -89,6 +93,28 @@ npm start            # node dist-server/index.js on :8722  (or scripts/start.sh)
 ```
 
 Config via env: `PORT` (default `8722`), `HOST` (default `127.0.0.1` — set `0.0.0.0` for a containerized deploy, since `127.0.0.1` inside a container is unreachable from outside it), `CONSUS_DB_PATH` (default `.pHive/consus.sqlite`), `CONSUS_PROJECTS_CONFIG` (repos to scan for docs, default `.pHive/consus-projects.json`).
+
+**Harness transports** (opt-in, mutually exclusive — only one is active at a time):
+
+| Env var | Transport | Notes |
+|---|---|---|
+| `CONSUS_HARNESS_FILE_DIR` | File (standalone) | Writes each proposal as a JSON file under the given dir (default suggestion: `.pHive/handoffs`). A harness reads those files via `consus handoff` (see below). |
+| `CONSUS_HARNESS_COMMAND` | Stdio | Spawns the configured command and speaks one JSON object per line over stdin/stdout. `CONSUS_HARNESS_ARGS` (comma-separated) passes additional arguments. |
+| _(neither set)_ | NOOP | Proposals are recorded as `failed` immediately — the default for a fresh install. |
+
+**`consus handoff` — standalone harness interface for the file transport:**
+
+```bash
+# List pending handoffs (with diffs)
+node bin/handoff.mjs list
+# or: npm run handoff list
+
+# Report a result back to Consus (removes the handoff file on success)
+node bin/handoff.mjs result <proposalId> applied
+node bin/handoff.mjs result <proposalId> failed "reason text"
+```
+
+`CONSUS_HANDOFF_DIR` overrides the directory (default: `.pHive/handoffs`). `CONSUS_URL` overrides the Consus server URL (default: `http://localhost:${PORT}`).
 
 Verify it's up:
 

@@ -454,6 +454,13 @@ what's on the other end. A harness applies the real change and reports back via
 `POST /api/proposals/:id/result`. One route family shared by decisions, diagrams, and docs —
 `targetType` is a label, never branched on server-side.
 
+**Transport selection** (env, mutually exclusive):
+- `CONSUS_HARNESS_FILE_DIR` — **file transport** (standalone, no Pantheon). Writes each proposal as
+  `<dir>/<proposalId>.json`. A harness reads those files and posts results via `node bin/handoff.mjs`.
+- `CONSUS_HARNESS_COMMAND` — **stdio transport**. Spawns the given command; `CONSUS_HARNESS_ARGS`
+  (comma-separated) adds CLI arguments.
+- _(neither)_ — NOOP transport. Proposals fail immediately with `NO_ADAPTER`.
+
 ### `POST /api/proposals`
 Fires a new change proposal.
 

@@ -34,6 +34,38 @@ export const NOOP_HARNESS_TRANSPORT: HarnessTransport = {
 };
 
 /**
+ * File-based transport (opt-in, standalone). Writes each proposeChange
+ * envelope as a JSON file under `handoffsDir`; a separate `consus handoff`
+ * CLI (bin/handoff.mjs) reads those files and posts results back.
+ * Selected by CONSUS_HARNESS_FILE_DIR instead of CONSUS_HARNESS_COMMAND.
+ */
+export class FileHarnessTransport implements HarnessTransport {
+  constructor(private readonly handoffsDir: string) {}
+
+  async invoke<T = unknown>(method: string, params?: unknown): Promise<HarnessResult<T>> {
+    if (method !== "proposeChange") {
+      return { ok: false, recoverable: false, code: "UNKNOWN_METHOD" };
+    }
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+
+    const envelope = params as { proposalId?: string } & Record<string, unknown>;
+    if (!envelope?.proposalId) {
+      return { ok: false, recoverable: false, code: "INTERNAL_ERROR", message: "missing proposalId in params" };
+    }
+
+    try {
+      mkdirSync(this.handoffsDir, { recursive: true });
+      const filePath = join(this.handoffsDir, `${envelope.proposalId}.json`);
+      writeFileSync(filePath, JSON.stringify(envelope, null, 2) + "\n", "utf8");
+      return { ok: true, result: { handoffFile: filePath } as unknown as T };
+    } catch (err) {
+      return { ok: false, recoverable: true, code: "INTERNAL_ERROR", message: String(err) };
+    }
+  }
+}
+
+/**
  * Real stdio transport (opt-in, production). Spawns whatever command is
  * configured and speaks one JSON object per line over stdin/stdout. Not
  * exercised by unit tests — those inject a fake HarnessTransport instead.
