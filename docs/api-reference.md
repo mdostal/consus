@@ -528,7 +528,15 @@ Called by the harness once it's actually applied (or failed to apply) the propos
 On `"applied"`, writes an `audit_log` entry (`field: "proposal:<targetType>"`, `new_value` the
 applied diff). On `"failed"`, no audit_log entry.
 
-**Response 200:** the updated proposal row. **404** for an unknown proposal id.
+Only a `pending` proposal changes. The endpoint is safe to retry: reporting the same status again
+for a proposal that is already resolved does nothing (no second `audit_log` row, `resolved_at` and
+the diff/reason are left as they are) and returns the current row with 200.
+
+**Response 200:** the updated proposal row, or the unchanged row for a repeated identical result.
+**404** for an unknown proposal id. **409** if the proposal is already resolved with the other
+status (`applied` then `failed`, or `failed` then `applied`). The row stays unchanged and the body is
+`{ "error": "proposal <id> is already <status>; cannot report <status>" }`. A proposal whose
+dispatch failed is already `failed`, so a later `applied` for it also gets 409.
 
 ### `GET /api/proposals?itemId=<id>`
 Lists every proposal for an item, most recent first — pending, applied, and failed all included
@@ -713,7 +721,8 @@ Turning this on starts two pollers alongside the server, each every 60 seconds:
 
 - **Result puller** — `GET {PANTHEON_API_URL}/api/feed/changes?origin_god=consus&has_result=true&since=<cursor>`,
   and for each change with a result, records it exactly as `POST /api/proposals/:id/result` would
-  (`applied`/`failed`).
+  (`applied`/`failed`). The cursor is stored in the `harness_cursors` table, so after a restart the
+  first poll resumes from the last result seen. Any replayed result is a no-op.
 - **Question adapter** — `GET {PANTHEON_API_URL}/api/feed/questions?status=pending&surface=decision`,
   and for each new pending question ticket, creates one survey with one decision item per
   question it can map to an answer shape. Answering those items sends partial/submit answers back
