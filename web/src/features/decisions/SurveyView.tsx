@@ -61,6 +61,10 @@ export function SurveyView({ surveyId, surveyTitle, onVerdictRecorded, focusHead
   /** Verdicts recorded in this session (id -> verdict). Pre-decided items are tracked via decided_at. */
   const [recorded, setRecorded] = useState<Record<string, Verdict>>({});
   const [submitErrors, setSubmitErrors] = useState<Record<string, string>>({});
+  // Answering unmounts that member's DecisionCard, which held keyboard focus;
+  // hand focus to its "Recorded" note instead of letting it drop to <body>
+  // (PANT-812), so Tab continues on to the next member.
+  const focusRecordedFor = useRef<string | null>(null);
 
   const loadMembers = useCallback(() => {
     setFetchError(null);
@@ -90,6 +94,7 @@ export function SurveyView({ surveyId, surveyTitle, onVerdictRecorded, focusHead
     });
     try {
       await postVerdict(memberId, verdict);
+      focusRecordedFor.current = memberId;
       setRecorded((prev) => ({ ...prev, [memberId]: verdict }));
       onVerdictRecorded?.();
     } catch (e) {
@@ -197,7 +202,17 @@ export function SurveyView({ surveyId, surveyTitle, onVerdictRecorded, focusHead
               {member.decision_payload ? (
                 <>
                   {sessionVerdict ? (
-                    <div className="dv__recorded" data-testid={`verdict-recorded-${member.id}`}>
+                    <div
+                      className="dv__recorded"
+                      data-testid={`verdict-recorded-${member.id}`}
+                      tabIndex={-1}
+                      ref={(el) => {
+                        if (el && focusRecordedFor.current === member.id) {
+                          focusRecordedFor.current = null;
+                          el.focus();
+                        }
+                      }}
+                    >
                       ✓ Recorded: {verdictLabel(sessionVerdict)}
                     </div>
                   ) : member.decided_at ? (
