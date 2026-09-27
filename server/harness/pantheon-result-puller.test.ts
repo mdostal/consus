@@ -152,3 +152,41 @@ describe("PantheonResultPuller.poll — query parameters", () => {
     expect(capturedUrl).toContain("has_result=true");
   });
 });
+
+describe("PantheonResultPuller.start", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("uses an injected fetch instead of the global one", async () => {
+    const globalFetch = vi.fn();
+    vi.stubGlobal("fetch", globalFetch);
+    const injected = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ changes: [] }) });
+
+    await new PantheonResultPuller(PANTHEON_URL, stubDb, injected).poll();
+
+    expect(injected).toHaveBeenCalledTimes(1);
+    expect(globalFetch).not.toHaveBeenCalled();
+  });
+
+  it("catches and logs a poll rejection (e.g. reportProposalResult failing) instead of leaking it", async () => {
+    vi.useFakeTimers();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    const err = new Error("db locked");
+    vi.mocked(reportProposalResult).mockRejectedValueOnce(err);
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ changes: [change1] }) });
+
+    try {
+      const handle = new PantheonResultPuller(PANTHEON_URL, stubDb, fetchMock).start(1_000);
+      await vi.advanceTimersByTimeAsync(1_000);
+      clearInterval(handle);
+
+      expect(errorSpy).toHaveBeenCalledWith("[result-puller] poll failed", err);
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
+  });
+});

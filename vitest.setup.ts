@@ -141,4 +141,13 @@ if (typeof HTMLElement !== "undefined") {
   if (!HTMLElement.prototype.hasPointerCapture) {
     HTMLElement.prototype.hasPointerCapture = () => false;
   }
+
+  // jsdom ships HTMLCanvasElement but every drawing API is a "Not
+  // implemented" stub that prints a full stack trace to stderr on each call
+  // (unless the native `canvas` package is installed). CaseBoardCorkTexture
+  // already treats a null 2d context as "no canvas support" and falls back
+  // to its plain token color, so returning null here keeps that same code
+  // path while keeping test output free of noise that hides real warnings.
+  HTMLCanvasElement.prototype.getContext = (() => null) as typeof HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.toDataURL = () => "data:,";
 }

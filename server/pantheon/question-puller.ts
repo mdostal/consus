@@ -10,11 +10,12 @@ export class PantheonQuestionPuller {
   constructor(
     private readonly pantheonApiUrl: string,
     private readonly db: Database.Database,
+    private readonly fetchImpl?: typeof globalThis.fetch,
   ) {}
 
   async poll(): Promise<void> {
     try {
-      await pullQuestions(this.db, { pantheonApiUrl: this.pantheonApiUrl });
+      await pullQuestions(this.db, { pantheonApiUrl: this.pantheonApiUrl, fetch: this.fetchImpl });
     } catch (err) {
       console.error("[question-puller] poll failed", err);
     }
