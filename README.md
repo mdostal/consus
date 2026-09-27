@@ -44,6 +44,7 @@ flowchart TB
 
   Scanner -.on-demand ingest.-> Repo[("This repo's own .pHive/<br/>planning/ + epics/ (.md/.html/.yaml)")]
   Harness -.optional, opt-in.-> LocalCmd["A locally configured CLI command<br/>(CONSUS_HARNESS_COMMAND)"]
+  Harness -.optional, opt-in.-> PantheonFeed["Pantheon board feed<br/>(CONSUS_HARNESS=pantheon)"]
 
   Human["Human / agent harness"] -->|reads docs · decides · proposes changes| Web
   Human -->|GET/POST| API
@@ -66,7 +67,7 @@ agent-facing contract.
 
 ## How it fits
 
-Consus is a standalone tool today — it does not reach out to any other system's API or client library (see `package.json`'s dependency list). Any agent harness that understands `skills/consus/SKILL.md` can drive it over plain HTTP: read the decision queue, push a decision or CBA, propose a doc/diagram change. Cross-system integration (e.g. a future Pantheon L2 adapter layer) is explicitly out of Consus's own codebase — if it ever exists, it talks to Consus over these same generic HTTP routes, the same as any other harness would.
+Consus is a standalone tool — any harness that understands `skills/consus/SKILL.md` can drive it over plain HTTP. By default it keeps proposals local (`NOOP_HARNESS_TRANSPORT`); set `CONSUS_HARNESS=pantheon` to forward proposals to a Pantheon board feed and pull results back automatically. The `HarnessTransport` seam (`server/harness/transport.ts`) is the only integration point — nothing Consus-specific lives in Pantheon.
 
 ## Quickstart
 
@@ -88,7 +89,7 @@ npm run build        # → dist-web/ + dist-server/
 npm start            # node dist-server/index.js on :8722  (or scripts/start.sh)
 ```
 
-Config via env: `PORT` (default `8722`), `HOST` (default `127.0.0.1` — set `0.0.0.0` for a containerized deploy, since `127.0.0.1` inside a container is unreachable from outside it), `CONSUS_DB_PATH` (default `.pHive/consus.sqlite`), `CONSUS_PROJECTS_CONFIG` (repos to scan for docs, default `.pHive/consus-projects.json`).
+Config via env: `PORT` (default `8722`), `HOST` (default `127.0.0.1` — set `0.0.0.0` for a containerized deploy, since `127.0.0.1` inside a container is unreachable from outside it), `CONSUS_DB_PATH` (default `.pHive/consus.sqlite`), `CONSUS_PROJECTS_CONFIG` (repos to scan for docs, default `.pHive/consus-projects.json`). Harness: `CONSUS_HARNESS=pantheon` + `PANTHEON_API_URL=<url>` enables the Pantheon board-feed transport; `CONSUS_HARNESS_COMMAND=<cmd>` (optional `CONSUS_HARNESS_ARGS`) enables a custom stdio transport. See `.env.example`.
 
 Verify it's up:
 

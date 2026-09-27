@@ -34,6 +34,61 @@ export const NOOP_HARNESS_TRANSPORT: HarnessTransport = {
 };
 
 /**
+ * Pantheon HTTP transport (opt-in). POSTs proposals to Pantheon's board
+ * feed and surfaces results back via the result puller
+ * (server/harness/pantheon-result-puller.ts). Selected by CONSUS_HARNESS=pantheon.
+ */
+export class PantheonHarnessTransport implements HarnessTransport {
+  constructor(private readonly pantheonApiUrl: string) {}
+
+  async invoke<T = unknown>(method: string, params?: unknown): Promise<HarnessResult<T>> {
+    if (method !== "proposeChange") {
+      return { ok: false, recoverable: false, code: "UNKNOWN_METHOD" };
+    }
+    const p = params as {
+      proposalId: string;
+      itemId: string;
+      targetType: string;
+      diff: string;
+      description: string;
+      sourceRepo?: string | null;
+    };
+    if (!p.sourceRepo) {
+      return { ok: false, recoverable: false, code: "OPERATION_UNSUPPORTED", message: "item has no source_repo" };
+    }
+    try {
+      const res = await fetch(`${this.pantheonApiUrl}/api/feed/changes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          origin: {
+            god: "consus",
+            item_ref: { itemId: p.itemId, proposalId: p.proposalId, targetType: p.targetType },
+          },
+          target_repo: p.sourceRepo,
+          diff: p.diff,
+          description: p.description,
+          requested_by: "consus",
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        return { ok: false, recoverable: res.status >= 500, code: "INTERNAL_ERROR", message: text };
+      }
+      const body = (await res.json()) as T;
+      return { ok: true, result: body };
+    } catch (error) {
+      return {
+        ok: false,
+        recoverable: true,
+        code: "INTERNAL_ERROR",
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+}
+
+/**
  * Real stdio transport (opt-in, production). Spawns whatever command is
  * configured and speaks one JSON object per line over stdin/stdout. Not
  * exercised by unit tests — those inject a fake HarnessTransport instead.

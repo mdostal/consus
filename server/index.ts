@@ -20,7 +20,8 @@ import { registerAttachmentRoutes } from "./routes/attachments.js";
 import { registerDesignAssetRoutes } from "./routes/design-assets.js";
 import { registerSurveyRoutes } from "./routes/surveys.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
-import { StdioHarnessTransport, NOOP_HARNESS_TRANSPORT, type HarnessTransport } from "./harness/transport.js";
+import { StdioHarnessTransport, NOOP_HARNESS_TRANSPORT, PantheonHarnessTransport, type HarnessTransport } from "./harness/transport.js";
+import { PantheonResultPuller } from "./harness/pantheon-result-puller.js";
 import { createStorageAdapter } from "./storage/index.js";
 
 /** The built web SPA (`vite.config.ts`'s `build.outDir: "../dist-web"`)
@@ -153,16 +154,33 @@ if (isMain) {
     : [];
 
   // Harness dispatch (the propose-a-change mechanism) is opt-in and
-  // system-agnostic — a plain configured command, nothing hardcoded.
-  const transport =
-    process.env.CONSUS_HARNESS_COMMAND
-      ? new StdioHarnessTransport(
-          process.env.CONSUS_HARNESS_COMMAND,
-          process.env.CONSUS_HARNESS_ARGS ? process.env.CONSUS_HARNESS_ARGS.split(",") : [],
-        )
-      : NOOP_HARNESS_TRANSPORT;
+  // system-agnostic. CONSUS_HARNESS=pantheon selects the built-in Pantheon
+  // HTTP adapter (requires PANTHEON_API_URL). Otherwise a configured command
+  // path (CONSUS_HARNESS_COMMAND) selects the stdio transport. Default: noop.
+  if (process.env.CONSUS_HARNESS === "pantheon" && !process.env.PANTHEON_API_URL) {
+    throw new Error("PANTHEON_API_URL is required when CONSUS_HARNESS=pantheon");
+  }
+  const transport: HarnessTransport =
+    process.env.CONSUS_HARNESS === "pantheon"
+      ? new PantheonHarnessTransport(process.env.PANTHEON_API_URL!)
+      : process.env.CONSUS_HARNESS_COMMAND
+        ? new StdioHarnessTransport(
+            process.env.CONSUS_HARNESS_COMMAND,
+            process.env.CONSUS_HARNESS_ARGS ? process.env.CONSUS_HARNESS_ARGS.split(",") : [],
+          )
+        : NOOP_HARNESS_TRANSPORT;
 
   const app = buildServer({ dbPath, repos, transport, attachmentsDir, projectsConfigPath, discoveryRoots });
+
+  if (transport instanceof PantheonHarnessTransport) {
+    const pullerDb = openDb(dbPath);
+    const puller = new PantheonResultPuller(process.env.PANTHEON_API_URL!, pullerDb);
+    const handle = puller.start(60_000);
+    app.addHook("onClose", async () => {
+      clearInterval(handle);
+      pullerDb.close();
+    });
+  }
   app.listen({ port, host }).then(() => {
     // eslint-disable-next-line no-console
     console.log(`Consus server listening on :${port} (db: ${dbPath})`);
