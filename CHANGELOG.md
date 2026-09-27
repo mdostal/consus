@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Push-in REST seam for Pantheon question tickets** — `POST /api/questions/import` imports a
+  question ticket as a survey (201 create, 200 on repeat, 422 when nothing maps), sharing one
+  import path with the feed puller; `POST /api/questions/:ticket/close` closes a ticket's
+  still-open items (audited, never deleted, idempotent) so a ticket cancelled or answered
+  elsewhere no longer leaves its survey open forever. Closed items leave the pending queue and
+  refuse verdicts with 409.
+- **`CONSUS_PANTHEON_POLL`** (default `1`) — set to `0` to start neither Pantheon poller, leaving
+  the push endpoints as the only way in.
+
 ## [0.17.2] - 2026-09-11
 
 ### Changed
