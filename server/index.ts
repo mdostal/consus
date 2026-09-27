@@ -20,7 +20,9 @@ import { registerAttachmentRoutes } from "./routes/attachments.js";
 import { registerDesignAssetRoutes } from "./routes/design-assets.js";
 import { registerSurveyRoutes } from "./routes/surveys.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
-import { StdioHarnessTransport, FileHarnessTransport, NOOP_HARNESS_TRANSPORT, type HarnessTransport } from "./harness/transport.js";
+import { StdioHarnessTransport, FileHarnessTransport, PantheonHarnessTransport, NOOP_HARNESS_TRANSPORT, type HarnessTransport } from "./harness/transport.js";
+import { PantheonResultPuller } from "./harness/pantheon-result-puller.js";
+import { PantheonQuestionPuller } from "./pantheon/question-puller.js";
 import { createStorageAdapter } from "./storage/index.js";
 
 /** The built web SPA (`vite.config.ts`'s `build.outDir: "../dist-web"`)
@@ -30,6 +32,40 @@ import { createStorageAdapter } from "./storage/index.js";
  *  `process.cwd()` keeps this correct whether started via `npm start`
  *  (cwd = repo root) or a container's `WORKDIR` (see mdostal/consus#105). */
 const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../dist-web");
+
+/** Selects the correct HarnessTransport based on environment variables.
+ *  Extracted for unit testability (server/harness/transport-selection.test.ts).
+ *
+ *  Priority order (mutually exclusive transports, first match wins):
+ *    1. CONSUS_HARNESS=pantheon  — hosted Pantheon integration (requires PANTHEON_API_URL)
+ *    2. CONSUS_HARNESS_FILE_DIR  — standalone file transport (no Pantheon, s9)
+ *    3. CONSUS_HARNESS_COMMAND   — stdio transport (legacy/custom harness)
+ *    4. (default)                — NOOP (proposals fail immediately with NO_ADAPTER)
+ */
+export function selectHarnessTransport(env: {
+  CONSUS_HARNESS?: string;
+  PANTHEON_API_URL?: string;
+  CONSUS_HARNESS_FILE_DIR?: string;
+  CONSUS_HARNESS_COMMAND?: string;
+  CONSUS_HARNESS_ARGS?: string;
+}): HarnessTransport {
+  if (env.CONSUS_HARNESS === "pantheon") {
+    if (!env.PANTHEON_API_URL) {
+      throw new Error("PANTHEON_API_URL is required when CONSUS_HARNESS=pantheon");
+    }
+    return new PantheonHarnessTransport(env.PANTHEON_API_URL);
+  }
+  if (env.CONSUS_HARNESS_FILE_DIR) {
+    return new FileHarnessTransport(env.CONSUS_HARNESS_FILE_DIR);
+  }
+  if (env.CONSUS_HARNESS_COMMAND) {
+    return new StdioHarnessTransport(
+      env.CONSUS_HARNESS_COMMAND,
+      env.CONSUS_HARNESS_ARGS ? env.CONSUS_HARNESS_ARGS.split(",") : [],
+    );
+  }
+  return NOOP_HARNESS_TRANSPORT;
+}
 
 export interface BuildServerOptions {
   dbPath: string;
@@ -152,20 +188,29 @@ if (isMain) {
     ? process.env.CONSUS_DISCOVERY_ROOTS.split(",")
     : [];
 
-  // Harness dispatch (the propose-a-change mechanism) is opt-in and
-  // system-agnostic. CONSUS_HARNESS_FILE_DIR selects the file transport
-  // (standalone, no Pantheon); CONSUS_HARNESS_COMMAND selects the stdio
-  // transport. If neither is set, the NOOP transport is used.
-  const transport: HarnessTransport = process.env.CONSUS_HARNESS_FILE_DIR
-    ? new FileHarnessTransport(process.env.CONSUS_HARNESS_FILE_DIR)
-    : process.env.CONSUS_HARNESS_COMMAND
-      ? new StdioHarnessTransport(
-          process.env.CONSUS_HARNESS_COMMAND,
-          process.env.CONSUS_HARNESS_ARGS ? process.env.CONSUS_HARNESS_ARGS.split(",") : [],
-        )
-      : NOOP_HARNESS_TRANSPORT;
+  // Harness dispatch — see selectHarnessTransport() for priority order.
+  const transport = selectHarnessTransport(process.env);
 
   const app = buildServer({ dbPath, repos, transport, attachmentsDir, projectsConfigPath, discoveryRoots });
+
+  if (transport instanceof PantheonHarnessTransport) {
+    const pantheonUrl = process.env.PANTHEON_API_URL!;
+
+    const pullerDb = openDb(dbPath);
+    const puller = new PantheonResultPuller(pantheonUrl, pullerDb);
+    const pullerHandle = puller.start(60_000);
+
+    const questionPullerDb = openDb(dbPath);
+    const questionPuller = new PantheonQuestionPuller(pantheonUrl, questionPullerDb);
+    const questionPullerHandle = questionPuller.start(60_000);
+
+    app.addHook("onClose", async () => {
+      clearInterval(pullerHandle);
+      clearInterval(questionPullerHandle);
+      pullerDb.close();
+      questionPullerDb.close();
+    });
+  }
   app.listen({ port, host }).then(() => {
     // eslint-disable-next-line no-console
     console.log(`Consus server listening on :${port} (db: ${dbPath})`);

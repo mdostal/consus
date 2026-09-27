@@ -29,6 +29,7 @@ export interface ProposalRow {
   resolved_at: string | null;
   applied_diff: string | null;
   failure_reason: string | null;
+  harness_ticket_id: string | null;
 }
 
 export interface ProposeChangeInput {
@@ -46,7 +47,7 @@ export async function proposeChange(
   transport: HarnessTransport,
   { itemId, targetType, diff, description, requestedBy }: ProposeChangeInput,
 ): Promise<ProposeChangeResult> {
-  const item = db.prepare("SELECT id FROM items WHERE id = ?").get(itemId) as { id: string } | undefined;
+  const item = db.prepare("SELECT id, source_repo FROM items WHERE id = ?").get(itemId) as { id: string; source_repo: string | null } | undefined;
   if (!item) {
     return { ok: false, error: `target item not found: ${itemId}` };
   }
@@ -59,7 +60,7 @@ export async function proposeChange(
      VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`,
   ).run(proposalId, itemId, targetType, diff, description, requestedBy, now);
 
-  const dispatched = await transport.invoke("proposeChange", { proposalId, itemId, targetType, diff, description });
+  const dispatched = await transport.invoke("proposeChange", { proposalId, itemId, targetType, diff, description, sourceRepo: item.source_repo });
 
   // A dispatch failure (the harness never received the proposal at all) is
   // resolved immediately, not left pending — "no stuck states" per this
@@ -70,6 +71,11 @@ export async function proposeChange(
     db.prepare(
       "UPDATE proposals SET status = 'failed', resolved_at = ?, failure_reason = ? WHERE id = ?",
     ).run(new Date().toISOString(), reason, proposalId);
+  } else {
+    const ticketId = (dispatched.result as { ticket_id?: string } | null | undefined)?.ticket_id;
+    if (ticketId) {
+      db.prepare("UPDATE proposals SET harness_ticket_id = ? WHERE id = ?").run(ticketId, proposalId);
+    }
   }
 
   return { ok: true, proposalId };

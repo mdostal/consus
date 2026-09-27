@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
 import { verdictStatus, verdictSummary } from "../decision-contract/parser.js";
 import type { Verdict } from "../decision-contract/parser.js";
+import { getQuestionLink, postQuestionVerdict } from "../pantheon/question-adapter.js";
 
 export interface InteractionRoutesOptions {
   db: Database.Database;
@@ -82,25 +83,35 @@ export function registerInteractionRoutes(
       });
       tx();
 
-      // Fire-and-forget bridge: non-rejection verdicts become board seeds in Multica via Pantheon.
-      // Verdict recording always succeeds regardless of bridge health (same resilience contract as
-      // core-api's emitDecisionCreated).
+      // Route question-linked items to the Pantheon question adapter (partial + submit);
+      // unlinked decisions keep the existing /api/events/decisions seed path.
+      // Both paths are fire-and-forget: verdict recording always succeeds regardless of bridge health.
       if (decidedAt !== null) {
         const bridgeBase = pantheonApiUrl ?? process.env.PANTHEON_API_URL;
         if (bridgeBase) {
           const doFetch = fetchImpl ?? globalThis.fetch;
-          doFetch(`${bridgeBase}/api/events/decisions`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              decisionId: id,
-              title: item.title,
-              ...(item.source_body ? { summary: item.source_body } : {}),
-              createdAt: now,
-            }),
-          }).catch((err: unknown) => {
-            console.error("[interactions] decision bridge call failed", err);
-          });
+          const questionLink = getQuestionLink(db, id);
+          if (questionLink) {
+            postQuestionVerdict(db, id, verdict, actor ?? "Mathew", {
+              pantheonApiUrl: bridgeBase,
+              fetch: doFetch,
+            }).catch((err: unknown) => {
+              console.error("[interactions] question adapter call failed", err);
+            });
+          } else {
+            doFetch(`${bridgeBase}/api/events/decisions`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                decisionId: id,
+                title: item.title,
+                ...(item.source_body ? { summary: item.source_body } : {}),
+                createdAt: now,
+              }),
+            }).catch((err: unknown) => {
+              console.error("[interactions] decision bridge call failed", err);
+            });
+          }
         }
       }
 

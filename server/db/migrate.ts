@@ -229,4 +229,25 @@ export function runMigration(db: Database.Database): void {
   // s5-survey-grouping: nullable FK linking a decision item to a survey.
   // NULL means "not part of any survey" — existing rows are untouched.
   addColumnIfMissing(db, "items", "survey_id", "TEXT REFERENCES surveys(id)");
+
+  // s2-consus-pantheon-change-adapter: the Pantheon board ticket id returned
+  // from a successful PantheonHarnessTransport dispatch, so proposals can be
+  // cross-referenced against their Pantheon ticket.
+  addColumnIfMissing(db, "proposals", "harness_ticket_id", "TEXT");
+
+  // s6-consus-pantheon-question-adapter: tracks the mapping between a
+  // Consus decision item and a Pantheon question ticket/qid pair. One row
+  // per question — (ticket_id, qid) is unique so idempotent re-pulls never
+  // duplicate an item.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS question_links (
+      item_id  TEXT PRIMARY KEY REFERENCES items(id),
+      ticket_id TEXT NOT NULL,
+      qid       TEXT NOT NULL,
+      survey_id TEXT NOT NULL REFERENCES surveys(id),
+      UNIQUE(ticket_id, qid)
+    );
+    CREATE INDEX IF NOT EXISTS idx_question_links_ticket_id ON question_links(ticket_id);
+    CREATE INDEX IF NOT EXISTS idx_question_links_survey_id ON question_links(survey_id);
+  `);
 }
