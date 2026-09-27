@@ -9,6 +9,14 @@ vi.mock("../proposals/store.js", () => ({
   reportProposalResult: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
+// Sync-status writes are covered in server/routes/metrics.test.ts; the stub
+// db here has no tables to write to.
+vi.mock("../pantheon/sync-status.js", () => ({
+  recordSyncSuccess: vi.fn(),
+  recordSyncFailure: vi.fn(),
+  safeRecord: (fn: () => void) => fn(),
+}));
+
 import { reportProposalResult } from "../proposals/store.js";
 
 const PANTHEON_URL = "https://pantheon.example.com";

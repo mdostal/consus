@@ -15,12 +15,60 @@ under `POST /api/decisions/:id/verdict`.
 ## Health
 
 ### `GET /health`
-Confirms the server and SQLite connection are up.
+Confirms the server and SQLite connection are up. Always 200 while the process is serving;
+`status` and `sqlite` are stable, so existing healthchecks (Tauri sidecar, Pantheon compose) can
+keep matching on them.
 
 **Response 200:**
 ```json
-{ "status": "ok", "sqlite": "connected" }
+{ "status": "ok", "sqlite": "connected", "transport": "pantheon", "degraded": false }
 ```
+
+- `transport`: the active harness transport: `pantheon`, `file`, `stdio`, `noop` (none configured)
+  or `custom` (an injected transport).
+- `degraded`: `true` only in Pantheon mode, when any sync direction's last failure is newer than its
+  last success (see `pantheon.directions` under `GET /api/metrics`). Always `false` otherwise.
+
+### `GET /api/metrics`
+Operational snapshot for dashboards (Janus, Pantheon). Computed from SQLite on each request, with
+no background work or caching.
+
+**Response 200:**
+```json
+{
+  "generated_at": "2026-09-27T12:00:00.000Z",
+  "decisions": { "open": 2, "oldest_open_age_seconds": 7200 },
+  "proposals": { "pending": 2, "oldest_pending_age_seconds": 3600, "failed_24h": 1, "applied_24h": 2 },
+  "events": { "pending": 3, "in_review": 1 },
+  "projects": [{ "name": "consus", "last_ingest_at": "2026-09-27T11:55:00.000Z", "doc_count": 2 }],
+  "harness": { "transport": "pantheon" },
+  "pantheon": {
+    "degraded": true,
+    "last_error": "pantheon down",
+    "last_error_at": "2026-09-27T11:59:00.000Z",
+    "last_error_direction": "question_pull",
+    "directions": {
+      "question_pull": { "last_success_at": null, "last_failure_at": "2026-09-27T11:59:00.000Z", "last_error": "pantheon down", "failing": true },
+      "result_pull": { "last_success_at": "2026-09-27T11:59:00.000Z", "last_failure_at": null, "last_error": null, "failing": false },
+      "question_push": { "last_success_at": null, "last_failure_at": null, "last_error": null, "failing": false },
+      "decision_push": { "last_success_at": null, "last_failure_at": null, "last_error": null, "failing": false }
+    }
+  }
+}
+```
+
+- `decisions.open`: items with a `decision_payload` and no `decided_at` (the same queue
+  `GET /api/decisions` returns). Ages are whole seconds, or `null` when nothing is queued.
+- `proposals.failed_24h` / `applied_24h`: count by `resolved_at` within the last 24 hours.
+- `events.pending` / `in_review`: events with status `new` / `in_progress`.
+- `projects[]`: every registered project, plus any repo with indexed docs. `last_ingest_at` is
+  when the project was last scanned (ingest or registration), whether or not any doc changed.
+  It is `null` if the project has never been scanned since this field was added.
+- `pantheon` is present only when `CONSUS_HARNESS=pantheon`. Directions: `question_pull`
+  (`GET /api/feed/questions`), `result_pull` (`GET /api/feed/changes`), `question_push` (question
+  partial/submit), and `decision_push` (`POST /api/events/decisions`). They're kept in the
+  `sync_status` table, so they survive restarts. A non-2xx response counts as a failure, with
+  the HTTP status in `last_error`.
 
 ## Projects
 
