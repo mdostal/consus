@@ -250,4 +250,26 @@ export function runMigration(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_question_links_ticket_id ON question_links(ticket_id);
     CREATE INDEX IF NOT EXISTS idx_question_links_survey_id ON question_links(survey_id);
   `);
+
+  // PANT-807: delivery outbox for question answers sent to Pantheon. A row is
+  // written in the same transaction as the verdict, then delivered; a non-2xx
+  // or thrown fetch leaves it 'failed' with last_error so it can be redelivered
+  // (at startup or via POST /api/questions/redeliver) instead of being lost.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS question_deliveries (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id    TEXT NOT NULL,
+      ticket_id  TEXT NOT NULL,
+      qid        TEXT,
+      kind       TEXT NOT NULL CHECK(kind IN ('partial', 'submit')),
+      body       TEXT NOT NULL,
+      status     TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'delivered', 'failed')),
+      attempts   INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_question_deliveries_status ON question_deliveries(status);
+    CREATE INDEX IF NOT EXISTS idx_question_deliveries_ticket_id ON question_deliveries(ticket_id);
+  `);
 }

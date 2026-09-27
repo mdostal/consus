@@ -233,19 +233,36 @@ summarizing the verdict.
 ```
 
 **Response 200:** `{ "ok": true, "status": "done"|"in_progress", "decided_at": string|null }`.
-**400** if `verdict`/`verdict.kind` is missing. **404** if the item doesn't exist.
+**400** if `verdict`/`verdict.kind` is missing, or if the item is question-linked and the verdict
+has no meaningful answer for it (`accepted` on anything other than a decision-request with a
+`recommended` option, e.g. a feature-selection or free-text question). **404** if the item doesn't
+exist.
 
 **Verdict bridge (only when `PANTHEON_API_URL` is set).** After a verdict that decides the item
-(anything except `rejected_iteration_requested`), Consus makes one fire-and-forget call to the
-Pantheon host. The verdict is always recorded locally first; a failed bridge call is logged and
-never changes the response.
+(anything except `rejected_iteration_requested`), Consus calls the Pantheon host without delaying
+the response. The verdict is always recorded locally first and never changes the response.
 - **Question-linked item** (created by the Pantheon question adapter from a pending question
   ticket, see [Harness transports](#harness-transports)): `POST {PANTHEON_API_URL}/api/feed/questions/:ticket/partial`
-  with `{ "qid", "answer", "actor" }`. Once every decision item in that ticket's survey is decided,
-  a second call `POST {PANTHEON_API_URL}/api/feed/questions/:ticket/submit` with `{ "actor" }`
-  closes the ticket.
+  with `{ "qid", "answer", "actor" }`. The first time every decision item in that ticket's survey
+  is decided, a second call `POST {PANTHEON_API_URL}/api/feed/questions/:ticket/submit` with
+  `{ "actor" }` closes the ticket. Submit is sent at most once per ticket (a later reopen and
+  re-decide posts only a partial), and never while that ticket still has an undelivered partial.
+  Both calls go through the `question_deliveries` outbox, written in the same transaction as the
+  verdict: a non-2xx response or network error marks the row `failed` with `attempts` and
+  `last_error`, and logs a warning with the ticket and qid. Failed rows are retried at server
+  startup and by [`POST /api/questions/redeliver`](#post-apiquestionsredeliver).
 - **Any other item**: `POST {PANTHEON_API_URL}/api/events/decisions` with
   `{ "decisionId", "title", "summary"?, "createdAt" }`. Question-linked items never take this path.
+
+### `POST /api/questions/redeliver`
+Retries every `pending` or `failed` row in the question-answer delivery outbox (see the verdict
+bridge above), oldest first. Also runs once at server startup when `PANTHEON_API_URL` is set.
+There is no background retry timer; call this to retry after the Pantheon host recovers.
+
+**Response 200:** `{ "delivered": number, "failed": number, "skipped": number, "remaining": number }`
+— `skipped` counts rows held back this pass (already in flight, or a submit waiting on an
+undelivered partial); `remaining` is every row still not delivered afterwards.
+**409** if `PANTHEON_API_URL` is not configured.
 
 ## Comments
 

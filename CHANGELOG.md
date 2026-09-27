@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Question answers sent to Pantheon could be lost without any error** (PANT-807). The
+  `/partial` and `/submit` POSTs never checked the response, so a 4xx/5xx or network error dropped
+  the operator's answer. Answers now go through a `question_deliveries` outbox, written in the
+  same transaction as the verdict. Failed rows record `attempts` and `last_error`, log a warning,
+  and are retried at startup and by the new `POST /api/questions/redeliver`. No retry timer is
+  added. `/submit` is sent at most once per ticket and only after that ticket's partials are
+  delivered. An `accepted` verdict on a free-text or feature-selection question now gets a 400
+  instead of sending the literal string `"accepted"`.
+
 ## [0.17.2] - 2026-09-11
 
 ### Changed

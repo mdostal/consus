@@ -200,5 +200,13 @@ if (isMain) {
   app.listen({ port, host }).then(() => {
     // eslint-disable-next-line no-console
     console.log(`Consus server listening on :${port} (db: ${dbPath})`);
+    // PANT-807: one redelivery pass over the question-answer outbox at
+    // startup (no timer — later retries go through the same endpoint).
+    if (process.env.PANTHEON_API_URL) {
+      void app
+        .inject({ method: "POST", url: "/api/questions/redeliver" })
+        .then((res) => console.log(`[startup] question redelivery: ${res.body}`))
+        .catch((err: unknown) => console.warn("[startup] question redelivery failed", err));
+    }
   });
 }
