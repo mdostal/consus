@@ -130,6 +130,27 @@ describe("proposeChange", () => {
     expect(count.n).toBe(0);
   });
 
+  it("stores the harness_ticket_id from a successful Pantheon dispatch", async () => {
+    const transport = fakeTransport({ ok: true, result: { ticket_id: "pant-ticket-abc", status: "pending" } });
+    insertItem(db, "item-ticket");
+
+    const result = await proposeChange(db, transport, {
+      itemId: "item-ticket",
+      targetType: "decision",
+      diff: "diff content",
+      description: "store ticket id",
+      requestedBy: "mathew",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const row = db.prepare("SELECT harness_ticket_id FROM proposals WHERE id = ?").get(result.proposalId) as {
+      harness_ticket_id: string | null;
+    };
+    expect(row.harness_ticket_id).toBe("pant-ticket-abc");
+  });
+
   it("marks the proposal failed immediately when dispatch itself fails — never left stuck pending", async () => {
     const transport = fakeTransport({ ok: false, recoverable: false, code: "TIMEOUT" });
 

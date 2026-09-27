@@ -230,6 +230,11 @@ export function runMigration(db: Database.Database): void {
   // NULL means "not part of any survey" — existing rows are untouched.
   addColumnIfMissing(db, "items", "survey_id", "TEXT REFERENCES surveys(id)");
 
+  // s2-consus-pantheon-change-adapter: the Pantheon board ticket id returned
+  // from a successful PantheonHarnessTransport dispatch, so proposals can be
+  // cross-referenced against their Pantheon ticket.
+  addColumnIfMissing(db, "proposals", "harness_ticket_id", "TEXT");
+
   // s6-consus-pantheon-question-adapter: tracks the mapping between a
   // Consus decision item and a Pantheon question ticket/qid pair. One row
   // per question — (ticket_id, qid) is unique so idempotent re-pulls never
