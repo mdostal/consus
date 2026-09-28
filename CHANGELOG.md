@@ -15,6 +15,15 @@
 
 ### Fixed
 
+- **Native crash loop on startup under Node 24** (#193, PANT-922). better-sqlite3 11.x wraps
+  statements in `node::ObjectWrap`, whose Node 24 destructor aborts with
+  `RemoveEnvironmentCleanupHook … Assertion failed: (env) != nullptr` when V8 finalizes a dropped
+  prepared statement from an idle GC task. That is why the service died shortly after listening
+  and crash-looped on each deploy. Upgraded to better-sqlite3 13 (Node-API, no
+  `node::ObjectWrap`; ships prebuilt binaries incl. linux-musl). Added `npm run smoke:startup`
+  and a `Startup smoke` CI workflow (Node 22 + 24). It boots the built server cold and again onto
+  the same DB in Pantheon mode, and it runs a GC-finalizer probe. It fails on any native
+  assertion or abort.
 - **Question answers sent to Pantheon could be lost without any error** (PANT-807). The
   `/partial` and `/submit` POSTs never checked the response, so a 4xx/5xx or network error dropped
   the operator's answer. Answers now go through a `question_deliveries` outbox, written in the
