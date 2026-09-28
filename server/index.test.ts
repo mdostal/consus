@@ -7,12 +7,12 @@
  * for the full explanation). None of this file's other tests depend on
  * jsdom-specific globals, so forcing node for the whole file is safe.
  */
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, afterEach, vi } from "vitest";
 import { existsSync, unlinkSync, mkdtempSync, writeFileSync, mkdirSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
-import { buildServer } from "./index.js";
+import { buildServer, pantheonPollingEnabled, selectHarnessTransport, startHarnessSync } from "./index.js";
 
 describe("GET /health", () => {
   const dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
@@ -144,5 +144,72 @@ describe("attachments storage default location (mirrors CONSUS_DB_PATH's default
     expect(readdirSync(defaultAttachmentsDir).length).toBeGreaterThan(0);
 
     await app.close();
+  });
+});
+
+describe("Pantheon poll switch (CONSUS_PANTHEON_POLL)", () => {
+  const PANTHEON_URL = "https://pantheon.example.com";
+  const dir = mkdtempSync(join(tmpdir(), "consus-poll-switch-"));
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  async function startWith(env: Record<string, string>, name: string) {
+    // Only intervals are faked: app.inject needs real setImmediate/nextTick.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const dbPath = join(dir, `${name}.sqlite`);
+    const transport = selectHarnessTransport(env);
+    const app = buildServer({ dbPath, transport });
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ questions: [], changes: [] }), { status: 200 }));
+    const handles = startHarnessSync(app, { transport, dbPath, env, intervalMs: 1_000, fetch: fetchMock });
+    return { app, handles, fetchMock };
+  }
+
+  it("registers no interval with CONSUS_HARNESS=pantheon and CONSUS_PANTHEON_POLL=0, and push routes still work", async () => {
+    const { app, handles, fetchMock } = await startWith(
+      { CONSUS_HARNESS: "pantheon", PANTHEON_API_URL: PANTHEON_URL, CONSUS_PANTHEON_POLL: "0" },
+      "poll-off",
+    );
+
+    expect(handles).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/questions/import",
+      payload: { ticket_id: "t1", questions: [{ qid: "q1", text: "Why?", kind: "free-text" }] },
+    });
+    expect(res.statusCode).toBe(201);
+    await app.close();
+  });
+
+  it("starts both pullers in Pantheon mode by default (flag unset)", async () => {
+    const { app, handles } = await startWith({ CONSUS_HARNESS: "pantheon", PANTHEON_API_URL: PANTHEON_URL }, "poll-default");
+
+    expect(handles).not.toBeNull();
+    expect(vi.getTimerCount()).toBe(2);
+    await app.close();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("starts nothing outside Pantheon mode", async () => {
+    const { app, handles } = await startWith({}, "no-pantheon");
+    expect(handles).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+    await app.close();
+  });
+
+  it("parses the flag: only 0/false disable polling", () => {
+    expect(pantheonPollingEnabled({})).toBe(true);
+    expect(pantheonPollingEnabled({ CONSUS_PANTHEON_POLL: "1" })).toBe(true);
+    expect(pantheonPollingEnabled({ CONSUS_PANTHEON_POLL: "0" })).toBe(false);
+    expect(pantheonPollingEnabled({ CONSUS_PANTHEON_POLL: "false" })).toBe(false);
   });
 });
