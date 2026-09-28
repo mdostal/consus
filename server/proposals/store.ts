@@ -29,6 +29,7 @@ export interface ProposalRow {
   resolved_at: string | null;
   applied_diff: string | null;
   failure_reason: string | null;
+  harness_ticket_id: string | null;
 }
 
 export interface ProposeChangeInput {
@@ -46,7 +47,7 @@ export async function proposeChange(
   transport: HarnessTransport,
   { itemId, targetType, diff, description, requestedBy }: ProposeChangeInput,
 ): Promise<ProposeChangeResult> {
-  const item = db.prepare("SELECT id FROM items WHERE id = ?").get(itemId) as { id: string } | undefined;
+  const item = db.prepare("SELECT id, source_repo FROM items WHERE id = ?").get(itemId) as { id: string; source_repo: string | null } | undefined;
   if (!item) {
     return { ok: false, error: `target item not found: ${itemId}` };
   }
@@ -59,7 +60,7 @@ export async function proposeChange(
      VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`,
   ).run(proposalId, itemId, targetType, diff, description, requestedBy, now);
 
-  const dispatched = await transport.invoke("proposeChange", { proposalId, itemId, targetType, diff, description });
+  const dispatched = await transport.invoke("proposeChange", { proposalId, itemId, targetType, diff, description, sourceRepo: item.source_repo });
 
   // A dispatch failure (the harness never received the proposal at all) is
   // resolved immediately, not left pending — "no stuck states" per this
@@ -70,6 +71,11 @@ export async function proposeChange(
     db.prepare(
       "UPDATE proposals SET status = 'failed', resolved_at = ?, failure_reason = ? WHERE id = ?",
     ).run(new Date().toISOString(), reason, proposalId);
+  } else {
+    const ticketId = (dispatched.result as { ticket_id?: string } | null | undefined)?.ticket_id;
+    if (ticketId) {
+      db.prepare("UPDATE proposals SET harness_ticket_id = ? WHERE id = ?").run(ticketId, proposalId);
+    }
   }
 
   return { ok: true, proposalId };
@@ -85,38 +91,62 @@ export interface ReportProposalResultInput {
   reason?: string;
 }
 
-export type ReportProposalResultResult = { ok: true } | { ok: false; error: string };
+/**
+ * `alreadyResolved` is set when the proposal was already resolved with the
+ * same status — a harness retry or a puller replay — and nothing was
+ * written. `code: "conflict"` means the proposal was already resolved with
+ * the opposite status; the row is left untouched.
+ */
+export type ReportProposalResultResult =
+  | { ok: true; alreadyResolved?: true }
+  | { ok: false; code: "not_found" | "conflict"; error: string };
 
 export async function reportProposalResult(
   db: Database.Database,
   { proposalId, status, appliedDiff, reason }: ReportProposalResultInput,
 ): Promise<ReportProposalResultResult> {
-  const proposal = db.prepare("SELECT * FROM proposals WHERE id = ?").get(proposalId) as ProposalRow | undefined;
-  if (!proposal) {
-    return { ok: false, error: `proposal not found: ${proposalId}` };
-  }
+  // Read-check-write inside one transaction, and the UPDATE is guarded on
+  // status = 'pending', so only the first result for a proposal ever lands —
+  // retries and replays can't add a second audit_log row, move resolved_at,
+  // or flip applied <-> failed.
+  const tx = db.transaction((): ReportProposalResultResult => {
+    const proposal = db.prepare("SELECT * FROM proposals WHERE id = ?").get(proposalId) as ProposalRow | undefined;
+    if (!proposal) {
+      return { ok: false, code: "not_found", error: `proposal not found: ${proposalId}` };
+    }
 
-  const now = new Date().toISOString();
+    if (proposal.status !== "pending") {
+      if (proposal.status === status) {
+        return { ok: true, alreadyResolved: true };
+      }
+      return {
+        ok: false,
+        code: "conflict",
+        error: `proposal ${proposalId} is already ${proposal.status}; cannot report ${status}`,
+      };
+    }
 
-  if (status === "applied") {
-    const finalDiff = appliedDiff ?? proposal.diff;
-    const tx = db.transaction(() => {
+    const now = new Date().toISOString();
+
+    if (status === "applied") {
+      const finalDiff = appliedDiff ?? proposal.diff;
       db.prepare(
-        "UPDATE proposals SET status = 'applied', resolved_at = ?, applied_diff = ? WHERE id = ?",
+        "UPDATE proposals SET status = 'applied', resolved_at = ?, applied_diff = ? WHERE id = ? AND status = 'pending'",
       ).run(now, finalDiff, proposalId);
 
       db.prepare(
         "INSERT INTO audit_log (item_id, actor, field, old_value, new_value, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
       ).run(proposal.item_id, proposal.requested_by, `proposal:${proposal.target_type}`, null, finalDiff, now);
-    });
-    tx();
-  } else {
-    db.prepare(
-      "UPDATE proposals SET status = 'failed', resolved_at = ?, failure_reason = ? WHERE id = ?",
-    ).run(now, reason ?? "unknown", proposalId);
-  }
+    } else {
+      db.prepare(
+        "UPDATE proposals SET status = 'failed', resolved_at = ?, failure_reason = ? WHERE id = ? AND status = 'pending'",
+      ).run(now, reason ?? "unknown", proposalId);
+    }
 
-  return { ok: true };
+    return { ok: true };
+  });
+
+  return tx.immediate();
 }
 
 export function listProposals(db: Database.Database, itemId: string): ProposalRow[] {

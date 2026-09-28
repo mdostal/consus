@@ -19,8 +19,12 @@ import { registerEventRoutes } from "./routes/events.js";
 import { registerAttachmentRoutes } from "./routes/attachments.js";
 import { registerDesignAssetRoutes } from "./routes/design-assets.js";
 import { registerSurveyRoutes } from "./routes/surveys.js";
+import { registerQuestionRoutes } from "./routes/questions.js";
+import { registerMetricsRoutes } from "./routes/metrics.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
-import { StdioHarnessTransport, NOOP_HARNESS_TRANSPORT, type HarnessTransport } from "./harness/transport.js";
+import { StdioHarnessTransport, FileHarnessTransport, PantheonHarnessTransport, NOOP_HARNESS_TRANSPORT, transportName, type HarnessTransport } from "./harness/transport.js";
+import { isSyncDegraded } from "./pantheon/sync-status.js";
+import { startPantheonSync, type PantheonSyncHandles } from "./pantheon/start-sync.js";
 import { createStorageAdapter } from "./storage/index.js";
 
 /** The built web SPA (`vite.config.ts`'s `build.outDir: "../dist-web"`)
@@ -30,6 +34,71 @@ import { createStorageAdapter } from "./storage/index.js";
  *  `process.cwd()` keeps this correct whether started via `npm start`
  *  (cwd = repo root) or a container's `WORKDIR` (see mdostal/consus#105). */
 const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../dist-web");
+
+/** Selects the correct HarnessTransport based on environment variables.
+ *  Extracted for unit testability (server/harness/transport-selection.test.ts).
+ *
+ *  Priority order (mutually exclusive transports, first match wins):
+ *    1. CONSUS_HARNESS=pantheon  — hosted Pantheon integration (requires PANTHEON_API_URL)
+ *    2. CONSUS_HARNESS_FILE_DIR  — standalone file transport (no Pantheon, s9)
+ *    3. CONSUS_HARNESS_COMMAND   — stdio transport (legacy/custom harness)
+ *    4. (default)                — NOOP (proposals fail immediately with NO_ADAPTER)
+ */
+export function selectHarnessTransport(env: {
+  CONSUS_HARNESS?: string;
+  PANTHEON_API_URL?: string;
+  CONSUS_HARNESS_FILE_DIR?: string;
+  CONSUS_HARNESS_COMMAND?: string;
+  CONSUS_HARNESS_ARGS?: string;
+}): HarnessTransport {
+  if (env.CONSUS_HARNESS === "pantheon") {
+    if (!env.PANTHEON_API_URL) {
+      throw new Error("PANTHEON_API_URL is required when CONSUS_HARNESS=pantheon");
+    }
+    return new PantheonHarnessTransport(env.PANTHEON_API_URL);
+  }
+  if (env.CONSUS_HARNESS_FILE_DIR) {
+    return new FileHarnessTransport(env.CONSUS_HARNESS_FILE_DIR);
+  }
+  if (env.CONSUS_HARNESS_COMMAND) {
+    return new StdioHarnessTransport(
+      env.CONSUS_HARNESS_COMMAND,
+      env.CONSUS_HARNESS_ARGS ? env.CONSUS_HARNESS_ARGS.split(",") : [],
+    );
+  }
+  return NOOP_HARNESS_TRANSPORT;
+}
+
+/** True unless CONSUS_PANTHEON_POLL is "0" (or "false"). Default on for now;
+ *  once Pantheon pushes via POST /api/questions/import, the default can flip. */
+export function pantheonPollingEnabled(env: { CONSUS_PANTHEON_POLL?: string }): boolean {
+  const v = env.CONSUS_PANTHEON_POLL?.trim().toLowerCase();
+  return v !== "0" && v !== "false";
+}
+
+/** Startup wiring after buildServer(): in Pantheon mode, start the result and
+ *  question pullers unless CONSUS_PANTHEON_POLL=0 turns them off — then the
+ *  push endpoints (POST /api/proposals/:id/result, /api/questions/*) are the
+ *  only way in. Returns the puller handles, or null when nothing started. */
+export function startHarnessSync(
+  app: FastifyInstance,
+  opts: {
+    transport: HarnessTransport;
+    dbPath: string;
+    env: { PANTHEON_API_URL?: string; CONSUS_PANTHEON_POLL?: string };
+    intervalMs?: number;
+    fetch?: typeof globalThis.fetch;
+  },
+): PantheonSyncHandles | null {
+  if (!(opts.transport instanceof PantheonHarnessTransport)) return null;
+  if (!pantheonPollingEnabled(opts.env)) return null;
+  return startPantheonSync(app, {
+    dbPath: opts.dbPath,
+    pantheonUrl: opts.env.PANTHEON_API_URL!,
+    intervalMs: opts.intervalMs,
+    fetch: opts.fetch,
+  });
+}
 
 export interface BuildServerOptions {
   dbPath: string;
@@ -60,6 +129,8 @@ export interface BuildServerOptions {
    *  absolute paths, split the same way CONSUS_HARNESS_ARGS is below.
    *  Empty by default. */
   discoveryRoots?: string[];
+  /** Clock for GET /api/metrics's age fields — test-only seam. */
+  now?: () => Date;
 }
 
 export function buildServer({
@@ -70,6 +141,7 @@ export function buildServer({
   attachmentsDir = ".pHive/attachments",
   projectsConfigPath = ".pHive/consus-projects.json",
   discoveryRoots = [],
+  now,
 }: BuildServerOptions): FastifyInstance {
   const app = Fastify({ logger: false });
   const db = openDb(dbPath);
@@ -91,6 +163,9 @@ export function buildServer({
   registerAttachmentRoutes(app, { db, storageAdapter });
   registerDesignAssetRoutes(app, { repos });
   registerSurveyRoutes(app, { db });
+  registerQuestionRoutes(app, { db });
+  const activeTransport = transportName(transport);
+  registerMetricsRoutes(app, { db, repos, transport: activeTransport, now });
 
   // Serves the built web SPA (mdostal/consus#105 — previously GET / was a
   // bare 404, so none of the app's own UI was ever reachable through this
@@ -123,6 +198,10 @@ export function buildServer({
     return {
       status: "ok",
       sqlite: row?.ok === 1 ? "connected" : "unreachable",
+      // PANT-809: additive only — status/sqlite and the 200 stay unchanged
+      // for the Tauri sidecar and Pantheon compose healthchecks.
+      transport: activeTransport,
+      degraded: activeTransport === "pantheon" && isSyncDegraded(db),
     };
   });
 
@@ -152,19 +231,22 @@ if (isMain) {
     ? process.env.CONSUS_DISCOVERY_ROOTS.split(",")
     : [];
 
-  // Harness dispatch (the propose-a-change mechanism) is opt-in and
-  // system-agnostic — a plain configured command, nothing hardcoded.
-  const transport =
-    process.env.CONSUS_HARNESS_COMMAND
-      ? new StdioHarnessTransport(
-          process.env.CONSUS_HARNESS_COMMAND,
-          process.env.CONSUS_HARNESS_ARGS ? process.env.CONSUS_HARNESS_ARGS.split(",") : [],
-        )
-      : NOOP_HARNESS_TRANSPORT;
+  // Harness dispatch — see selectHarnessTransport() for priority order.
+  const transport = selectHarnessTransport(process.env);
 
   const app = buildServer({ dbPath, repos, transport, attachmentsDir, projectsConfigPath, discoveryRoots });
+
+  startHarnessSync(app, { transport, dbPath, env: process.env });
   app.listen({ port, host }).then(() => {
     // eslint-disable-next-line no-console
     console.log(`Consus server listening on :${port} (db: ${dbPath})`);
+    // PANT-807: one redelivery pass over the question-answer outbox at
+    // startup (no timer — later retries go through the same endpoint).
+    if (process.env.PANTHEON_API_URL) {
+      void app
+        .inject({ method: "POST", url: "/api/questions/redeliver" })
+        .then((res) => console.log(`[startup] question redelivery: ${res.body}`))
+        .catch((err: unknown) => console.warn("[startup] question redelivery failed", err));
+    }
   });
 }

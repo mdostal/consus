@@ -34,6 +34,93 @@ export const NOOP_HARNESS_TRANSPORT: HarnessTransport = {
 };
 
 /**
+ * File-based transport (opt-in, standalone). Writes each proposeChange
+ * envelope as a JSON file under `handoffsDir`; a separate `consus handoff`
+ * CLI (bin/handoff.mjs) reads those files and posts results back.
+ * Selected by CONSUS_HARNESS_FILE_DIR instead of CONSUS_HARNESS_COMMAND.
+ */
+export class FileHarnessTransport implements HarnessTransport {
+  constructor(private readonly handoffsDir: string) {}
+
+  async invoke<T = unknown>(method: string, params?: unknown): Promise<HarnessResult<T>> {
+    if (method !== "proposeChange") {
+      return { ok: false, recoverable: false, code: "UNKNOWN_METHOD" };
+    }
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+
+    const envelope = params as { proposalId?: string } & Record<string, unknown>;
+    if (!envelope?.proposalId) {
+      return { ok: false, recoverable: false, code: "INTERNAL_ERROR", message: "missing proposalId in params" };
+    }
+
+    try {
+      mkdirSync(this.handoffsDir, { recursive: true });
+      const filePath = join(this.handoffsDir, `${envelope.proposalId}.json`);
+      writeFileSync(filePath, JSON.stringify(envelope, null, 2) + "\n", "utf8");
+      return { ok: true, result: { handoffFile: filePath } as unknown as T };
+    } catch (err) {
+      return { ok: false, recoverable: true, code: "INTERNAL_ERROR", message: String(err) };
+    }
+  }
+}
+
+/**
+ * Pantheon HTTP transport (opt-in). POSTs proposals to Pantheon's board
+ * feed and surfaces results back via the result puller
+ * (server/harness/pantheon-result-puller.ts). Selected by CONSUS_HARNESS=pantheon.
+ */
+export class PantheonHarnessTransport implements HarnessTransport {
+  constructor(private readonly pantheonApiUrl: string) {}
+
+  async invoke<T = unknown>(method: string, params?: unknown): Promise<HarnessResult<T>> {
+    if (method !== "proposeChange") {
+      return { ok: false, recoverable: false, code: "UNKNOWN_METHOD" };
+    }
+    const p = params as {
+      proposalId: string;
+      itemId: string;
+      targetType: string;
+      diff: string;
+      description: string;
+      sourceRepo?: string | null;
+    };
+    if (!p.sourceRepo) {
+      return { ok: false, recoverable: false, code: "OPERATION_UNSUPPORTED", message: "item has no source_repo" };
+    }
+    try {
+      const res = await fetch(`${this.pantheonApiUrl}/api/feed/changes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          origin: {
+            god: "consus",
+            item_ref: { itemId: p.itemId, proposalId: p.proposalId, targetType: p.targetType },
+          },
+          target_repo: p.sourceRepo,
+          diff: p.diff,
+          description: p.description,
+          requested_by: "consus",
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        return { ok: false, recoverable: res.status >= 500, code: "INTERNAL_ERROR", message: text };
+      }
+      const body = (await res.json()) as T;
+      return { ok: true, result: body };
+    } catch (error) {
+      return {
+        ok: false,
+        recoverable: true,
+        code: "INTERNAL_ERROR",
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+}
+
+/**
  * Real stdio transport (opt-in, production). Spawns whatever command is
  * configured and speaks one JSON object per line over stdin/stdout. Not
  * exercised by unit tests — those inject a fake HarnessTransport instead.
@@ -79,4 +166,16 @@ export class StdioHarnessTransport implements HarnessTransport {
       child.stdin.end();
     });
   }
+}
+
+export type TransportName = "pantheon" | "file" | "stdio" | "noop" | "custom";
+
+/** Human-readable name of the active transport, reported by /health and
+ *  GET /api/metrics. "custom" covers injected transports (tests, embedders). */
+export function transportName(transport: HarnessTransport): TransportName {
+  if (transport === NOOP_HARNESS_TRANSPORT) return "noop";
+  if (transport instanceof PantheonHarnessTransport) return "pantheon";
+  if (transport instanceof FileHarnessTransport) return "file";
+  if (transport instanceof StdioHarnessTransport) return "stdio";
+  return "custom";
 }

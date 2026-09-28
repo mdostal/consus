@@ -15,7 +15,7 @@ a fixed boundary, not an open question (see below).
 
 ---
 
-## ① Current — where it is now (v0.17.0)
+## ① Current — where it is now (v0.17.2)
 
 Consus runs as a **Fastify server on `:8722`**, bound to `127.0.0.1` by default, backed by a local
 **SQLite** file (`.pHive/consus.sqlite`), started with `npm run dev` (server + Vite web) or
@@ -42,9 +42,9 @@ Consus runs as a **Fastify server on `:8722`**, bound to `127.0.0.1` by default,
 - **Decision contract** — a `dostal:decision-request/v1` parser (options A–Z, tradeoffs, required
   `recommended`), tiered extraction (structured block vs. heuristic-from-prose, tagged via
   `extractionTier`), and a classifier that's actually wired into the write paths that populate it.
-- **Doc scanner** — the only adapter in the codebase (`server/adapters/doc-scanner`); indexes a
-  repo's own `.pHive/planning/` and `.pHive/epics/**`, resolving doc references across *every*
-  configured repo, not just the one currently open.
+- **Doc adapters** — `server/adapters/doc-scanner` indexes a repo's own `.pHive/planning/` and
+  `.pHive/epics/**`; `server/adapters/gitdocs` resolves doc references across *every* configured
+  repo, not just the one currently open, and reads a doc at a given git ref.
 - **Editable diagrams** — both the epic/story cascade and the architecture diagram are a real,
   direct-manipulation React Flow canvas: drag nodes, edit labels, add/remove nodes, connect or
   delete edges, with a structured changeset and a "Fire to harness" action reusing the same
@@ -81,9 +81,14 @@ Consus runs as a **Fastify server on `:8722`**, bound to `127.0.0.1` by default,
   one is ever actually built.
 - Interaction polish / accessibility passes are done for the surfaces that existed when each pass
   ran (`consus-phase20-diagram-editor-a11y` audited the diagram editor + command palette;
-  `consus-phase28-interaction-completeness` added attachment previews and rendered visual diffs) —
-  not a standing guarantee that every *future* surface ships accessible by default; audit newer
-  surfaces as they mature, same as those two passes did.
+  `consus-phase28-interaction-completeness` added attachment previews and rendered visual diffs;
+  PANT-812 audited the New Survey form, `SurveyView` member cards with their Comments /
+  Attachments / Artifact-links panels, `ArtifactLinksPanel` in `DecisionView`, and all eight
+  answer-shape controls — each now has a zero-violation `vitest-axe` test in jsdom, plus
+  keyboard-only tests for ranking and the survey stepper) — not a standing guarantee that every
+  *future* surface ships accessible by default; audit newer surfaces as they mature, same as those
+  passes did. The axe tests don't check colour contrast (jsdom has no layout), so contrast is still
+  a manual/browser check.
 
 ---
 

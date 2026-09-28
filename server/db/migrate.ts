@@ -229,4 +229,76 @@ export function runMigration(db: Database.Database): void {
   // s5-survey-grouping: nullable FK linking a decision item to a survey.
   // NULL means "not part of any survey" — existing rows are untouched.
   addColumnIfMissing(db, "items", "survey_id", "TEXT REFERENCES surveys(id)");
+
+  // s2-consus-pantheon-change-adapter: the Pantheon board ticket id returned
+  // from a successful PantheonHarnessTransport dispatch, so proposals can be
+  // cross-referenced against their Pantheon ticket.
+  addColumnIfMissing(db, "proposals", "harness_ticket_id", "TEXT");
+
+  // s6-consus-pantheon-question-adapter: tracks the mapping between a
+  // Consus decision item and a Pantheon question ticket/qid pair. One row
+  // per question — (ticket_id, qid) is unique so idempotent re-pulls never
+  // duplicate an item.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS question_links (
+      item_id  TEXT PRIMARY KEY REFERENCES items(id),
+      ticket_id TEXT NOT NULL,
+      qid       TEXT NOT NULL,
+      survey_id TEXT NOT NULL REFERENCES surveys(id),
+      UNIQUE(ticket_id, qid)
+    );
+    CREATE INDEX IF NOT EXISTS idx_question_links_ticket_id ON question_links(ticket_id);
+    CREATE INDEX IF NOT EXISTS idx_question_links_survey_id ON question_links(survey_id);
+  `);
+
+  // PANT-806: durable poll cursors for the harness pullers (keyed by puller
+  // name), so a restart resumes from the last seen result instead of
+  // replaying the whole feed.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS harness_cursors (
+      name       TEXT PRIMARY KEY,
+      cursor     TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  // PANT-807: delivery outbox for question answers sent to Pantheon. A row is
+  // written in the same transaction as the verdict, then delivered; a non-2xx
+  // or thrown fetch leaves it 'failed' with last_error so it can be redelivered
+  // (at startup or via POST /api/questions/redeliver) instead of being lost.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS question_deliveries (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id    TEXT NOT NULL,
+      ticket_id  TEXT NOT NULL,
+      qid        TEXT,
+      kind       TEXT NOT NULL CHECK(kind IN ('partial', 'submit')),
+      body       TEXT NOT NULL,
+      status     TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'delivered', 'failed')),
+      attempts   INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_question_deliveries_status ON question_deliveries(status);
+    CREATE INDEX IF NOT EXISTS idx_question_deliveries_ticket_id ON question_deliveries(ticket_id);
+  `);
+
+  // PANT-809: last success / failure per Pantheon sync direction
+  // (server/pantheon/sync-status.ts), read by GET /api/metrics and /health.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sync_status (
+      direction       TEXT PRIMARY KEY,
+      last_success_at TEXT,
+      last_failure_at TEXT,
+      last_error      TEXT
+    );
+
+    -- PANT-809: when each project was last scanned (server/adapters/
+    -- doc-scanner scanRepo), independent of whether any doc changed.
+    CREATE TABLE IF NOT EXISTS project_ingests (
+      repo           TEXT PRIMARY KEY,
+      last_ingest_at TEXT NOT NULL
+    );
+  `);
 }

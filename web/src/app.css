@@ -185,6 +185,29 @@ button:focus-visible {
 .state--err {
   color: var(--consus-bad);
 }
+/* Screen-reader-only text: live-region announcements (PANT-812) and
+   off-screen context such as "(opens in a new tab)". */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* SurveyCreateForm's visibly labelled fields (PANT-812). */
+.survey-create__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  font-family: var(--consus-font-ui);
+  font-size: 13px;
+  color: var(--consus-ink-muted);
+}
 .empty {
   font-family: var(--consus-font-ui);
   border: 1px dashed var(--consus-line);
@@ -3191,4 +3214,19 @@ button:focus-visible {
   margin-top: 10px;
   color: var(--consus-ink-muted);
   font-size: 13px;
+}
+
+/* ============================================================= */
+/* PANT-919: "no context attached" warning on a decision / survey */
+/* member with zero attachments and zero artifact links.         */
+/* ============================================================= */
+.no-context-warning {
+  margin: 8px 0;
+  padding: 10px 14px;
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
+  background: color-mix(in srgb, var(--consus-warn) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--consus-warn) 40%, transparent);
+  color: var(--consus-warn);
+  font-size: 13px;
+  font-family: var(--consus-font-ui);
 }

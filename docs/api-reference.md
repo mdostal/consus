@@ -1,25 +1,79 @@
 # Consus API Reference
 
-Every route Consus's server registers, kept current through `consus-phase21-codex-cli-support`
-(v0.11.0). A harness author should be able to use Consus from this doc alone, without reading
+Every route Consus's server registers, kept current through v0.17.2. `server/routes/api-reference.drift.test.ts`
+fails CI if a route registered in `server/routes/*.ts` has no heading here. A harness author should be able to use Consus from this doc alone, without reading
 source. All routes are relative to the server's base URL (default `http://localhost:8722`,
 override via `PORT`/`HOST`).
 
-Consus is fully standalone — the server has zero live network coupling to any other system. It
-reads and writes only local SQLite (`server/db/`) and the local filesystem (doc scanner, epic/story
-YAML). The one integration seam is `HarnessTransport` (`server/harness/transport.ts`), used by the
-Proposals routes below: a generic `invoke(method, params)` call to whatever local command is
-configured, with no knowledge of what's on the other end.
+By default Consus is standalone: it reads and writes only local SQLite (`server/db/`) and the
+local filesystem (doc scanner, epic/story YAML), and makes no outbound network calls. The
+integration seam is `HarnessTransport` (`server/harness/transport.ts`), used by the Proposals
+routes below. Outbound HTTP happens only when you opt in with `PANTHEON_API_URL` /
+`CONSUS_HARNESS=pantheon` — see [Harness transports](#harness-transports) and the verdict bridge
+under `POST /api/decisions/:id/verdict`.
 
 ## Health
 
 ### `GET /health`
-Confirms the server and SQLite connection are up.
+Confirms the server and SQLite connection are up. Always 200 while the process is serving;
+`status` and `sqlite` are stable, so existing healthchecks (Tauri sidecar, Pantheon compose) can
+keep matching on them.
 
 **Response 200:**
 ```json
-{ "status": "ok", "sqlite": "connected" }
+{ "status": "ok", "sqlite": "connected", "transport": "pantheon", "degraded": false }
 ```
+
+- `transport`: the active harness transport: `pantheon`, `file`, `stdio`, `noop` (none configured)
+  or `custom` (an injected transport).
+- `degraded`: `true` only in Pantheon mode, when any sync direction's last failure is newer than its
+  last success (see `pantheon.directions` under `GET /api/metrics`). Always `false` otherwise.
+
+### `GET /api/metrics`
+Operational snapshot for dashboards (Janus, Pantheon). Computed from SQLite on each request, with
+no background work or caching.
+
+**Response 200:**
+```json
+{
+  "generated_at": "2026-09-27T12:00:00.000Z",
+  "decisions": { "open": 2, "oldest_open_age_seconds": 7200 },
+  "proposals": { "pending": 2, "oldest_pending_age_seconds": 3600, "failed_24h": 1, "applied_24h": 2 },
+  "events": { "pending": 3, "in_review": 1 },
+  "projects": [{ "name": "consus", "last_ingest_at": "2026-09-27T11:55:00.000Z", "doc_count": 2 }],
+  "harness": { "transport": "pantheon" },
+  "pantheon": {
+    "degraded": true,
+    "last_error": "pantheon down",
+    "last_error_at": "2026-09-27T11:59:00.000Z",
+    "last_error_direction": "question_pull",
+    "directions": {
+      "question_pull": { "last_success_at": null, "last_failure_at": "2026-09-27T11:59:00.000Z", "last_error": "pantheon down", "failing": true },
+      "result_pull": { "last_success_at": "2026-09-27T11:59:00.000Z", "last_failure_at": null, "last_error": null, "failing": false },
+      "question_push": { "last_success_at": null, "last_failure_at": null, "last_error": null, "failing": false },
+      "decision_push": { "last_success_at": null, "last_failure_at": null, "last_error": null, "failing": false }
+    },
+    "undelivered_answers": { "pending": 0, "failed": 1, "oldest_age_seconds": 300 }
+  }
+}
+```
+
+- `decisions.open`: items with a `decision_payload` and no `decided_at` (the same queue
+  `GET /api/decisions` returns). Ages are whole seconds, or `null` when nothing is queued.
+- `proposals.failed_24h` / `applied_24h`: count by `resolved_at` within the last 24 hours.
+- `events.pending` / `in_review`: events with status `new` / `in_progress`.
+- `projects[]`: every registered project, plus any repo with indexed docs. `last_ingest_at` is
+  when the project was last scanned (ingest or registration), whether or not any doc changed.
+  It is `null` if the project has never been scanned since this field was added.
+- `pantheon` is present only when `CONSUS_HARNESS=pantheon`. Directions: `question_pull`
+  (`GET /api/feed/questions`), `result_pull` (`GET /api/feed/changes`), `question_push` (question
+  partial/submit), and `decision_push` (`POST /api/events/decisions`). They're kept in the
+  `sync_status` table, so they survive restarts. A non-2xx response counts as a failure, with
+  the HTTP status in `last_error`. `question_push` is recorded per delivery attempt from the
+  question-answer outbox (`question_deliveries`).
+- `pantheon.undelivered_answers`: outbox rows with status `pending` / `failed`, and the age of the
+  oldest one not yet delivered (`null` when the outbox is drained). Retry them with
+  `POST /api/questions/redeliver`.
 
 ## Projects
 
@@ -89,6 +143,14 @@ last scan, or an unresolved decision-request block, becomes a reviewable event. 
 poll — nothing scans automatically; this is the only way `doc_index` gets populated or refreshed.
 
 **Response 200:** `{ "project": string, "docsScanned": number, "eventsCreated": number }`.
+**404** if `:project` isn't a configured repo.
+
+### `GET /api/projects/:project/branches`
+Lists a registered project's local and remote-tracking branches (`git for-each-ref refs/heads
+refs/remotes`, `*/HEAD` symrefs excluded, sorted). Backs the web UI's branch picker. A repo with
+no other branches (or where git fails) returns an empty list rather than an error.
+
+**Response 200:** `{ "branches": string[] }`, e.g. `{ "branches": ["dev", "main", "origin/dev"] }`.
 **404** if `:project` isn't a configured repo.
 
 ### `GET /api/fs/list?path=<dir>`
@@ -224,7 +286,36 @@ summarizing the verdict.
 ```
 
 **Response 200:** `{ "ok": true, "status": "done"|"in_progress", "decided_at": string|null }`.
-**400** if `verdict`/`verdict.kind` is missing. **404** if the item doesn't exist.
+**400** if `verdict`/`verdict.kind` is missing, or if the item is question-linked and the verdict
+has no meaningful answer for it (`accepted` on anything other than a decision-request with a
+`recommended` option, e.g. a feature-selection or free-text question). **404** if the item doesn't
+exist.
+
+**Verdict bridge (only when `PANTHEON_API_URL` is set).** After a verdict that decides the item
+(anything except `rejected_iteration_requested`), Consus calls the Pantheon host without delaying
+the response. The verdict is always recorded locally first and never changes the response.
+- **Question-linked item** (created by the Pantheon question adapter from a pending question
+  ticket, see [Harness transports](#harness-transports)): `POST {PANTHEON_API_URL}/api/feed/questions/:ticket/partial`
+  with `{ "qid", "answer", "actor" }`. The first time every decision item in that ticket's survey
+  is decided, a second call `POST {PANTHEON_API_URL}/api/feed/questions/:ticket/submit` with
+  `{ "actor" }` closes the ticket. Submit is sent at most once per ticket (a later reopen and
+  re-decide posts only a partial), and never while that ticket still has an undelivered partial.
+  Both calls go through the `question_deliveries` outbox, written in the same transaction as the
+  verdict: a non-2xx response or network error marks the row `failed` with `attempts` and
+  `last_error`, and logs a warning with the ticket and qid. Failed rows are retried at server
+  startup and by [`POST /api/questions/redeliver`](#post-apiquestionsredeliver).
+- **Any other item**: `POST {PANTHEON_API_URL}/api/events/decisions` with
+  `{ "decisionId", "title", "summary"?, "createdAt" }`. Question-linked items never take this path.
+
+### `POST /api/questions/redeliver`
+Retries every `pending` or `failed` row in the question-answer delivery outbox (see the verdict
+bridge above), oldest first. Also runs once at server startup when `PANTHEON_API_URL` is set.
+There is no background retry timer; call this to retry after the Pantheon host recovers.
+
+**Response 200:** `{ "delivered": number, "failed": number, "skipped": number, "remaining": number }`
+— `skipped` counts rows held back this pass (already in flight, or a submit waiting on an
+undelivered partial); `remaining` is every row still not delivered afterwards.
+**409** if `PANTHEON_API_URL` is not configured.
 
 ## Comments
 
@@ -266,8 +357,34 @@ Optional `ref` reads the doc's content at that git ref instead of the working tr
 ref:path`, via `execFileSync`'s argument-array form — no shell, immune to metacharacter
 injection). **400** if `ref` doesn't resolve (bad ref, path not present at that ref).
 
-**Response 200:** `{ "repo": string, "path": string, "format": "md"|"html", "content": string, "itemId": string, "ref"?: string }`
-(`ref` present only when the request included one). **404** if `repo` isn't configured.
+**Response 200:** `{ "repo": string, "path": string, "format": "md"|"html", "content": string, "itemId": string, "phase": string|null, "ref"?: string }`
+(`ref` present only when the request included one). `phase` is the doc's current `doc_index`
+tag (`planning`, `overview`, `brand`, …), or `null` if the working-tree file isn't indexed.
+**404** if `repo` isn't configured or the file doesn't exist; **400** if `path` escapes the repo.
+
+### `GET /api/docs/features?project=<name>`
+The same `doc_index` rows as `GET /api/docs`, regrouped for the feature-review UI: one bucket per
+epic, plus separate `overview` and `brand` (`.pHive/brand/**`) buckets. Omit `project` for every
+configured project. Never scans disk.
+
+**Response 200:**
+```json
+{
+  "features": [{ "epic": "consus-phase24", "docCount": 2, "docs": [{ "file_path": "...", "content_hash": "...", "last_scanned_at": "..." }] }],
+  "overview": [{ "file_path": "...", "content_hash": "...", "last_scanned_at": "..." }],
+  "brand": []
+}
+```
+
+### `GET /api/docs/diff?repo=<name>&path=<file_path>&ref=<git-ref>&base=<git-ref>`
+What changed in one doc on `ref` relative to `base` (`git diff <base>...<ref> -- <path>`).
+`base` defaults to the repo's default branch, read from the local `refs/remotes/origin/HEAD`
+symref; it is never assumed to be `main`.
+
+**Response 200:** `{ "diff": string|null }` — `null` when the doc is identical on both refs.
+**400** if `path` or `ref` is missing, a ref doesn't resolve, or `base` was omitted and the
+default branch can't be determined. **404** if `repo` isn't configured or the doc doesn't exist
+on one of the refs.
 
 ### `GET /api/docs/resolve?text=<free-form text>`
 Given free-form text (e.g. a doc's prose), extracts path-shaped substrings and resolves each
@@ -445,6 +562,41 @@ Returns one survey and its current member decisions.
 **Response 200:** `{ id, title, description, created_at, members: [...] }` (same member shape as
 above). **404** if the survey doesn't exist.
 
+## Questions (push-in seam for Pantheon question tickets)
+
+The push half of the question seam: an external system (Pantheon) pushes a question ticket in, or
+tells Consus the ticket was cancelled or answered elsewhere, over plain REST. The pull half is the
+question adapter under [Pantheon transport](#pantheon-transport-consus_harnesspantheon); both
+paths share one import function (`importQuestionTicket` in `server/pantheon/question-adapter.ts`),
+so they write identical rows and each is idempotent against the other.
+
+### `POST /api/questions/import`
+Imports one question ticket as a survey with one decision item per question that maps to an answer
+shape (`single-select` with ≥2 options → `dostal:decision-request/v1`, `multi` with ≥1 option →
+`dostal:feature-selection/v1`, `free-text` → `dostal:free-text/v1`; anything else is skipped).
+
+**Body:** `{ "ticket_id": string, "identifier"?: string, "questions": [{ "qid": string, "text": string, "kind": string, "options"?: string[] }] }`
+— the same shape as one entry of Pantheon's `GET /api/feed/questions`.
+
+**Response 201:** `{ ticket_id, survey_id, item_ids }` on first import. **200**
+`{ ticket_id, survey_id }` if the ticket is already imported (by push or pull) — nothing is
+written. **422** if no question maps to a decision shape. **400** for a missing `ticket_id` or
+malformed `questions`.
+
+### `POST /api/questions/:ticket/close`
+Closes every still-open item linked to the ticket, for a ticket cancelled or answered outside
+Consus. Nothing is deleted: each closed item gets `status: "closed"`, an `audit_log` row
+(`field: "status"`, `old_value` the prior status, `new_value: "closed"`), and a comment
+`Closed upstream: <reason>`. Already-decided items are left alone. Closed items drop out of the
+pending `GET /api/decisions` queue (still listed under `?all=1`), and a verdict on one returns
+**409**.
+
+**Body:** `{ "reason": string, "actor"?: string }` — `actor` defaults to `"pantheon"`.
+
+**Response 200:** `{ ticket_id, survey_id, closed_item_ids }`. A repeat call is a no-op that
+returns 200 with `closed_item_ids: []`. **404** if no survey is linked to the ticket. **400**
+without a `reason`.
+
 ## Proposals (propose a change, fire it to a harness)
 
 Consus never writes `.pHive`/repo content directly. Editing a diagram or a doc means composing a
@@ -453,6 +605,16 @@ diff + description and firing it to whatever `HarnessTransport` is configured
 what's on the other end. A harness applies the real change and reports back via
 `POST /api/proposals/:id/result`. One route family shared by decisions, diagrams, and docs —
 `targetType` is a label, never branched on server-side.
+
+**Transport selection** (env, mutually exclusive, first match wins — full detail under
+[Harness transports](#harness-transports)):
+- `CONSUS_HARNESS=pantheon` (requires `PANTHEON_API_URL`) — **Pantheon transport**. POSTs each
+  proposal to the Pantheon board feed; results are pulled back automatically.
+- `CONSUS_HARNESS_FILE_DIR` — **file transport** (standalone, no Pantheon). Writes each proposal as
+  `<dir>/<proposalId>.json`. A harness reads those files and posts results via `node bin/handoff.mjs`.
+- `CONSUS_HARNESS_COMMAND` — **stdio transport**. Spawns the given command; `CONSUS_HARNESS_ARGS`
+  (comma-separated) adds CLI arguments.
+- _(none set)_ — NOOP transport. Proposals fail immediately with `NO_ADAPTER`.
 
 ### `POST /api/proposals`
 Fires a new change proposal.
@@ -471,7 +633,15 @@ Called by the harness once it's actually applied (or failed to apply) the propos
 On `"applied"`, writes an `audit_log` entry (`field: "proposal:<targetType>"`, `new_value` the
 applied diff). On `"failed"`, no audit_log entry.
 
-**Response 200:** the updated proposal row. **404** for an unknown proposal id.
+Only a `pending` proposal changes. The endpoint is safe to retry: reporting the same status again
+for a proposal that is already resolved does nothing (no second `audit_log` row, `resolved_at` and
+the diff/reason are left as they are) and returns the current row with 200.
+
+**Response 200:** the updated proposal row, or the unchanged row for a repeated identical result.
+**404** for an unknown proposal id. **409** if the proposal is already resolved with the other
+status (`applied` then `failed`, or `failed` then `applied`). The row stays unchanged and the body is
+`{ "error": "proposal <id> is already <status>; cannot report <status>" }`. A proposal whose
+dispatch failed is already `failed`, so a later `applied` for it also gets 409.
 
 ### `GET /api/proposals?itemId=<id>`
 Lists every proposal for an item, most recent first — pending, applied, and failed all included
@@ -479,11 +649,8 @@ Lists every proposal for an item, most recent first — pending, applied, and fa
 
 **Response 200:** array of proposal rows. **400** if `itemId` is omitted.
 
-**Harness transport config (env vars, server startup only):** `CONSUS_HARNESS_COMMAND` — if unset,
-the server uses `NOOP_HARNESS_TRANSPORT` and every proposal resolves to `"failed"` immediately
-with a clear reason (no startup error). If set, Consus spawns that command per proposal
-(`StdioHarnessTransport`) and speaks one JSON object per line over stdin/stdout.
-`CONSUS_HARNESS_ARGS` — comma-separated args for that command.
+With no transport configured the server uses `NOOP_HARNESS_TRANSPORT` and every proposal
+resolves to `"failed"` immediately with a clear reason (no startup error).
 
 ## Diagrams (epic/story cascade + architecture)
 
@@ -609,3 +776,87 @@ Artifact's content.
 Lists an item's linked Artifacts.
 
 **Response 200:** array of `{ id, url, label }`
+
+## Attachments
+
+Files attached to an item (decision, doc, …). Stored under `CONSUS_ATTACHMENTS_DIR` (default
+`.pHive/attachments`).
+
+### `POST /api/items/:id/attachments`
+Uploads one file as `multipart/form-data`: a file part plus a required `actor` form field.
+Allowed extensions: `.png .jpg .jpeg .gif .pdf .txt .md .csv .json .zip`, max 10 MB. The stored
+`mime_type` is derived from the extension, never from the client.
+
+**Response 201:** `{ "id", "item_id", "file_name", "mime_type", "size", "created_at" }`.
+**400** if no file, the extension isn't allowed, or `actor` is missing. **404** if the item
+doesn't exist. **413** if the file is too large.
+
+### `GET /api/items/:id/attachments`
+Lists an item's non-deleted attachments, oldest first.
+
+**Response 200:** array of `{ id, item_id, file_name, mime_type, size, actor, created_at }`.
+
+### `GET /api/attachments/:id`
+Downloads an attachment's bytes with its stored `Content-Type` and `X-Content-Type-Options:
+nosniff`. PNG/JPEG/GIF/PDF are served `inline`; everything else as `attachment`.
+
+**404** if the attachment is unknown, deleted, or missing from storage.
+
+### `DELETE /api/attachments/:id`
+Deletes the stored file and tombstones the row (`deleted_at` set; it no longer appears in list or
+download). Idempotent for an already-deleted attachment.
+
+**Response 204** (no body). **404** if the attachment id was never known.
+
+## Harness transports
+
+Selected once at server startup from env (`selectHarnessTransport` in `server/index.ts`).
+Mutually exclusive; the first match wins.
+
+| Priority | Env | Transport | Behaviour |
+|---|---|---|---|
+| 1 | `CONSUS_HARNESS=pantheon` + `PANTHEON_API_URL` | Pantheon | `POST {PANTHEON_API_URL}/api/feed/changes` per proposal. Startup fails if `PANTHEON_API_URL` is missing. |
+| 2 | `CONSUS_HARNESS_FILE_DIR=<dir>` | File | Writes `<dir>/<proposalId>.json`; a harness reads it with the handoff CLI below. |
+| 3 | `CONSUS_HARNESS_COMMAND=<cmd>` (+ `CONSUS_HARNESS_ARGS`, comma-separated) | Stdio | Spawns the command per proposal, one JSON object per line over stdin/stdout. |
+| 4 | _(none)_ | NOOP | Proposals fail immediately with `NO_ADAPTER`. |
+
+### Pantheon transport (`CONSUS_HARNESS=pantheon`)
+
+Turning this on starts two pollers alongside the server, each every 60 seconds (set
+`CONSUS_PANTHEON_POLL=0` to start neither — see below):
+
+- **Result puller** — `GET {PANTHEON_API_URL}/api/feed/changes?origin_god=consus&has_result=true&since=<cursor>`,
+  and for each change with a result, records it exactly as `POST /api/proposals/:id/result` would
+  (`applied`/`failed`). The cursor is stored in the `harness_cursors` table, so after a restart the
+  first poll resumes from the last result seen. Any replayed result is a no-op.
+- **Question adapter** — `GET {PANTHEON_API_URL}/api/feed/questions?status=pending&surface=decision`,
+  and for each new pending question ticket, creates one survey with one decision item per
+  question it can map to an answer shape. Answering those items sends partial/submit answers back
+  (see the verdict bridge under `POST /api/decisions/:id/verdict`).
+
+**`CONSUS_PANTHEON_POLL`** (default `1`). With `CONSUS_PANTHEON_POLL=0` (or `false`) neither
+poller starts, and the push endpoints are the only way in: `POST /api/proposals/:id/result` for
+change results, and `POST /api/questions/import` / `POST /api/questions/:ticket/close` for
+question tickets. The default will flip to `0` once Pantheon pushes.
+
+A proposal on an item with no `source_repo` fails with `OPERATION_UNSUPPORTED`.
+
+`PANTHEON_API_URL` on its own (without `CONSUS_HARNESS=pantheon`) still enables two outbound
+calls: the verdict bridge, and a check in `POST /api/projects/:project/ingest` where a path shaped like
+`<REPOS_BASE_DIR>/<tenant>/<repo>` (`REPOS_BASE_DIR` defaults to `/repos`) is first validated
+against `GET {PANTHEON_API_URL}/api/repos/tenants/:tenant/repos/:repo/path`.
+
+### Handoff CLI (file transport)
+
+`bin/handoff.mjs` (also `npm run handoff`, or the `consus-handoff` bin) is the harness side of the
+file transport:
+
+```bash
+node bin/handoff.mjs list                                # pending handoffs, with diffs
+node bin/handoff.mjs result <proposalId> applied         # POST /api/proposals/:id/result, then delete the file
+node bin/handoff.mjs result <proposalId> failed "reason"
+```
+
+Env: `CONSUS_HANDOFF_DIR` (default `.pHive/handoffs`; set it to the same dir as
+`CONSUS_HARNESS_FILE_DIR`), `CONSUS_URL` (default `http://localhost:${PORT}`), `PORT` (default
+`8722`).

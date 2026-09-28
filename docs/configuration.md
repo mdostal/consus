@@ -12,9 +12,18 @@ Consus is configured via environment variables and a JSON config file for regist
 | `HOST` | `127.0.0.1` | Interface the server binds to. Set `0.0.0.0` for a containerized deploy — `127.0.0.1` is unreachable from outside a container |
 | `CONSUS_DB_PATH` | `.pHive/consus.sqlite` | Absolute or relative path to the SQLite database file. Created on first run. |
 | `CONSUS_PROJECTS_CONFIG` | `.pHive/consus-projects.json` | Path to the JSON file mapping project names to repo paths |
-| `CONSUS_HARNESS_COMMAND` | _(none)_ | The executable to invoke for the HarnessTransport. Without this, "Fire to harness" is a no-op. |
-| `CONSUS_HARNESS_ARGS` | _(none)_ | Comma-separated list of arguments to pass to `CONSUS_HARNESS_COMMAND` |
+| `CONSUS_ATTACHMENTS_DIR` | `.pHive/attachments` | Where uploaded item attachments are stored |
 | `CONSUS_DISCOVERY_ROOTS` | _(none)_ | Comma-separated list of absolute directory paths that `GET /api/projects/discover` should scan for candidate repos |
+| `CONSUS_HARNESS` | _(none)_ | Set to `pantheon` to select the Pantheon transport (requires `PANTHEON_API_URL`). See [Harness wiring](#harness-wiring). |
+| `PANTHEON_API_URL` | _(none)_ | Base URL of a Pantheon server. Required by `CONSUS_HARNESS=pantheon`; on its own it still enables the verdict bridge and the tenant-path check below. |
+| `REPOS_BASE_DIR` | `/repos` | Tenant repo mount root. When `PANTHEON_API_URL` is set, ingesting a project whose path looks like `<REPOS_BASE_DIR>/<tenant>/<repo>` first validates it against Pantheon's repo facade. |
+| `CONSUS_HARNESS_FILE_DIR` | _(none)_ | Selects the file transport: each proposal is written as `<dir>/<proposalId>.json` |
+| `CONSUS_HARNESS_COMMAND` | _(none)_ | Selects the stdio transport: the executable to spawn per proposal |
+| `CONSUS_HARNESS_ARGS` | _(none)_ | Comma-separated list of arguments to pass to `CONSUS_HARNESS_COMMAND` |
+
+With no harness transport selected, "Fire to harness" records every proposal as `failed` immediately.
+
+The handoff CLI (`bin/handoff.mjs`) reads its own env: `CONSUS_HANDOFF_DIR` (default `.pHive/handoffs`), `CONSUS_URL` (default `http://localhost:${PORT}`), and `PORT`.
 
 ### HOST binding
 
@@ -44,7 +53,14 @@ If the file doesn't exist, Consus defaults to `{ "consus": <cwd> }` — the curr
 
 ## Harness wiring
 
-To enable the "Fire to harness" mechanism, set `CONSUS_HARNESS_COMMAND` to an executable that can receive a JSON payload over stdin and write a JSON response to stdout:
+Consus picks one transport at startup; the first match in this order wins:
+
+1. `CONSUS_HARNESS=pantheon` + `PANTHEON_API_URL` — **Pantheon.** Proposals go to `{PANTHEON_API_URL}/api/feed/changes`. Two pollers start, each every 60 seconds: a result puller that applies Pantheon's results back to proposals, and a question adapter that turns pending Pantheon question tickets (`GET /api/feed/questions?status=pending&surface=decision`) into surveys. Answering one of those items posts `partial`, then `submit` once the ticket is fully answered, back to Pantheon. Set `CONSUS_PANTHEON_POLL=0` to start neither poller; Pantheon then pushes in through `POST /api/proposals/:id/result`, `POST /api/questions/import` and `POST /api/questions/:ticket/close` (see `docs/api-reference.md`). Startup fails if `PANTHEON_API_URL` is missing.
+2. `CONSUS_HARNESS_FILE_DIR=<dir>` — **file** (standalone). Proposals are written as JSON files; a harness lists them and reports results with `node bin/handoff.mjs list` / `node bin/handoff.mjs result <proposalId> applied|failed [reason]`. Point `CONSUS_HANDOFF_DIR` at the same directory.
+3. `CONSUS_HARNESS_COMMAND=<cmd>` — **stdio**, described next.
+4. none of the above — **NOOP**.
+
+For the stdio transport, set `CONSUS_HARNESS_COMMAND` to an executable that can receive a JSON payload over stdin and write a JSON response to stdout:
 
 ```bash
 CONSUS_HARNESS_COMMAND=claude CONSUS_HARNESS_ARGS=--no-stream npm start
@@ -56,7 +72,7 @@ Or for the built-in Claude Code skill:
 npm run agent:init   # installs skills/consus/SKILL.md → ~/.claude/skills/consus/
 ```
 
-See [Harness Transport](agent-integration/harness-transport.md) for the full stdio protocol.
+See [Harness Transport](agent-integration/harness-transport.md) for the full stdio protocol, and the "Harness transports" section of `docs/api-reference.md` for the HTTP calls each transport makes.
 
 ---
 

@@ -130,6 +130,27 @@ describe("proposeChange", () => {
     expect(count.n).toBe(0);
   });
 
+  it("stores the harness_ticket_id from a successful Pantheon dispatch", async () => {
+    const transport = fakeTransport({ ok: true, result: { ticket_id: "pant-ticket-abc", status: "pending" } });
+    insertItem(db, "item-ticket");
+
+    const result = await proposeChange(db, transport, {
+      itemId: "item-ticket",
+      targetType: "decision",
+      diff: "diff content",
+      description: "store ticket id",
+      requestedBy: "mathew",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const row = db.prepare("SELECT harness_ticket_id FROM proposals WHERE id = ?").get(result.proposalId) as {
+      harness_ticket_id: string | null;
+    };
+    expect(row.harness_ticket_id).toBe("pant-ticket-abc");
+  });
+
   it("marks the proposal failed immediately when dispatch itself fails — never left stuck pending", async () => {
     const transport = fakeTransport({ ok: false, recoverable: false, code: "TIMEOUT" });
 
@@ -222,6 +243,50 @@ describe("reportProposalResult", () => {
       n: number;
     };
     expect(auditRows.n).toBe(0);
+  });
+
+  it("treats a repeated applied result as a no-op: one audit_log row, resolved_at unchanged", async () => {
+    const proposalId = await fireProposal();
+    await reportProposalResult(db, { proposalId, status: "applied", appliedDiff: "+ added X (confirmed)" });
+    const before = db.prepare("SELECT * FROM proposals WHERE id = ?").get(proposalId);
+
+    const again = await reportProposalResult(db, { proposalId, status: "applied", appliedDiff: "+ something else" });
+
+    expect(again).toEqual({ ok: true, alreadyResolved: true });
+    expect(db.prepare("SELECT * FROM proposals WHERE id = ?").get(proposalId)).toEqual(before);
+    const auditRows = db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE item_id = ?").get("item-1") as {
+      n: number;
+    };
+    expect(auditRows.n).toBe(1);
+  });
+
+  it("treats a repeated failed result as a no-op", async () => {
+    const proposalId = await fireProposal();
+    await reportProposalResult(db, { proposalId, status: "failed", reason: "first" });
+    const before = db.prepare("SELECT * FROM proposals WHERE id = ?").get(proposalId);
+
+    const again = await reportProposalResult(db, { proposalId, status: "failed", reason: "second" });
+
+    expect(again).toEqual({ ok: true, alreadyResolved: true });
+    expect(db.prepare("SELECT * FROM proposals WHERE id = ?").get(proposalId)).toEqual(before);
+  });
+
+  it.each([
+    ["applied", "failed"],
+    ["failed", "applied"],
+  ] as const)("rejects %s -> %s as a conflict and leaves the row unchanged", async (first, second) => {
+    const proposalId = await fireProposal();
+    await reportProposalResult(db, { proposalId, status: first, reason: "r" });
+    const before = db.prepare("SELECT * FROM proposals WHERE id = ?").get(proposalId);
+    const auditBefore = db.prepare("SELECT COUNT(*) AS n FROM audit_log").get();
+
+    const result = await reportProposalResult(db, { proposalId, status: second, reason: "r2" });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("conflict");
+    expect(db.prepare("SELECT * FROM proposals WHERE id = ?").get(proposalId)).toEqual(before);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM audit_log").get()).toEqual(auditBefore);
   });
 
   it("returns a clear error for an unknown proposal id instead of throwing", async () => {

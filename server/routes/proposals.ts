@@ -55,7 +55,7 @@ export function registerProposalRoutes(app: FastifyInstance, { db, transport }: 
 
       const result = await reportProposalResult(db, { proposalId: id, status, appliedDiff, reason });
       if (!result.ok) {
-        return reply.code(404).send({ error: result.error });
+        return reply.code(result.code === "conflict" ? 409 : 404).send({ error: result.error });
       }
 
       const row = db.prepare("SELECT * FROM proposals WHERE id = ?").get(id);
