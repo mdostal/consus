@@ -25,6 +25,7 @@ import { DecisionListPane, type DecisionListItem, type SurveyListItem } from "./
 import { SurveyView } from "./features/decisions/SurveyView";
 import { AttachmentsPanel } from "./features/decisions/attachments/AttachmentsPanel";
 import { ArtifactLinksPanel } from "./features/artifact-links/ArtifactLinksPanel";
+import { NoContextWarning } from "./features/decisions/NoContextWarning";
 import { useSkinPreference } from "./theme/useSkinPreference";
 import { ThemeSkinPicker } from "./theme/ThemeSkinPicker";
 import { SkinBackdrop } from "./theme/skins/SkinBackdrop";
@@ -91,6 +92,8 @@ interface DecisionItem {
   triage_bucket?: string | null;
   decided_at: string | null;
   decision_payload: (AnyDecisionPayload & { previews?: Record<string, string> }) | null;
+  /** Live attachments + artifact links (PANT-919); absent on older servers. */
+  supporting_material_count?: number;
 }
 
 function verdictLabel(v: Verdict): string {
@@ -178,6 +181,8 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
         </div>
         <h2>{item.title}</h2>
       </header>
+
+      <NoContextWarning count={item.supporting_material_count} />
 
       {payload ? (
         <div className="dv__context" dangerouslySetInnerHTML={{ __html: contextHtml }} />

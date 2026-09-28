@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { DecisionCard } from "./DecisionCard";
+import { NoContextWarning } from "./NoContextWarning";
 import { AttachmentsPanel } from "./attachments/AttachmentsPanel";
 import { ArtifactLinksPanel } from "../artifact-links/ArtifactLinksPanel";
 import { CommentsPanel } from "../comments/CommentsPanel";
@@ -13,6 +14,8 @@ export interface SurveyDecisionItem {
   decision_payload: DecisionPayload | null;
   source_repo: string | null;
   recommendation?: string;
+  /** Live attachments + artifact links (PANT-919); absent on older servers. */
+  supporting_material_count?: number;
 }
 
 export interface SurveyViewProps {
@@ -170,6 +173,10 @@ export function SurveyView({ surveyId, surveyTitle, onVerdictRecorded }: SurveyV
                   </span>
                 ) : null}
               </div>
+
+              {/* Outside the collapsed <details> below on purpose: an empty
+                  "Supporting material" section is invisible until opened. */}
+              <NoContextWarning count={member.supporting_material_count} />
 
               {member.decision_payload ? (
                 <>

@@ -3192,3 +3192,18 @@ button:focus-visible {
   color: var(--consus-ink-muted);
   font-size: 13px;
 }
+
+/* ============================================================= */
+/* PANT-919: "no context attached" warning on a decision / survey */
+/* member with zero attachments and zero artifact links.         */
+/* ============================================================= */
+.no-context-warning {
+  margin: 8px 0;
+  padding: 10px 14px;
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
+  background: color-mix(in srgb, var(--consus-warn) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--consus-warn) 40%, transparent);
+  color: var(--consus-warn);
+  font-size: 13px;
+  font-family: var(--consus-font-ui);
+}
