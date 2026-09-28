@@ -251,6 +251,17 @@ export function runMigration(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_question_links_survey_id ON question_links(survey_id);
   `);
 
+  // PANT-806: durable poll cursors for the harness pullers (keyed by puller
+  // name), so a restart resumes from the last seen result instead of
+  // replaying the whole feed.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS harness_cursors (
+      name       TEXT PRIMARY KEY,
+      cursor     TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
   // PANT-807: delivery outbox for question answers sent to Pantheon. A row is
   // written in the same transaction as the verdict, then delivered; a non-2xx
   // or thrown fetch leaves it 'failed' with last_error so it can be redelivered

@@ -118,6 +118,31 @@ describe("POST /api/proposals/:id/result", () => {
     expect(body[0].status).toBe("applied");
   });
 
+  it("returns 200 with the unchanged row when the same result is reported again", async () => {
+    const url = `/api/proposals/${proposalId}/result`;
+    const first = await app.inject({ method: "POST", url, payload: { status: "applied" } });
+    const second = await app.inject({ method: "POST", url, payload: { status: "applied" } });
+
+    expect(second.statusCode).toBe(200);
+    expect(second.json()).toEqual(first.json());
+    const audit = db.prepare("SELECT COUNT(*) AS n FROM audit_log").get() as { n: number };
+    expect(audit.n).toBe(1);
+  });
+
+  it.each([
+    ["applied", "failed"],
+    ["failed", "applied"],
+  ] as const)("409s on %s -> %s and leaves the row unchanged", async (first, second) => {
+    const url = `/api/proposals/${proposalId}/result`;
+    const firstRes = await app.inject({ method: "POST", url, payload: { status: first } });
+
+    const res = await app.inject({ method: "POST", url, payload: { status: second } });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toMatch(/already/);
+    expect(db.prepare("SELECT * FROM proposals WHERE id = ?").get(proposalId)).toEqual(firstRes.json());
+  });
+
   it("404s for an unknown proposal id", async () => {
     const res = await app.inject({
       method: "POST",

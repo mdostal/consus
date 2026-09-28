@@ -15,14 +15,20 @@ interface ChangeView {
   updated_at: string;
 }
 
+/** Row key in harness_cursors (server/db/migrate.ts). */
+const CURSOR_NAME = "pantheon-result-puller";
+
 /**
  * Polls Pantheon's feed for completed change tickets that originated from
  * Consus and calls reportProposalResult for each, transitioning proposals
- * from pending to applied|failed. Maintains an in-memory ISO timestamp
- * cursor so each poll fetches only new results.
+ * from pending to applied|failed. Keeps an ISO timestamp cursor in the
+ * harness_cursors table so each poll — including the first one after a
+ * restart — fetches only new results. Replays that do slip through are
+ * harmless: reportProposalResult is idempotent.
  */
 export class PantheonResultPuller {
   private cursor: string | undefined;
+  private cursorLoaded = false;
 
   constructor(
     private readonly pantheonApiUrl: string,
@@ -32,7 +38,29 @@ export class PantheonResultPuller {
     private readonly fetchImpl?: typeof globalThis.fetch,
   ) {}
 
+  private loadCursor(): string | undefined {
+    if (!this.cursorLoaded) {
+      const row = this.db.prepare("SELECT cursor FROM harness_cursors WHERE name = ?").get(CURSOR_NAME) as
+        | { cursor: string }
+        | undefined;
+      this.cursor = row?.cursor;
+      this.cursorLoaded = true;
+    }
+    return this.cursor;
+  }
+
+  private saveCursor(cursor: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO harness_cursors (name, cursor, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(name) DO UPDATE SET cursor = excluded.cursor, updated_at = excluded.updated_at`,
+      )
+      .run(CURSOR_NAME, cursor, new Date().toISOString());
+    this.cursor = cursor;
+  }
+
   async poll(): Promise<void> {
+    this.loadCursor();
     const url = new URL(`${this.pantheonApiUrl}/api/feed/changes`);
     url.searchParams.set("origin_god", "consus");
     url.searchParams.set("has_result", "true");
@@ -68,7 +96,7 @@ export class PantheonResultPuller {
         latestAt = change.updated_at;
       }
     }
-    this.cursor = latestAt;
+    if (latestAt && latestAt !== this.cursor) this.saveCursor(latestAt);
   }
 
   start(intervalMs: number): ReturnType<typeof setInterval> {
