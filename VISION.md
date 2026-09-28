@@ -81,9 +81,14 @@ Consus runs as a **Fastify server on `:8722`**, bound to `127.0.0.1` by default,
   one is ever actually built.
 - Interaction polish / accessibility passes are done for the surfaces that existed when each pass
   ran (`consus-phase20-diagram-editor-a11y` audited the diagram editor + command palette;
-  `consus-phase28-interaction-completeness` added attachment previews and rendered visual diffs) —
-  not a standing guarantee that every *future* surface ships accessible by default; audit newer
-  surfaces as they mature, same as those two passes did.
+  `consus-phase28-interaction-completeness` added attachment previews and rendered visual diffs;
+  PANT-812 audited the New Survey form, `SurveyView` member cards with their Comments /
+  Attachments / Artifact-links panels, `ArtifactLinksPanel` in `DecisionView`, and all eight
+  answer-shape controls — each now has a zero-violation `vitest-axe` test in jsdom, plus
+  keyboard-only tests for ranking and the survey stepper) — not a standing guarantee that every
+  *future* surface ships accessible by default; audit newer surfaces as they mature, same as those
+  passes did. The axe tests don't check colour contrast (jsdom has no layout), so contrast is still
+  a manual/browser check.
 
 ---
 

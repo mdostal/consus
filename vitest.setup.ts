@@ -1,6 +1,17 @@
 import "@testing-library/jest-dom/vitest";
-import { afterEach } from "vitest";
+import { afterEach, expect } from "vitest";
 import { cleanup } from "@testing-library/react";
+import * as axeMatchers from "vitest-axe/matchers";
+import type { AxeMatchers } from "vitest-axe/matchers";
+
+// vitest-axe's own extend-expect only augments the legacy global `Vi`
+// namespace, which vitest 2 no longer reads -- register the matcher and its
+// types against the `vitest` module directly instead.
+expect.extend(axeMatchers);
+declare module "vitest" {
+  interface Assertion<T = any> extends AxeMatchers {}
+  interface AsymmetricMatchersContaining extends AxeMatchers {}
+}
 
 // RTL's automatic cleanup relies on detecting a global `afterEach`, which
 // isn't present unless `test.globals: true`. This project imports
