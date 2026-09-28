@@ -167,3 +167,15 @@ export class StdioHarnessTransport implements HarnessTransport {
     });
   }
 }
+
+export type TransportName = "pantheon" | "file" | "stdio" | "noop" | "custom";
+
+/** Human-readable name of the active transport, reported by /health and
+ *  GET /api/metrics. "custom" covers injected transports (tests, embedders). */
+export function transportName(transport: HarnessTransport): TransportName {
+  if (transport === NOOP_HARNESS_TRANSPORT) return "noop";
+  if (transport instanceof PantheonHarnessTransport) return "pantheon";
+  if (transport instanceof FileHarnessTransport) return "file";
+  if (transport instanceof StdioHarnessTransport) return "stdio";
+  return "custom";
+}

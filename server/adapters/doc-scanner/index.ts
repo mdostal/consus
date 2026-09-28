@@ -251,6 +251,14 @@ export function scanRepo(db: Database.Database, { repoName, repoPath }: ScanOpti
       last_scanned_at: now,
     });
   }
+
+  // PANT-809: doc_index.last_scanned_at only moves when a doc's content
+  // changes (see the upsert's WHERE above), so record the scan itself for
+  // GET /api/metrics's per-project staleness signal.
+  db.prepare(
+    `INSERT INTO project_ingests (repo, last_ingest_at) VALUES (?, ?)
+     ON CONFLICT(repo) DO UPDATE SET last_ingest_at = excluded.last_ingest_at`,
+  ).run(repoName, now);
 }
 
 export function queryDocIndex(db: Database.Database, repoName: string): DocIndexRow[] {

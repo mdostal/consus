@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { reportProposalResult } from "../proposals/store.js";
+import { recordSyncFailure, recordSyncSuccess, safeRecord } from "../pantheon/sync-status.js";
 
 interface ChangeResult {
   status: "applied" | "failed";
@@ -69,12 +70,17 @@ export class PantheonResultPuller {
     let changes: ChangeView[];
     try {
       const res = await (this.fetchImpl ?? globalThis.fetch)(url.toString());
-      if (!res.ok) return;
+      if (!res.ok) {
+        safeRecord(() => recordSyncFailure(this.db, "result_pull", `Pantheon changes fetch failed: ${res.status}`));
+        return;
+      }
       const data = (await res.json()) as { changes: ChangeView[] };
       changes = data.changes;
-    } catch {
+    } catch (err) {
+      safeRecord(() => recordSyncFailure(this.db, "result_pull", err));
       return;
     }
+    safeRecord(() => recordSyncSuccess(this.db, "result_pull"));
 
     if (changes.length === 0) return;
 

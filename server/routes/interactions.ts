@@ -9,6 +9,7 @@ import {
   questionAnswerFor,
   redeliverQuestionDeliveries,
 } from "../pantheon/question-adapter.js";
+import { recordSyncFailure, recordSyncSuccess, safeRecord } from "../pantheon/sync-status.js";
 
 export interface InteractionRoutesOptions {
   db: Database.Database;
@@ -129,9 +130,18 @@ export function registerInteractionRoutes(
                 ...(item.source_body ? { summary: item.source_body } : {}),
                 createdAt: now,
               }),
-            }).catch((err: unknown) => {
-              console.error("[interactions] decision bridge call failed", err);
-            });
+            })
+              .then((res) => {
+                safeRecord(() =>
+                  res.ok
+                    ? recordSyncSuccess(db, "decision_push")
+                    : recordSyncFailure(db, "decision_push", `Pantheon decision bridge failed: ${res.status}`),
+                );
+              })
+              .catch((err: unknown) => {
+                console.error("[interactions] decision bridge call failed", err);
+                safeRecord(() => recordSyncFailure(db, "decision_push", err));
+              });
           }
         }
       }

@@ -283,4 +283,22 @@ export function runMigration(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_question_deliveries_status ON question_deliveries(status);
     CREATE INDEX IF NOT EXISTS idx_question_deliveries_ticket_id ON question_deliveries(ticket_id);
   `);
+
+  // PANT-809: last success / failure per Pantheon sync direction
+  // (server/pantheon/sync-status.ts), read by GET /api/metrics and /health.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sync_status (
+      direction       TEXT PRIMARY KEY,
+      last_success_at TEXT,
+      last_failure_at TEXT,
+      last_error      TEXT
+    );
+
+    -- PANT-809: when each project was last scanned (server/adapters/
+    -- doc-scanner scanRepo), independent of whether any doc changed.
+    CREATE TABLE IF NOT EXISTS project_ingests (
+      repo           TEXT PRIMARY KEY,
+      last_ingest_at TEXT NOT NULL
+    );
+  `);
 }

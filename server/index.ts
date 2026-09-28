@@ -20,8 +20,10 @@ import { registerAttachmentRoutes } from "./routes/attachments.js";
 import { registerDesignAssetRoutes } from "./routes/design-assets.js";
 import { registerSurveyRoutes } from "./routes/surveys.js";
 import { registerQuestionRoutes } from "./routes/questions.js";
+import { registerMetricsRoutes } from "./routes/metrics.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
-import { StdioHarnessTransport, FileHarnessTransport, PantheonHarnessTransport, NOOP_HARNESS_TRANSPORT, type HarnessTransport } from "./harness/transport.js";
+import { StdioHarnessTransport, FileHarnessTransport, PantheonHarnessTransport, NOOP_HARNESS_TRANSPORT, transportName, type HarnessTransport } from "./harness/transport.js";
+import { isSyncDegraded } from "./pantheon/sync-status.js";
 import { startPantheonSync, type PantheonSyncHandles } from "./pantheon/start-sync.js";
 import { createStorageAdapter } from "./storage/index.js";
 
@@ -127,6 +129,8 @@ export interface BuildServerOptions {
    *  absolute paths, split the same way CONSUS_HARNESS_ARGS is below.
    *  Empty by default. */
   discoveryRoots?: string[];
+  /** Clock for GET /api/metrics's age fields — test-only seam. */
+  now?: () => Date;
 }
 
 export function buildServer({
@@ -137,6 +141,7 @@ export function buildServer({
   attachmentsDir = ".pHive/attachments",
   projectsConfigPath = ".pHive/consus-projects.json",
   discoveryRoots = [],
+  now,
 }: BuildServerOptions): FastifyInstance {
   const app = Fastify({ logger: false });
   const db = openDb(dbPath);
@@ -159,6 +164,8 @@ export function buildServer({
   registerDesignAssetRoutes(app, { repos });
   registerSurveyRoutes(app, { db });
   registerQuestionRoutes(app, { db });
+  const activeTransport = transportName(transport);
+  registerMetricsRoutes(app, { db, repos, transport: activeTransport, now });
 
   // Serves the built web SPA (mdostal/consus#105 — previously GET / was a
   // bare 404, so none of the app's own UI was ever reachable through this
@@ -191,6 +198,10 @@ export function buildServer({
     return {
       status: "ok",
       sqlite: row?.ok === 1 ? "connected" : "unreachable",
+      // PANT-809: additive only — status/sqlite and the 200 stay unchanged
+      // for the Tauri sidecar and Pantheon compose healthchecks.
+      transport: activeTransport,
+      degraded: activeTransport === "pantheon" && isSyncDegraded(db),
     };
   });
 

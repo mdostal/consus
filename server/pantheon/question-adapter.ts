@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { Verdict } from "../decision-contract/parser.js";
+import { recordSyncFailure, recordSyncSuccess, safeRecord } from "./sync-status.js";
 
 // --- Pantheon feed types ---
 
@@ -402,13 +403,15 @@ async function deliverRow(db: Database.Database, row: DeliveryRow, opts: Questio
            attempts = attempts + 1, last_error = NULL, updated_at = ?
        WHERE id = ?`,
     ).run(row.body, now, row.id);
+    safeRecord(() => recordSyncSuccess(db, "question_push"));
     return true;
   }
 
   db.prepare(
     "UPDATE question_deliveries SET status = 'failed', attempts = attempts + 1, last_error = ?, updated_at = ? WHERE id = ?",
   ).run(error, now, row.id);
-  // TODO(metrics story): count this in the operator-visible delivery counters.
+  // Also counted in GET /api/metrics's pantheon.undelivered_answers.
+  safeRecord(() => recordSyncFailure(db, "question_push", `${row.kind} ${row.ticket_id}: ${error}`));
   console.warn("[question-adapter] Pantheon delivery failed", {
     ticket: row.ticket_id,
     qid: row.qid,
