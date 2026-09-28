@@ -29,7 +29,19 @@ interface ItemRow {
   triage_bucket: string | null;
   source_branch: string | null;
   survey_id: string | null;
+  supporting_material_count: number;
 }
+
+/**
+ * PANT-919: how much supporting material (live attachments + artifact links)
+ * an item carries, computed in the list query so the web shell can flag a
+ * decision or survey member that was shipped with no context at all, without
+ * an extra per-item round trip. Soft-deleted attachments don't count. No
+ * ORDER BY inside, so the " ORDER BY" splice points below stay unambiguous.
+ */
+const SUPPORTING_MATERIAL_COUNT_SQL =
+  "((SELECT COUNT(*) FROM attachments a WHERE a.item_id = items.id AND a.deleted_at IS NULL) + " +
+  "(SELECT COUNT(*) FROM artifact_links l WHERE l.item_id = items.id)) AS supporting_material_count";
 
 interface CreateDecisionBody {
   id?: string;
@@ -191,8 +203,8 @@ export function registerDecisionRoutes(app: FastifyInstance, { db }: DecisionRou
     const survey = request.query?.survey;
 
     const baseSql = includeDecided
-      ? "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch, survey_id FROM items WHERE decision_payload IS NOT NULL ORDER BY (decided_at IS NULL) DESC, updated_at DESC, created_at ASC"
-      : "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch, survey_id FROM items WHERE decision_payload IS NOT NULL AND decided_at IS NULL AND status != 'closed' ORDER BY created_at ASC";
+      ? `SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch, survey_id, ${SUPPORTING_MATERIAL_COUNT_SQL} FROM items WHERE decision_payload IS NOT NULL ORDER BY (decided_at IS NULL) DESC, updated_at DESC, created_at ASC`
+      : `SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch, survey_id, ${SUPPORTING_MATERIAL_COUNT_SQL} FROM items WHERE decision_payload IS NOT NULL AND decided_at IS NULL AND status != 'closed' ORDER BY created_at ASC`;
 
     let sql = baseSql;
     const params: unknown[] = [];
