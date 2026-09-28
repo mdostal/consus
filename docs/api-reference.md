@@ -233,19 +233,36 @@ summarizing the verdict.
 ```
 
 **Response 200:** `{ "ok": true, "status": "done"|"in_progress", "decided_at": string|null }`.
-**400** if `verdict`/`verdict.kind` is missing. **404** if the item doesn't exist.
+**400** if `verdict`/`verdict.kind` is missing, or if the item is question-linked and the verdict
+has no meaningful answer for it (`accepted` on anything other than a decision-request with a
+`recommended` option, e.g. a feature-selection or free-text question). **404** if the item doesn't
+exist.
 
 **Verdict bridge (only when `PANTHEON_API_URL` is set).** After a verdict that decides the item
-(anything except `rejected_iteration_requested`), Consus makes one fire-and-forget call to the
-Pantheon host. The verdict is always recorded locally first; a failed bridge call is logged and
-never changes the response.
+(anything except `rejected_iteration_requested`), Consus calls the Pantheon host without delaying
+the response. The verdict is always recorded locally first and never changes the response.
 - **Question-linked item** (created by the Pantheon question adapter from a pending question
   ticket, see [Harness transports](#harness-transports)): `POST {PANTHEON_API_URL}/api/feed/questions/:ticket/partial`
-  with `{ "qid", "answer", "actor" }`. Once every decision item in that ticket's survey is decided,
-  a second call `POST {PANTHEON_API_URL}/api/feed/questions/:ticket/submit` with `{ "actor" }`
-  closes the ticket.
+  with `{ "qid", "answer", "actor" }`. The first time every decision item in that ticket's survey
+  is decided, a second call `POST {PANTHEON_API_URL}/api/feed/questions/:ticket/submit` with
+  `{ "actor" }` closes the ticket. Submit is sent at most once per ticket (a later reopen and
+  re-decide posts only a partial), and never while that ticket still has an undelivered partial.
+  Both calls go through the `question_deliveries` outbox, written in the same transaction as the
+  verdict: a non-2xx response or network error marks the row `failed` with `attempts` and
+  `last_error`, and logs a warning with the ticket and qid. Failed rows are retried at server
+  startup and by [`POST /api/questions/redeliver`](#post-apiquestionsredeliver).
 - **Any other item**: `POST {PANTHEON_API_URL}/api/events/decisions` with
   `{ "decisionId", "title", "summary"?, "createdAt" }`. Question-linked items never take this path.
+
+### `POST /api/questions/redeliver`
+Retries every `pending` or `failed` row in the question-answer delivery outbox (see the verdict
+bridge above), oldest first. Also runs once at server startup when `PANTHEON_API_URL` is set.
+There is no background retry timer; call this to retry after the Pantheon host recovers.
+
+**Response 200:** `{ "delivered": number, "failed": number, "skipped": number, "remaining": number }`
+— `skipped` counts rows held back this pass (already in flight, or a submit waiting on an
+undelivered partial); `remaining` is every row still not delivered afterwards.
+**409** if `PANTHEON_API_URL` is not configured.
 
 ## Comments
 
@@ -492,6 +509,41 @@ Returns one survey and its current member decisions.
 **Response 200:** `{ id, title, description, created_at, members: [...] }` (same member shape as
 above). **404** if the survey doesn't exist.
 
+## Questions (push-in seam for Pantheon question tickets)
+
+The push half of the question seam: an external system (Pantheon) pushes a question ticket in, or
+tells Consus the ticket was cancelled or answered elsewhere, over plain REST. The pull half is the
+question adapter under [Pantheon transport](#pantheon-transport-consus_harnesspantheon); both
+paths share one import function (`importQuestionTicket` in `server/pantheon/question-adapter.ts`),
+so they write identical rows and each is idempotent against the other.
+
+### `POST /api/questions/import`
+Imports one question ticket as a survey with one decision item per question that maps to an answer
+shape (`single-select` with ≥2 options → `dostal:decision-request/v1`, `multi` with ≥1 option →
+`dostal:feature-selection/v1`, `free-text` → `dostal:free-text/v1`; anything else is skipped).
+
+**Body:** `{ "ticket_id": string, "identifier"?: string, "questions": [{ "qid": string, "text": string, "kind": string, "options"?: string[] }] }`
+— the same shape as one entry of Pantheon's `GET /api/feed/questions`.
+
+**Response 201:** `{ ticket_id, survey_id, item_ids }` on first import. **200**
+`{ ticket_id, survey_id }` if the ticket is already imported (by push or pull) — nothing is
+written. **422** if no question maps to a decision shape. **400** for a missing `ticket_id` or
+malformed `questions`.
+
+### `POST /api/questions/:ticket/close`
+Closes every still-open item linked to the ticket, for a ticket cancelled or answered outside
+Consus. Nothing is deleted: each closed item gets `status: "closed"`, an `audit_log` row
+(`field: "status"`, `old_value` the prior status, `new_value: "closed"`), and a comment
+`Closed upstream: <reason>`. Already-decided items are left alone. Closed items drop out of the
+pending `GET /api/decisions` queue (still listed under `?all=1`), and a verdict on one returns
+**409**.
+
+**Body:** `{ "reason": string, "actor"?: string }` — `actor` defaults to `"pantheon"`.
+
+**Response 200:** `{ ticket_id, survey_id, closed_item_ids }`. A repeat call is a no-op that
+returns 200 with `closed_item_ids: []`. **404** if no survey is linked to the ticket. **400**
+without a `reason`.
+
 ## Proposals (propose a change, fire it to a harness)
 
 Consus never writes `.pHive`/repo content directly. Editing a diagram or a doc means composing a
@@ -717,7 +769,8 @@ Mutually exclusive; the first match wins.
 
 ### Pantheon transport (`CONSUS_HARNESS=pantheon`)
 
-Turning this on starts two pollers alongside the server, each every 60 seconds:
+Turning this on starts two pollers alongside the server, each every 60 seconds (set
+`CONSUS_PANTHEON_POLL=0` to start neither — see below):
 
 - **Result puller** — `GET {PANTHEON_API_URL}/api/feed/changes?origin_god=consus&has_result=true&since=<cursor>`,
   and for each change with a result, records it exactly as `POST /api/proposals/:id/result` would
@@ -727,6 +780,11 @@ Turning this on starts two pollers alongside the server, each every 60 seconds:
   and for each new pending question ticket, creates one survey with one decision item per
   question it can map to an answer shape. Answering those items sends partial/submit answers back
   (see the verdict bridge under `POST /api/decisions/:id/verdict`).
+
+**`CONSUS_PANTHEON_POLL`** (default `1`). With `CONSUS_PANTHEON_POLL=0` (or `false`) neither
+poller starts, and the push endpoints are the only way in: `POST /api/proposals/:id/result` for
+change results, and `POST /api/questions/import` / `POST /api/questions/:ticket/close` for
+question tickets. The default will flip to `0` once Pantheon pushes.
 
 A proposal on an item with no `source_repo` fails with `OPERATION_UNSUPPORTED`.
 

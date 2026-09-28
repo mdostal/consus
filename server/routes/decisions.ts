@@ -166,7 +166,8 @@ function validateDecisionPayload(payload: unknown): string | null {
  * By default returns only the *open* queue — every item carrying a
  * decision_payload that hasn't been decided yet (decided_at IS NULL, the
  * same amnesia-fix rule REQ-08's decide flow enforces so decided items
- * never resurface).
+ * never resurface). Items with status 'closed' (a Pantheon question ticket
+ * closed upstream via POST /api/questions/:ticket/close) are excluded too.
  *
  * `?all=1` additionally returns already-decided items (decided_at NOT NULL) so
  * the shell can present a "Decided" section that stays reviewable.
@@ -191,7 +192,7 @@ export function registerDecisionRoutes(app: FastifyInstance, { db }: DecisionRou
 
     const baseSql = includeDecided
       ? "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch, survey_id FROM items WHERE decision_payload IS NOT NULL ORDER BY (decided_at IS NULL) DESC, updated_at DESC, created_at ASC"
-      : "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch, survey_id FROM items WHERE decision_payload IS NOT NULL AND decided_at IS NULL ORDER BY created_at ASC";
+      : "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch, survey_id FROM items WHERE decision_payload IS NOT NULL AND decided_at IS NULL AND status != 'closed' ORDER BY created_at ASC";
 
     let sql = baseSql;
     const params: unknown[] = [];

@@ -2,7 +2,13 @@ import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
 import { verdictStatus, verdictSummary } from "../decision-contract/parser.js";
 import type { Verdict } from "../decision-contract/parser.js";
-import { getQuestionLink, postQuestionVerdict } from "../pantheon/question-adapter.js";
+import {
+  deliverQuestionDeliveries,
+  enqueueQuestionVerdict,
+  getQuestionLink,
+  questionAnswerFor,
+  redeliverQuestionDeliveries,
+} from "../pantheon/question-adapter.js";
 
 export interface InteractionRoutesOptions {
   db: Database.Database;
@@ -58,11 +64,25 @@ export function registerInteractionRoutes(
         .prepare("SELECT id, title, status, source_body, created_at AS createdAt FROM items WHERE id = ?")
         .get(id) as { id: string; title: string; status: string; source_body: string | null; createdAt: string } | undefined;
       if (!item) return reply.code(404).send({ error: "decision not found" });
+      // Closed via POST /api/questions/:ticket/close — the upstream ticket is
+      // gone, so there is nothing left to answer.
+      if (item.status === "closed") return reply.code(409).send({ error: "decision is closed" });
 
       const now = new Date().toISOString();
       const nextStatus = verdictStatus(verdict);
       // Reject → reopen (clear decided_at); accept/choose/mix → decide.
       const decidedAt = verdict.kind === "rejected_iteration_requested" ? null : now;
+
+      // A question-linked item's answer goes back to Pantheon, so a verdict
+      // with no meaningful answer for its payload (e.g. `accepted` on a
+      // free-text question) is refused rather than recorded.
+      const questionLink = getQuestionLink(db, id);
+      if (questionLink && decidedAt !== null && questionAnswerFor(db, id, verdict) === null) {
+        return reply.code(400).send({ error: `verdict "${verdict.kind}" has no answer for this question` });
+      }
+      const bridgeBase = pantheonApiUrl ?? process.env.PANTHEON_API_URL;
+      const doFetch = fetchImpl ?? globalThis.fetch;
+      let deliveryIds: number[] = [];
 
       const tx = db.transaction(() => {
         db.prepare("UPDATE items SET status = ?, decided_at = ?, updated_at = ? WHERE id = ?").run(
@@ -80,24 +100,25 @@ export function registerInteractionRoutes(
           `Decision recorded: ${verdictSummary(verdict)}`,
           now,
         );
+        // Question answers are written to the delivery outbox in the same
+        // transaction as the verdict, so a failed POST is retried, never lost.
+        if (questionLink && decidedAt !== null && bridgeBase) {
+          deliveryIds = enqueueQuestionVerdict(db, id, verdict, actor ?? "Mathew");
+        }
       });
       tx();
 
       // Route question-linked items to the Pantheon question adapter (partial + submit);
       // unlinked decisions keep the existing /api/events/decisions seed path.
-      // Both paths are fire-and-forget: verdict recording always succeeds regardless of bridge health.
+      // Neither delays the response: verdict recording always succeeds regardless of bridge health.
       if (decidedAt !== null) {
-        const bridgeBase = pantheonApiUrl ?? process.env.PANTHEON_API_URL;
         if (bridgeBase) {
-          const doFetch = fetchImpl ?? globalThis.fetch;
-          const questionLink = getQuestionLink(db, id);
           if (questionLink) {
-            postQuestionVerdict(db, id, verdict, actor ?? "Mathew", {
-              pantheonApiUrl: bridgeBase,
-              fetch: doFetch,
-            }).catch((err: unknown) => {
-              console.error("[interactions] question adapter call failed", err);
-            });
+            deliverQuestionDeliveries(db, deliveryIds, { pantheonApiUrl: bridgeBase, fetch: doFetch }).catch(
+              (err: unknown) => {
+                console.error("[interactions] question delivery failed", err);
+              },
+            );
           } else {
             doFetch(`${bridgeBase}/api/events/decisions`, {
               method: "POST",
@@ -118,4 +139,18 @@ export function registerInteractionRoutes(
       return reply.code(200).send({ ok: true, status: nextStatus, decided_at: decidedAt });
     },
   );
+
+  // Retry every pending/failed question answer in the delivery outbox.
+  app.post("/api/questions/redeliver", async (_request, reply) => {
+    const bridgeBase = pantheonApiUrl ?? process.env.PANTHEON_API_URL;
+    if (!bridgeBase) return reply.code(409).send({ error: "PANTHEON_API_URL is not configured" });
+    const result = await redeliverQuestionDeliveries(db, {
+      pantheonApiUrl: bridgeBase,
+      fetch: fetchImpl ?? globalThis.fetch,
+    });
+    const { remaining } = db
+      .prepare("SELECT COUNT(*) AS remaining FROM question_deliveries WHERE status != 'delivered'")
+      .get() as { remaining: number };
+    return reply.code(200).send({ ...result, remaining });
+  });
 }

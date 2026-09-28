@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Push-in REST seam for Pantheon question tickets** — `POST /api/questions/import` imports a
+  question ticket as a survey (201 create, 200 on repeat, 422 when nothing maps), sharing one
+  import path with the feed puller; `POST /api/questions/:ticket/close` closes a ticket's
+  still-open items (audited, never deleted, idempotent) so a ticket cancelled or answered
+  elsewhere no longer leaves its survey open forever. Closed items leave the pending queue and
+  refuse verdicts with 409.
+- **`CONSUS_PANTHEON_POLL`** (default `1`) — set to `0` to start neither Pantheon poller, leaving
+  the push endpoints as the only way in.
+
+### Fixed
+
+- **Question answers sent to Pantheon could be lost without any error** (PANT-807). The
+  `/partial` and `/submit` POSTs never checked the response, so a 4xx/5xx or network error dropped
+  the operator's answer. Answers now go through a `question_deliveries` outbox, written in the
+  same transaction as the verdict. Failed rows record `attempts` and `last_error`, log a warning,
+  and are retried at startup and by the new `POST /api/questions/redeliver`. No retry timer is
+  added. `/submit` is sent at most once per ticket and only after that ticket's partials are
+  delivered. An `accepted` verdict on a free-text or feature-selection question now gets a 400
+  instead of sending the literal string `"accepted"`.
+
 ## [0.17.2] - 2026-09-11
 
 ### Changed
