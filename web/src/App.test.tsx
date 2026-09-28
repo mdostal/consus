@@ -1578,3 +1578,43 @@ describe("App — diagram editor global pending count (s2, consus-phase18)", () 
     expect(body.description).toMatch(/1 change/);
   });
 });
+
+describe("App — creating a survey moves focus to its heading (PANT-812)", () => {
+  beforeEach(() => {
+    resetLocation();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetLocation();
+  });
+
+  it("after 'Create survey', keyboard focus lands on the new survey's heading, not the closed form", async () => {
+    const { fn: decisionsFetch } = buildDecisionsFetchMock([DECISION_ONE, DECISION_TWO]);
+    let surveys: { id: string; title: string; answered: number; total: number }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        const method = init?.method ?? "GET";
+        if (url === "/api/surveys" && method === "POST") {
+          surveys = [{ id: "s-new", title: "Q3 planning", answered: 0, total: 1 }];
+          return jsonOk({ id: "s-new", title: "Q3 planning" });
+        }
+        if (url === "/api/surveys") return jsonOk(surveys);
+        if (url.startsWith("/api/decisions?survey=")) return jsonOk([DECISION_ONE]);
+        return decisionsFetch(input, init);
+      }),
+    );
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Decision One" });
+
+    fireEvent.click(screen.getByRole("button", { name: /new survey/i }));
+    fireEvent.change(screen.getByLabelText("Survey title"), { target: { value: "Q3 planning" } });
+    fireEvent.click(screen.getByRole("button", { name: /^create survey$/i }));
+
+    const heading = await screen.findByRole("heading", { name: "Q3 planning" });
+    await waitFor(() => expect(heading).toHaveFocus());
+  });
+});

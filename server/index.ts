@@ -19,11 +19,12 @@ import { registerEventRoutes } from "./routes/events.js";
 import { registerAttachmentRoutes } from "./routes/attachments.js";
 import { registerDesignAssetRoutes } from "./routes/design-assets.js";
 import { registerSurveyRoutes } from "./routes/surveys.js";
+import { registerQuestionRoutes } from "./routes/questions.js";
 import { registerMetricsRoutes } from "./routes/metrics.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
 import { StdioHarnessTransport, FileHarnessTransport, PantheonHarnessTransport, NOOP_HARNESS_TRANSPORT, transportName, type HarnessTransport } from "./harness/transport.js";
 import { isSyncDegraded } from "./pantheon/sync-status.js";
-import { startPantheonSync } from "./pantheon/start-sync.js";
+import { startPantheonSync, type PantheonSyncHandles } from "./pantheon/start-sync.js";
 import { createStorageAdapter } from "./storage/index.js";
 
 /** The built web SPA (`vite.config.ts`'s `build.outDir: "../dist-web"`)
@@ -66,6 +67,37 @@ export function selectHarnessTransport(env: {
     );
   }
   return NOOP_HARNESS_TRANSPORT;
+}
+
+/** True unless CONSUS_PANTHEON_POLL is "0" (or "false"). Default on for now;
+ *  once Pantheon pushes via POST /api/questions/import, the default can flip. */
+export function pantheonPollingEnabled(env: { CONSUS_PANTHEON_POLL?: string }): boolean {
+  const v = env.CONSUS_PANTHEON_POLL?.trim().toLowerCase();
+  return v !== "0" && v !== "false";
+}
+
+/** Startup wiring after buildServer(): in Pantheon mode, start the result and
+ *  question pullers unless CONSUS_PANTHEON_POLL=0 turns them off — then the
+ *  push endpoints (POST /api/proposals/:id/result, /api/questions/*) are the
+ *  only way in. Returns the puller handles, or null when nothing started. */
+export function startHarnessSync(
+  app: FastifyInstance,
+  opts: {
+    transport: HarnessTransport;
+    dbPath: string;
+    env: { PANTHEON_API_URL?: string; CONSUS_PANTHEON_POLL?: string };
+    intervalMs?: number;
+    fetch?: typeof globalThis.fetch;
+  },
+): PantheonSyncHandles | null {
+  if (!(opts.transport instanceof PantheonHarnessTransport)) return null;
+  if (!pantheonPollingEnabled(opts.env)) return null;
+  return startPantheonSync(app, {
+    dbPath: opts.dbPath,
+    pantheonUrl: opts.env.PANTHEON_API_URL!,
+    intervalMs: opts.intervalMs,
+    fetch: opts.fetch,
+  });
 }
 
 export interface BuildServerOptions {
@@ -131,6 +163,7 @@ export function buildServer({
   registerAttachmentRoutes(app, { db, storageAdapter });
   registerDesignAssetRoutes(app, { repos });
   registerSurveyRoutes(app, { db });
+  registerQuestionRoutes(app, { db });
   const activeTransport = transportName(transport);
   registerMetricsRoutes(app, { db, repos, transport: activeTransport, now });
 
@@ -203,13 +236,17 @@ if (isMain) {
 
   const app = buildServer({ dbPath, repos, transport, attachmentsDir, projectsConfigPath, discoveryRoots });
 
-  if (transport instanceof PantheonHarnessTransport) {
-    const pantheonUrl = process.env.PANTHEON_API_URL!;
-
-    startPantheonSync(app, { dbPath, pantheonUrl });
-  }
+  startHarnessSync(app, { transport, dbPath, env: process.env });
   app.listen({ port, host }).then(() => {
     // eslint-disable-next-line no-console
     console.log(`Consus server listening on :${port} (db: ${dbPath})`);
+    // PANT-807: one redelivery pass over the question-answer outbox at
+    // startup (no timer — later retries go through the same endpoint).
+    if (process.env.PANTHEON_API_URL) {
+      void app
+        .inject({ method: "POST", url: "/api/questions/redeliver" })
+        .then((res) => console.log(`[startup] question redelivery: ${res.body}`))
+        .catch((err: unknown) => console.warn("[startup] question redelivery failed", err));
+    }
   });
 }

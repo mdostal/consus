@@ -2,7 +2,8 @@
  * @vitest-environment node
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type Database from "better-sqlite3";
+import Database from "better-sqlite3";
+import { runMigration } from "../db/migrate.js";
 import { PantheonResultPuller } from "./pantheon-result-puller.js";
 
 vi.mock("../proposals/store.js", () => ({
@@ -21,8 +22,9 @@ import { reportProposalResult } from "../proposals/store.js";
 
 const PANTHEON_URL = "https://pantheon.example.com";
 
-// Minimal db stub — only passed through to reportProposalResult (mocked).
-const stubDb = {} as Database.Database;
+// reportProposalResult is mocked; the db only needs harness_cursors for the
+// puller's persisted cursor.
+let stubDb: Database.Database;
 
 const change1 = {
   ticket_id: "t1",
@@ -40,10 +42,13 @@ const change2 = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  stubDb = new Database(":memory:");
+  runMigration(stubDb);
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  stubDb.close();
 });
 
 describe("PantheonResultPuller.poll — happy path", () => {
@@ -123,6 +128,32 @@ describe("PantheonResultPuller.poll — cursor advancement", () => {
     await puller.poll();
 
     expect(decodeURIComponent(capturedUrls[1])).toContain("since=2026-01-01T00:01:00Z");
+  });
+});
+
+describe("PantheonResultPuller — durable cursor", () => {
+  it("a new instance on the same DB sends since=<last cursor> on its first poll", async () => {
+    const first = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ changes: [change1, change2] }) });
+    await new PantheonResultPuller(PANTHEON_URL, stubDb, first).poll();
+
+    // Simulates a server restart: fresh instance, same database.
+    const capturedUrls: string[] = [];
+    const second = vi.fn().mockImplementation(async (url: string) => {
+      capturedUrls.push(url);
+      return { ok: true, json: async () => ({ changes: [] }) };
+    });
+    await new PantheonResultPuller(PANTHEON_URL, stubDb, second).poll();
+
+    expect(capturedUrls).toHaveLength(1);
+    expect(decodeURIComponent(capturedUrls[0])).toContain("since=2026-01-01T00:01:00Z");
+  });
+
+  it("does not persist a cursor when the feed returns nothing", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ changes: [] }) });
+    await new PantheonResultPuller(PANTHEON_URL, stubDb, fetchMock).poll();
+
+    const row = stubDb.prepare("SELECT COUNT(*) AS n FROM harness_cursors").get() as { n: number };
+    expect(row.n).toBe(0);
   });
 });
 

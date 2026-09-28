@@ -307,6 +307,22 @@ describe("SurveyView", () => {
     expect(screen.getByText("0 of 2 answered")).toBeInTheDocument();
   });
 
+  it("warns 'No context attached' only on members with zero supporting material (PANT-919)", async () => {
+    globalThis.fetch = makeFetch([
+      { ...MEMBER_OPEN, supporting_material_count: 0 },
+      { ...MEMBER_OPEN_2, supporting_material_count: 3 },
+      MEMBER_DECIDED, // no count reported (older server): no false alarm
+    ]);
+    render(<SurveyView surveyId="s-1" surveyTitle="Context Survey" />);
+    await waitFor(() => expect(screen.queryByText(/loading survey/i)).not.toBeInTheDocument());
+
+    expect(within(screen.getByTestId("survey-member-m-1")).getByTestId("no-context-warning")).toHaveTextContent(
+      /no context attached/i,
+    );
+    expect(within(screen.getByTestId("survey-member-m-2")).queryByTestId("no-context-warning")).toBeNull();
+    expect(within(screen.getByTestId("survey-member-m-3")).queryByTestId("no-context-warning")).toBeNull();
+  });
+
   beforeEach(() => {
     globalThis.fetch = originalFetch;
   });

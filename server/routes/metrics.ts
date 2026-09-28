@@ -28,7 +28,7 @@ function oldest(db: Database.Database, sql: string): string | null {
 }
 
 /** Pantheon sync block for GET /api/metrics — every known direction, even ones never attempted. */
-export function pantheonSyncMetrics(db: Database.Database) {
+export function pantheonSyncMetrics(db: Database.Database, at: Date = new Date()) {
   const rows = new Map(getSyncStatus(db).map((r) => [r.direction, r]));
   const directions = Object.fromEntries(
     SYNC_DIRECTIONS.map((d) => {
@@ -55,6 +55,15 @@ export function pantheonSyncMetrics(db: Database.Database) {
     last_error_at: latestFailure?.last_failure_at ?? null,
     last_error_direction: latestFailure?.direction ?? null,
     directions,
+    // PANT-807 question-answer outbox: answers not yet accepted by Pantheon.
+    undelivered_answers: {
+      pending: count(db, "SELECT COUNT(*) AS n FROM question_deliveries WHERE status = 'pending'"),
+      failed: count(db, "SELECT COUNT(*) AS n FROM question_deliveries WHERE status = 'failed'"),
+      oldest_age_seconds: ageSeconds(
+        oldest(db, "SELECT MIN(created_at) AS at FROM question_deliveries WHERE status != 'delivered'"),
+        at,
+      ),
+    },
   };
 }
 
@@ -107,7 +116,7 @@ export function registerMetricsRoutes(app: FastifyInstance, { db, repos, transpo
         doc_count: docCounts.get(name) ?? 0,
       })),
       harness: { transport },
-      ...(transport === "pantheon" ? { pantheon: pantheonSyncMetrics(db) } : {}),
+      ...(transport === "pantheon" ? { pantheon: pantheonSyncMetrics(db, at) } : {}),
     };
   });
 }

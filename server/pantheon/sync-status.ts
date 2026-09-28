@@ -8,7 +8,7 @@ import type Database from "better-sqlite3";
  *
  *  - question_pull: PantheonQuestionPuller — GET /api/feed/questions
  *  - result_pull:   PantheonResultPuller   — GET /api/feed/changes
- *  - question_push: postQuestionVerdict    — POST /api/feed/questions/:ticket/{partial,submit}
+ *  - question_push: question delivery outbox — POST /api/feed/questions/:ticket/{partial,submit}
  *  - decision_push: verdict bridge         — POST /api/events/decisions
  */
 export const SYNC_DIRECTIONS = ["question_pull", "result_pull", "question_push", "decision_push"] as const;

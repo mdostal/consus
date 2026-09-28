@@ -25,6 +25,7 @@ import { DecisionListPane, type DecisionListItem, type SurveyListItem } from "./
 import { SurveyView } from "./features/decisions/SurveyView";
 import { AttachmentsPanel } from "./features/decisions/attachments/AttachmentsPanel";
 import { ArtifactLinksPanel } from "./features/artifact-links/ArtifactLinksPanel";
+import { NoContextWarning } from "./features/decisions/NoContextWarning";
 import { useSkinPreference } from "./theme/useSkinPreference";
 import { ThemeSkinPicker } from "./theme/ThemeSkinPicker";
 import { SkinBackdrop } from "./theme/skins/SkinBackdrop";
@@ -91,6 +92,8 @@ interface DecisionItem {
   triage_bucket?: string | null;
   decided_at: string | null;
   decision_payload: (AnyDecisionPayload & { previews?: Record<string, string> }) | null;
+  /** Live attachments + artifact links (PANT-919); absent on older servers. */
+  supporting_material_count?: number;
 }
 
 function verdictLabel(v: Verdict): string {
@@ -178,6 +181,8 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
         </div>
         <h2>{item.title}</h2>
       </header>
+
+      <NoContextWarning count={item.supporting_material_count} />
 
       {payload ? (
         <div className="dv__context" dangerouslySetInnerHTML={{ __html: contextHtml }} />
@@ -300,6 +305,9 @@ function DecisionsSection({
   const [selectedId, select] = useSelectedDecisionId();
   const [surveys, setSurveys] = useState<SurveyListItem[] | null>(null);
   const [selectedSurveyId, setSelectedSurveyId] = useState<string | null>(null);
+  // The survey just created via the "New survey" form, whose view should take
+  // keyboard focus when it mounts (PANT-812). Cleared by any other selection.
+  const [justCreatedSurveyId, setJustCreatedSurveyId] = useState<string | null>(null);
 
   const loadSurveys = useCallback(() => {
     fetch("/api/surveys")
@@ -333,6 +341,7 @@ function DecisionsSection({
   const selected = effectiveId !== null ? (decisions.find((d) => d.id === effectiveId) ?? null) : null;
 
   function handleSelectSurvey(id: string) {
+    setJustCreatedSurveyId(null);
     setSelectedSurveyId(id);
     // Clear decision selection when a survey is chosen so the right pane
     // shows SurveyView and not a stale DecisionView.
@@ -340,6 +349,7 @@ function DecisionsSection({
   }
 
   function handleSelectDecision(id: string) {
+    setJustCreatedSurveyId(null);
     setSelectedSurveyId(null);
     select(id);
   }
@@ -347,6 +357,7 @@ function DecisionsSection({
   function handleSurveyCreated(survey: { id: string; title: string }) {
     loadSurveys();
     handleSelectSurvey(survey.id);
+    setJustCreatedSurveyId(survey.id);
   }
 
   const selectedSurvey = selectedSurveyId !== null
@@ -380,6 +391,7 @@ function DecisionsSection({
               key={selectedSurveyId}
               surveyId={selectedSurveyId}
               surveyTitle={selectedSurvey.title}
+              focusHeadingOnMount={selectedSurveyId === justCreatedSurveyId}
               onVerdictRecorded={() => {
                 reload();
                 loadSurveys();

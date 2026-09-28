@@ -13,6 +13,7 @@ import { PantheonHarnessTransport, FileHarnessTransport } from "../harness/trans
 import { PantheonQuestionPuller } from "../pantheon/question-puller.js";
 import { PantheonResultPuller } from "../harness/pantheon-result-puller.js";
 import { recordSyncSuccess } from "../pantheon/sync-status.js";
+import { deliverQuestionDeliveries } from "../pantheon/question-adapter.js";
 
 const NOW = new Date("2026-09-27T12:00:00.000Z");
 const ago = (seconds: number) => new Date(NOW.getTime() - seconds * 1000).toISOString();
@@ -180,5 +181,36 @@ describe("pantheon mode sync status", () => {
     expect(pantheon.directions.result_pull.failing).toBe(false);
     expect(pantheon.degraded).toBe(false);
     pullerDb.close();
+  });
+
+  it("counts undelivered question answers and records question_push from the delivery outbox", async () => {
+    setup();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    app = buildServer({ dbPath, transport: new PantheonHarnessTransport("https://pantheon.example.com"), now: () => NOW });
+    const db = openDb(dbPath);
+    const row = db.prepare(
+      `INSERT INTO question_deliveries (item_id, ticket_id, qid, kind, body, status, attempts, created_at, updated_at)
+       VALUES (?, ?, ?, 'partial', '{}', ?, 0, ?, ?)`,
+    );
+    row.run("i1", "t1", "q1", "pending", ago(600), ago(600));
+    row.run("i2", "t2", "q2", "failed", ago(300), ago(300));
+    row.run("i3", "t3", "q3", "delivered", ago(9000), ago(9000));
+
+    let { pantheon } = (await app.inject({ method: "GET", url: "/api/metrics" })).json();
+    expect(pantheon.undelivered_answers).toEqual({ pending: 1, failed: 1, oldest_age_seconds: 600 });
+
+    const down = vi.fn().mockResolvedValue(new Response("nope", { status: 502 }));
+    await deliverQuestionDeliveries(db, [1], { pantheonApiUrl: "https://pantheon.example.com", fetch: down });
+    ({ pantheon } = (await app.inject({ method: "GET", url: "/api/metrics" })).json());
+    expect(pantheon.undelivered_answers).toEqual({ pending: 0, failed: 2, oldest_age_seconds: 600 });
+    expect(pantheon.directions.question_push).toMatchObject({ last_error: "partial t1: HTTP 502", failing: true });
+    expect((await app.inject({ method: "GET", url: "/health" })).json().degraded).toBe(true);
+
+    const up = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    await deliverQuestionDeliveries(db, [1, 2], { pantheonApiUrl: "https://pantheon.example.com", fetch: up });
+    ({ pantheon } = (await app.inject({ method: "GET", url: "/api/metrics" })).json());
+    expect(pantheon.undelivered_answers).toEqual({ pending: 0, failed: 0, oldest_age_seconds: null });
+    expect(pantheon.directions.question_push.failing).toBe(false);
+    db.close();
   });
 });
