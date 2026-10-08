@@ -884,8 +884,8 @@ Mutually exclusive; the first match wins.
 
 ### Pantheon transport (`CONSUS_HARNESS=pantheon`)
 
-Turning this on starts two pollers alongside the server, each every 60 seconds (set
-`CONSUS_PANTHEON_POLL=0` to start neither — see below):
+Turning this on starts up to two pollers alongside the server, each every 60 seconds (the result
+puller by default, the question adapter only with `CONSUS_PANTHEON_POLL=1` — see below):
 
 - **Result puller** — `GET {PANTHEON_API_URL}/api/feed/changes?origin_god=consus&has_result=true&since=<cursor>`,
   and for each change with a result, records it exactly as `POST /api/proposals/:id/result` would
@@ -896,10 +896,13 @@ Turning this on starts two pollers alongside the server, each every 60 seconds (
   question it can map to an answer shape. Answering those items sends partial/submit answers back
   (see the verdict bridge under `POST /api/decisions/:id/verdict`).
 
-**`CONSUS_PANTHEON_POLL`** (default `1`). With `CONSUS_PANTHEON_POLL=0` (or `false`) neither
-poller starts, and the push endpoints are the only way in: `POST /api/proposals/:id/result` for
-change results, and `POST /api/questions/import` / `POST /api/questions/:ticket/close` for
-question tickets. The default will flip to `0` once Pantheon pushes.
+**`CONSUS_PANTHEON_POLL`** (default `0`). Unless it is `1` (or `true`) the question adapter doesn't
+start, and question tickets arrive only through `POST /api/questions/import` /
+`POST /api/questions/:ticket/close`.
+
+**`CONSUS_PANTHEON_RESULT_POLL`** (default `1`). With `0` (or `false`) the result puller doesn't
+start, and change results arrive only through `POST /api/proposals/:id/result`. It stays on by
+default because Pantheon doesn't push change results yet.
 
 A proposal on an item with no `source_repo` fails with `OPERATION_UNSUPPORTED`.
 
