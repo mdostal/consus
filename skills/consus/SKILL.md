@@ -123,8 +123,8 @@ difference is what happens around them when Consus runs with `CONSUS_HARNESS=pan
 `PANTHEON_API_URL`:
 
 - Pending Pantheon question tickets show up in `GET /api/decisions` as items grouped into a
-  survey, pulled every 60 seconds — unless `CONSUS_PANTHEON_POLL=0`, in which case they only
-  arrive when pushed (below).
+  survey when Pantheon pushes them (below), or every 60 seconds by polling if
+  `CONSUS_PANTHEON_POLL=1`.
 - A deciding `POST /api/decisions/:id/verdict` on one of those items is forwarded to Pantheon as a
   partial answer, then as a submit once every item in the ticket is answered. Other decided items
   are posted to Pantheon's `/api/events/decisions`.

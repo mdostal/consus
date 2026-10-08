@@ -170,11 +170,8 @@ describe("Pantheon poll switch (CONSUS_PANTHEON_POLL)", () => {
     return { app, handles, fetchMock };
   }
 
-  it("registers no interval with CONSUS_HARNESS=pantheon and CONSUS_PANTHEON_POLL=0, and push routes still work", async () => {
-    const { app, handles, fetchMock } = await startWith(
-      { CONSUS_HARNESS: "pantheon", PANTHEON_API_URL: PANTHEON_URL, CONSUS_PANTHEON_POLL: "0" },
-      "poll-off",
-    );
+  async function expectNoPollingAndPushWorks(env: Record<string, string>, name: string) {
+    const { app, handles, fetchMock } = await startWith(env, name);
 
     expect(handles).toBeNull();
     expect(vi.getTimerCount()).toBe(0);
@@ -188,10 +185,24 @@ describe("Pantheon poll switch (CONSUS_PANTHEON_POLL)", () => {
     });
     expect(res.statusCode).toBe(201);
     await app.close();
+  }
+
+  it("registers no interval in Pantheon mode by default (flag unset), and push routes still work", async () => {
+    await expectNoPollingAndPushWorks({ CONSUS_HARNESS: "pantheon", PANTHEON_API_URL: PANTHEON_URL }, "poll-default");
   });
 
-  it("starts both pullers in Pantheon mode by default (flag unset)", async () => {
-    const { app, handles } = await startWith({ CONSUS_HARNESS: "pantheon", PANTHEON_API_URL: PANTHEON_URL }, "poll-default");
+  it("registers no interval with CONSUS_PANTHEON_POLL=0, and push routes still work", async () => {
+    await expectNoPollingAndPushWorks(
+      { CONSUS_HARNESS: "pantheon", PANTHEON_API_URL: PANTHEON_URL, CONSUS_PANTHEON_POLL: "0" },
+      "poll-off",
+    );
+  });
+
+  it("starts both pullers in Pantheon mode with CONSUS_PANTHEON_POLL=1", async () => {
+    const { app, handles } = await startWith(
+      { CONSUS_HARNESS: "pantheon", PANTHEON_API_URL: PANTHEON_URL, CONSUS_PANTHEON_POLL: "1" },
+      "poll-on",
+    );
 
     expect(handles).not.toBeNull();
     expect(vi.getTimerCount()).toBe(2);
@@ -206,9 +217,11 @@ describe("Pantheon poll switch (CONSUS_PANTHEON_POLL)", () => {
     await app.close();
   });
 
-  it("parses the flag: only 0/false disable polling", () => {
-    expect(pantheonPollingEnabled({})).toBe(true);
+  it("parses the flag: only 1/true enable polling", () => {
+    expect(pantheonPollingEnabled({})).toBe(false);
+    expect(pantheonPollingEnabled({ CONSUS_PANTHEON_POLL: "" })).toBe(false);
     expect(pantheonPollingEnabled({ CONSUS_PANTHEON_POLL: "1" })).toBe(true);
+    expect(pantheonPollingEnabled({ CONSUS_PANTHEON_POLL: " TRUE " })).toBe(true);
     expect(pantheonPollingEnabled({ CONSUS_PANTHEON_POLL: "0" })).toBe(false);
     expect(pantheonPollingEnabled({ CONSUS_PANTHEON_POLL: "false" })).toBe(false);
   });

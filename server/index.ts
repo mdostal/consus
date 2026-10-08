@@ -69,17 +69,18 @@ export function selectHarnessTransport(env: {
   return NOOP_HARNESS_TRANSPORT;
 }
 
-/** True unless CONSUS_PANTHEON_POLL is "0" (or "false"). Default on for now;
- *  once Pantheon pushes via POST /api/questions/import, the default can flip. */
+/** True only when CONSUS_PANTHEON_POLL is "1" (or "true"). Default off:
+ *  Pantheon pushes question tickets via POST /api/questions/import, so the
+ *  pullers are an explicit opt-in. */
 export function pantheonPollingEnabled(env: { CONSUS_PANTHEON_POLL?: string }): boolean {
   const v = env.CONSUS_PANTHEON_POLL?.trim().toLowerCase();
-  return v !== "0" && v !== "false";
+  return v === "1" || v === "true";
 }
 
 /** Startup wiring after buildServer(): in Pantheon mode, start the result and
- *  question pullers unless CONSUS_PANTHEON_POLL=0 turns them off — then the
- *  push endpoints (POST /api/proposals/:id/result, /api/questions/*) are the
- *  only way in. Returns the puller handles, or null when nothing started. */
+ *  question pullers only when CONSUS_PANTHEON_POLL=1 turns them on — otherwise
+ *  the push endpoints (POST /api/proposals/:id/result, /api/questions/*) are
+ *  the only way in. Returns the puller handles, or null when nothing started. */
 export function startHarnessSync(
   app: FastifyInstance,
   opts: {
