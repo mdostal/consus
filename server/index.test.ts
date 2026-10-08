@@ -12,7 +12,13 @@ import { existsSync, unlinkSync, mkdtempSync, writeFileSync, mkdirSync, rmSync, 
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
-import { buildServer, pantheonPollingEnabled, selectHarnessTransport, startHarnessSync } from "./index.js";
+import {
+  buildServer,
+  pantheonPollingEnabled,
+  pantheonResultPollingEnabled,
+  selectHarnessTransport,
+  startHarnessSync,
+} from "./index.js";
 
 describe("GET /health", () => {
   const dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
@@ -147,8 +153,9 @@ describe("attachments storage default location (mirrors CONSUS_DB_PATH's default
   });
 });
 
-describe("Pantheon poll switch (CONSUS_PANTHEON_POLL)", () => {
+describe("Pantheon poll switches (CONSUS_PANTHEON_POLL, CONSUS_PANTHEON_RESULT_POLL)", () => {
   const PANTHEON_URL = "https://pantheon.example.com";
+  const PANTHEON = { CONSUS_HARNESS: "pantheon", PANTHEON_API_URL: PANTHEON_URL };
   const dir = mkdtempSync(join(tmpdir(), "consus-poll-switch-"));
 
   afterEach(() => {
@@ -170,42 +177,76 @@ describe("Pantheon poll switch (CONSUS_PANTHEON_POLL)", () => {
     return { app, handles, fetchMock };
   }
 
-  async function expectNoPollingAndPushWorks(env: Record<string, string>, name: string) {
-    const { app, handles, fetchMock } = await startWith(env, name);
+  async function polledUrls(fetchMock: ReturnType<typeof vi.fn>) {
+    await vi.advanceTimersByTimeAsync(1_000);
+    return fetchMock.mock.calls.map(([u]) => String(u));
+  }
 
-    expect(handles).toBeNull();
-    expect(vi.getTimerCount()).toBe(0);
-    await vi.advanceTimersByTimeAsync(5_000);
-    expect(fetchMock).not.toHaveBeenCalled();
-
+  async function expectQuestionPushWorks(app: Awaited<ReturnType<typeof startWith>>["app"]) {
     const res = await app.inject({
       method: "POST",
       url: "/api/questions/import",
       payload: { ticket_id: "t1", questions: [{ qid: "q1", text: "Why?", kind: "free-text" }] },
     });
     expect(res.statusCode).toBe(201);
-    await app.close();
   }
 
-  it("registers no interval in Pantheon mode by default (flag unset), and push routes still work", async () => {
-    await expectNoPollingAndPushWorks({ CONSUS_HARNESS: "pantheon", PANTHEON_API_URL: PANTHEON_URL }, "poll-default");
+  it("by default (both flags unset) starts only the result puller, and question push still works", async () => {
+    const { app, handles, fetchMock } = await startWith(PANTHEON, "poll-default");
+
+    expect(handles?.resultPuller).not.toBeNull();
+    expect(handles?.questionPuller).toBeNull();
+    expect(vi.getTimerCount()).toBe(1);
+    const urls = await polledUrls(fetchMock);
+    expect(urls.some((u) => u.startsWith(`${PANTHEON_URL}/api/feed/changes`))).toBe(true);
+    expect(urls.some((u) => u.includes("/api/feed/questions"))).toBe(false);
+
+    await expectQuestionPushWorks(app);
+    await app.close();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("registers no interval with CONSUS_PANTHEON_POLL=0, and push routes still work", async () => {
-    await expectNoPollingAndPushWorks(
-      { CONSUS_HARNESS: "pantheon", PANTHEON_API_URL: PANTHEON_URL, CONSUS_PANTHEON_POLL: "0" },
-      "poll-off",
-    );
+  it("CONSUS_PANTHEON_POLL=0 behaves like the default: result puller only", async () => {
+    const { app, handles } = await startWith({ ...PANTHEON, CONSUS_PANTHEON_POLL: "0" }, "poll-off");
+    expect(handles?.questionPuller).toBeNull();
+    expect(handles?.resultPuller).not.toBeNull();
+    expect(vi.getTimerCount()).toBe(1);
+    await app.close();
   });
 
-  it("starts both pullers in Pantheon mode with CONSUS_PANTHEON_POLL=1", async () => {
-    const { app, handles } = await startWith(
-      { CONSUS_HARNESS: "pantheon", PANTHEON_API_URL: PANTHEON_URL, CONSUS_PANTHEON_POLL: "1" },
-      "poll-on",
-    );
+  it("CONSUS_PANTHEON_POLL=1 starts both pullers", async () => {
+    const { app, handles, fetchMock } = await startWith({ ...PANTHEON, CONSUS_PANTHEON_POLL: "1" }, "poll-on");
 
-    expect(handles).not.toBeNull();
+    expect(handles?.resultPuller).not.toBeNull();
+    expect(handles?.questionPuller).not.toBeNull();
     expect(vi.getTimerCount()).toBe(2);
+    const urls = await polledUrls(fetchMock);
+    expect(urls.some((u) => u.includes("/api/feed/changes"))).toBe(true);
+    expect(urls.some((u) => u.includes("/api/feed/questions"))).toBe(true);
+    await app.close();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("CONSUS_PANTHEON_RESULT_POLL=0 with the question flag unset registers no interval, and push routes still work", async () => {
+    const { app, handles, fetchMock } = await startWith({ ...PANTHEON, CONSUS_PANTHEON_RESULT_POLL: "0" }, "all-off");
+
+    expect(handles).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await expectQuestionPushWorks(app);
+    await app.close();
+  });
+
+  it("CONSUS_PANTHEON_RESULT_POLL=0 with CONSUS_PANTHEON_POLL=1 starts only the question puller", async () => {
+    const { app, handles } = await startWith(
+      { ...PANTHEON, CONSUS_PANTHEON_RESULT_POLL: "0", CONSUS_PANTHEON_POLL: "1" },
+      "questions-only",
+    );
+    expect(handles?.resultPuller).toBeNull();
+    expect(handles?.questionPuller).not.toBeNull();
+    expect(vi.getTimerCount()).toBe(1);
     await app.close();
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -217,12 +258,19 @@ describe("Pantheon poll switch (CONSUS_PANTHEON_POLL)", () => {
     await app.close();
   });
 
-  it("parses the flag: only 1/true enable polling", () => {
+  it("parses CONSUS_PANTHEON_POLL: only 1/true enable question polling", () => {
     expect(pantheonPollingEnabled({})).toBe(false);
     expect(pantheonPollingEnabled({ CONSUS_PANTHEON_POLL: "" })).toBe(false);
     expect(pantheonPollingEnabled({ CONSUS_PANTHEON_POLL: "1" })).toBe(true);
     expect(pantheonPollingEnabled({ CONSUS_PANTHEON_POLL: " TRUE " })).toBe(true);
     expect(pantheonPollingEnabled({ CONSUS_PANTHEON_POLL: "0" })).toBe(false);
     expect(pantheonPollingEnabled({ CONSUS_PANTHEON_POLL: "false" })).toBe(false);
+  });
+
+  it("parses CONSUS_PANTHEON_RESULT_POLL: only 0/false disable result polling", () => {
+    expect(pantheonResultPollingEnabled({})).toBe(true);
+    expect(pantheonResultPollingEnabled({ CONSUS_PANTHEON_RESULT_POLL: "1" })).toBe(true);
+    expect(pantheonResultPollingEnabled({ CONSUS_PANTHEON_RESULT_POLL: "0" })).toBe(false);
+    expect(pantheonResultPollingEnabled({ CONSUS_PANTHEON_RESULT_POLL: " FALSE " })).toBe(false);
   });
 });

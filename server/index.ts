@@ -69,35 +69,48 @@ export function selectHarnessTransport(env: {
   return NOOP_HARNESS_TRANSPORT;
 }
 
-/** True only when CONSUS_PANTHEON_POLL is "1" (or "true"). Default off:
- *  Pantheon pushes question tickets via POST /api/questions/import, so the
- *  pullers are an explicit opt-in. */
+/** Question puller switch: true only when CONSUS_PANTHEON_POLL is "1" (or
+ *  "true"). Default off: Pantheon pushes question tickets via
+ *  POST /api/questions/import, so polling for them is an explicit opt-in. */
 export function pantheonPollingEnabled(env: { CONSUS_PANTHEON_POLL?: string }): boolean {
   const v = env.CONSUS_PANTHEON_POLL?.trim().toLowerCase();
   return v === "1" || v === "true";
 }
 
-/** Startup wiring after buildServer(): in Pantheon mode, start the result and
- *  question pullers only when CONSUS_PANTHEON_POLL=1 turns them on — otherwise
- *  the push endpoints (POST /api/proposals/:id/result, /api/questions/*) are
- *  the only way in. Returns the puller handles, or null when nothing started. */
+/** Result puller switch: true unless CONSUS_PANTHEON_RESULT_POLL is "0" (or
+ *  "false"). Default on: Pantheon does not push change results to
+ *  POST /api/proposals/:id/result yet, so the puller is the only way in. */
+export function pantheonResultPollingEnabled(env: { CONSUS_PANTHEON_RESULT_POLL?: string }): boolean {
+  const v = env.CONSUS_PANTHEON_RESULT_POLL?.trim().toLowerCase();
+  return v !== "0" && v !== "false";
+}
+
+/** Startup wiring after buildServer(): in Pantheon mode, start the result
+ *  puller unless CONSUS_PANTHEON_RESULT_POLL=0 turns it off, and the question
+ *  puller only when CONSUS_PANTHEON_POLL=1 turns it on. Whatever isn't polled
+ *  arrives through the push endpoints (POST /api/proposals/:id/result,
+ *  /api/questions/*). Returns the puller handles, or null when nothing started. */
 export function startHarnessSync(
   app: FastifyInstance,
   opts: {
     transport: HarnessTransport;
     dbPath: string;
-    env: { PANTHEON_API_URL?: string; CONSUS_PANTHEON_POLL?: string };
+    env: { PANTHEON_API_URL?: string; CONSUS_PANTHEON_POLL?: string; CONSUS_PANTHEON_RESULT_POLL?: string };
     intervalMs?: number;
     fetch?: typeof globalThis.fetch;
   },
 ): PantheonSyncHandles | null {
   if (!(opts.transport instanceof PantheonHarnessTransport)) return null;
-  if (!pantheonPollingEnabled(opts.env)) return null;
+  const results = pantheonResultPollingEnabled(opts.env);
+  const questions = pantheonPollingEnabled(opts.env);
+  if (!results && !questions) return null;
   return startPantheonSync(app, {
     dbPath: opts.dbPath,
     pantheonUrl: opts.env.PANTHEON_API_URL!,
     intervalMs: opts.intervalMs,
     fetch: opts.fetch,
+    results,
+    questions,
   });
 }
 

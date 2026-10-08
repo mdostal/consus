@@ -16,10 +16,12 @@
   still-open items (audited, never deleted, idempotent) so a ticket cancelled or answered
   elsewhere no longer leaves its survey open forever. Closed items leave the pending queue and
   refuse verdicts with 409.
-- **`CONSUS_PANTHEON_POLL`** (default `0`, PANT-943) — Pantheon mode starts neither Pantheon
-  poller unless this is `1`, so the push endpoints are the only way in. Pantheon pushes question
-  tickets into `POST /api/questions/import` / `POST /api/questions/:ticket/close`; set `1` to get
-  the result and question pullers back.
+- **Pantheon poll switches** (PANT-943). `CONSUS_PANTHEON_POLL` (default `0`) controls the
+  question puller only: it starts when this is `1`. Otherwise question tickets arrive only through
+  Pantheon's push into `POST /api/questions/import` / `POST /api/questions/:ticket/close`.
+  `CONSUS_PANTHEON_RESULT_POLL` (default `1`) controls the change result puller. It stays on
+  because Pantheon doesn't push change results yet; set `0` once it does, and results then arrive
+  only through `POST /api/proposals/:id/result`.
 
 ### Fixed
 

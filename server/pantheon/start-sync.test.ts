@@ -47,8 +47,8 @@ describe("startPantheonSync", () => {
     const handles = startPantheonSync(app, { dbPath, pantheonUrl: PANTHEON_URL, intervalMs: INTERVAL_MS, fetch: fetchMock });
 
     expect(handles.resultPullerDb).not.toBe(handles.questionPullerDb);
-    expect(handles.resultPullerDb.open).toBe(true);
-    expect(handles.questionPullerDb.open).toBe(true);
+    expect(handles.resultPullerDb?.open).toBe(true);
+    expect(handles.questionPullerDb?.open).toBe(true);
     expect(vi.getTimerCount()).toBe(2);
 
     await vi.advanceTimersByTimeAsync(INTERVAL_MS);
@@ -66,12 +66,37 @@ describe("startPantheonSync", () => {
     await app.close();
 
     expect(vi.getTimerCount()).toBe(0);
-    expect(handles.resultPullerDb.open).toBe(false);
-    expect(handles.questionPullerDb.open).toBe(false);
+    expect(handles.resultPullerDb?.open).toBe(false);
+    expect(handles.questionPullerDb?.open).toBe(false);
 
     fetchMock.mockClear();
     await vi.advanceTimersByTimeAsync(INTERVAL_MS * 5);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("starts only the requested pullers and closes only their handles", async () => {
+    const fetchMock = okFetch();
+    const handles = startPantheonSync(app, {
+      dbPath,
+      pantheonUrl: PANTHEON_URL,
+      intervalMs: INTERVAL_MS,
+      fetch: fetchMock,
+      questions: false,
+    });
+
+    expect(handles.questionPuller).toBeNull();
+    expect(handles.questionPullerDb).toBeNull();
+    expect(vi.getTimerCount()).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(INTERVAL_MS);
+    const urls = fetchMock.mock.calls.map(([u]) => String(u));
+    expect(urls.some((u) => u.startsWith(`${PANTHEON_URL}/api/feed/changes`))).toBe(true);
+    expect(urls.some((u) => u.startsWith(`${PANTHEON_URL}/api/feed/questions`))).toBe(false);
+
+    await app.ready();
+    await app.close();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(handles.resultPullerDb?.open).toBe(false);
   });
 
   it("catches and logs poll failures instead of throwing, and keeps polling", async () => {
