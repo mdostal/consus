@@ -230,6 +230,11 @@ export function runMigration(db: Database.Database): void {
   // NULL means "not part of any survey" — existing rows are untouched.
   addColumnIfMissing(db, "items", "survey_id", "TEXT REFERENCES surveys(id)");
 
+  // PANT-938: when Consus sent `decision:needs-context` to Pantheon for an
+  // item created without supporting material. Set at most once per item; NULL
+  // means never requested (has material, standalone mode, or predates this).
+  addColumnIfMissing(db, "items", "needs_context_requested_at", "TEXT");
+
   // s2-consus-pantheon-change-adapter: the Pantheon board ticket id returned
   // from a successful PantheonHarnessTransport dispatch, so proposals can be
   // cross-referenced against their Pantheon ticket.

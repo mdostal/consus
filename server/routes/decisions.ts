@@ -11,9 +11,15 @@ import type {
   RatingPayload,
 } from "../decision-contract/parser.js";
 import { classifyItem } from "../decision-contract/classifier.js";
+import { nativeContextCount, requestNeedsContext } from "../pantheon/needs-context.js";
 
 export interface DecisionRoutesOptions {
   db: Database.Database;
+  /** Pantheon core-api base URL. When set (or PANTHEON_API_URL env var is set), creating a
+   *  decision with no supporting material fires a one-time `decision:needs-context` event. */
+  pantheonApiUrl?: string;
+  /** Override the fetch implementation — used in tests to capture event calls. */
+  fetch?: typeof globalThis.fetch;
 }
 
 interface ItemRow {
@@ -29,6 +35,7 @@ interface ItemRow {
   triage_bucket: string | null;
   source_branch: string | null;
   survey_id: string | null;
+  needs_context_requested_at: string | null;
   supporting_material_count: number;
 }
 
@@ -38,10 +45,17 @@ interface ItemRow {
  * decision or survey member that was shipped with no context at all, without
  * an extra per-item round trip. Soft-deleted attachments don't count. No
  * ORDER BY inside, so the " ORDER BY" splice points below stay unambiguous.
+ * Native context in the payload (sourced research, a doc pointer) is added on
+ * top by nativeContextCount — see supportingMaterialCount.
  */
 const SUPPORTING_MATERIAL_COUNT_SQL =
   "((SELECT COUNT(*) FROM attachments a WHERE a.item_id = items.id AND a.deleted_at IS NULL) + " +
   "(SELECT COUNT(*) FROM artifact_links l WHERE l.item_id = items.id)) AS supporting_material_count";
+
+/** Attachments + artifact links (SQL) plus sourced research and a doc pointer (payload). */
+function supportingMaterialCount(sqlCount: number, payload: unknown): number {
+  return sqlCount + nativeContextCount(payload);
+}
 
 interface CreateDecisionBody {
   id?: string;
@@ -196,15 +210,18 @@ function validateDecisionPayload(payload: unknown): string | null {
  * `?survey=<id>` (s5-survey-grouping) further filters to items belonging to
  * a specific survey (survey_id = ?). Composes with `?all=1` and `?branch=`.
  */
-export function registerDecisionRoutes(app: FastifyInstance, { db }: DecisionRoutesOptions): void {
+export function registerDecisionRoutes(
+  app: FastifyInstance,
+  { db, pantheonApiUrl, fetch: fetchImpl }: DecisionRoutesOptions,
+): void {
   app.get<{ Querystring: { all?: string; branch?: string; survey?: string } }>("/api/decisions", async (request) => {
     const includeDecided = request.query?.all === "1" || request.query?.all === "true";
     const branch = request.query?.branch;
     const survey = request.query?.survey;
 
     const baseSql = includeDecided
-      ? `SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch, survey_id, ${SUPPORTING_MATERIAL_COUNT_SQL} FROM items WHERE decision_payload IS NOT NULL ORDER BY (decided_at IS NULL) DESC, updated_at DESC, created_at ASC`
-      : `SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch, survey_id, ${SUPPORTING_MATERIAL_COUNT_SQL} FROM items WHERE decision_payload IS NOT NULL AND decided_at IS NULL AND status != 'closed' ORDER BY created_at ASC`;
+      ? `SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch, survey_id, needs_context_requested_at, ${SUPPORTING_MATERIAL_COUNT_SQL} FROM items WHERE decision_payload IS NOT NULL ORDER BY (decided_at IS NULL) DESC, updated_at DESC, created_at ASC`
+      : `SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch, survey_id, needs_context_requested_at, ${SUPPORTING_MATERIAL_COUNT_SQL} FROM items WHERE decision_payload IS NOT NULL AND decided_at IS NULL AND status != 'closed' ORDER BY created_at ASC`;
 
     let sql = baseSql;
     const params: unknown[] = [];
@@ -234,11 +251,13 @@ export function registerDecisionRoutes(app: FastifyInstance, { db }: DecisionRou
         triageBucket = result.triageBucket;
       }
 
+      const payload = row.decision_payload ? JSON.parse(row.decision_payload) : null;
       return {
         ...row,
         decision_type: decisionType,
         triage_bucket: triageBucket,
-        decision_payload: row.decision_payload ? JSON.parse(row.decision_payload) : null,
+        decision_payload: payload,
+        supporting_material_count: supportingMaterialCount(row.supporting_material_count, payload),
       };
     });
   });
@@ -250,6 +269,11 @@ export function registerDecisionRoutes(app: FastifyInstance, { db }: DecisionRou
    * and required, never server-generated: the calling agent is the one that
    * knows whether this is a genuinely new decision or the same one asked
    * twice, so a duplicate `id` is a 409, not a silent upsert.
+   *
+   * PANT-938: warn-only readiness. A decision with no supporting material is
+   * still created, never blocked or hidden; in Pantheon mode it also fires a
+   * one-time `decision:needs-context` event (requestNeedsContext) that never
+   * delays or fails this response.
    */
   app.post<{ Body: CreateDecisionBody }>("/api/decisions", async (request, reply) => {
     const { id, title, source_repo: sourceRepo, decision_payload: decisionPayload, survey_id: surveyId } = request.body ?? {};
@@ -285,15 +309,25 @@ export function registerDecisionRoutes(app: FastifyInstance, { db }: DecisionRou
 
     classifyItem(db, id);
 
+    const materialRow = db
+      .prepare(`SELECT ${SUPPORTING_MATERIAL_COUNT_SQL} FROM items WHERE id = ?`)
+      .get(id) as { supporting_material_count: number };
+    const materialCount = supportingMaterialCount(materialRow.supporting_material_count, decisionPayload);
+    const bridgeBase = pantheonApiUrl ?? process.env.PANTHEON_API_URL;
+    if (materialCount === 0 && bridgeBase) {
+      requestNeedsContext(db, id, { pantheonApiUrl: bridgeBase, fetch: fetchImpl ?? globalThis.fetch });
+    }
+
     const row = db
       .prepare(
-        "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, survey_id FROM items WHERE id = ?",
+        "SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, survey_id, needs_context_requested_at FROM items WHERE id = ?",
       )
       .get(id) as ItemRow;
 
     return reply.code(201).send({
       ...row,
       decision_payload: row.decision_payload ? JSON.parse(row.decision_payload) : null,
+      supporting_material_count: materialCount,
     });
   });
 }

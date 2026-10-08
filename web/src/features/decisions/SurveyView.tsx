@@ -16,6 +16,8 @@ export interface SurveyDecisionItem {
   recommendation?: string;
   /** Live attachments + artifact links (PANT-919); absent on older servers. */
   supporting_material_count?: number;
+  /** When Consus sent `decision:needs-context` to Pantheon (PANT-938); null if never. */
+  needs_context_requested_at?: string | null;
 }
 
 export interface SurveyViewProps {
@@ -204,7 +206,10 @@ export function SurveyView({ surveyId, surveyTitle, onVerdictRecorded, focusHead
 
               {/* Outside the collapsed <details> below on purpose: an empty
                   "Supporting material" section is invisible until opened. */}
-              <NoContextWarning count={member.supporting_material_count} />
+              <NoContextWarning
+                count={member.supporting_material_count}
+                requestedAt={member.needs_context_requested_at}
+              />
 
               {member.decision_payload ? (
                 <>
