@@ -51,7 +51,8 @@ no background work or caching.
       "question_pull": { "last_success_at": null, "last_failure_at": "2026-09-27T11:59:00.000Z", "last_error": "pantheon down", "failing": true },
       "result_pull": { "last_success_at": "2026-09-27T11:59:00.000Z", "last_failure_at": null, "last_error": null, "failing": false },
       "question_push": { "last_success_at": null, "last_failure_at": null, "last_error": null, "failing": false },
-      "decision_push": { "last_success_at": null, "last_failure_at": null, "last_error": null, "failing": false }
+      "decision_push": { "last_success_at": null, "last_failure_at": null, "last_error": null, "failing": false },
+      "needs_context_push": { "last_success_at": null, "last_failure_at": null, "last_error": null, "failing": false }
     },
     "undelivered_answers": { "pending": 0, "failed": 1, "oldest_age_seconds": 300 }
   }
@@ -67,7 +68,8 @@ no background work or caching.
   It is `null` if the project has never been scanned since this field was added.
 - `pantheon` is present only when `CONSUS_HARNESS=pantheon`. Directions: `question_pull`
   (`GET /api/feed/questions`), `result_pull` (`GET /api/feed/changes`), `question_push` (question
-  partial/submit), and `decision_push` (`POST /api/events/decisions`). They're kept in the
+  partial/submit), `decision_push` (`POST /api/events/decisions`), and `needs_context_push`
+  (`POST /api/events/decisions/needs-context`, see `POST /api/decisions`). They're kept in the
   `sync_status` table, so they survive restarts. A non-2xx response counts as a failure, with
   the HTTP status in `last_error`. `question_push` is recorded per delivery attempt from the
   question-answer outbox (`question_deliveries`).
@@ -204,9 +206,17 @@ mechanism — there is no background or on-read sync from any external system.
     "recommended": "A"
   },
   "decision_type": "cba",
-  "triage_bucket": "open_question"
+  "triage_bucket": "open_question",
+  "survey_id": null,
+  "supporting_material_count": 0,
+  "needs_context_requested_at": "2026-10-08T05:00:00.000Z"
 }
 ```
+`supporting_material_count` is live attachments + artifact links + research sections that cite at
+least one source + a `doc` pointer (1). The web shell shows a "No context attached" warning when
+it is `0`. `needs_context_requested_at` is when Consus sent `decision:needs-context` for the item
+(see `POST /api/decisions`), or `null` if it never did; the warning then reads "Research requested
+<time>", and disappears once material arrives.
 `decision_type`/`triage_bucket` are populated by a heuristic classifier
 (`server/decision-contract/classifier.ts`), wired into `GET /api/decisions` and
 `POST /api/decisions`: rows that predate classification are classified on read
@@ -256,6 +266,16 @@ matching an option).
 
 **Response 409:** `{ "error": "item already exists: <id>" }` — no row is modified. A duplicate
 `id` is never silently upserted; the caller owns its own idempotency/dedup scheme.
+
+**Missing context is warn-only (PANT-938).** A decision with no supporting material (the
+`supporting_material_count` rule above) is always created and listed — never blocked or hidden.
+When `PANTHEON_API_URL` is set, Consus also sends a fire-and-forget
+`POST {PANTHEON_API_URL}/api/events/decisions/needs-context` with
+`{ "decision_id", "survey_id", "title", "source_repo", "missing": ["research", "attachments", "doc"] }`
+and stamps the item's `needs_context_requested_at`. It is sent at most once per item, with no
+retry loop or timer; a failed delivery is recorded as `needs_context_push` in
+`GET /api/metrics`' sync status and is not resent. Standalone mode (no `PANTHEON_API_URL`) sends
+nothing. The 201 response carries `supporting_material_count` and `needs_context_requested_at`.
 
 ### `POST /api/items/:id/decide`
 Submits a verdict on any item (not just decisions — any item with a `decision_payload`, or

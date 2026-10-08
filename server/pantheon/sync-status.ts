@@ -10,8 +10,15 @@ import type Database from "better-sqlite3";
  *  - result_pull:   PantheonResultPuller   — GET /api/feed/changes
  *  - question_push: question delivery outbox — POST /api/feed/questions/:ticket/{partial,submit}
  *  - decision_push: verdict bridge         — POST /api/events/decisions
+ *  - needs_context_push: PANT-938 warn-only readiness — POST /api/events/decisions/needs-context
  */
-export const SYNC_DIRECTIONS = ["question_pull", "result_pull", "question_push", "decision_push"] as const;
+export const SYNC_DIRECTIONS = [
+  "question_pull",
+  "result_pull",
+  "question_push",
+  "decision_push",
+  "needs_context_push",
+] as const;
 export type SyncDirection = (typeof SYNC_DIRECTIONS)[number];
 
 export interface SyncStatusRow {

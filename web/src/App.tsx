@@ -94,6 +94,8 @@ interface DecisionItem {
   decision_payload: (AnyDecisionPayload & { previews?: Record<string, string> }) | null;
   /** Live attachments + artifact links (PANT-919); absent on older servers. */
   supporting_material_count?: number;
+  /** When Consus sent `decision:needs-context` to Pantheon (PANT-938); null if never. */
+  needs_context_requested_at?: string | null;
 }
 
 function verdictLabel(v: Verdict): string {
@@ -182,7 +184,7 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
         <h2>{item.title}</h2>
       </header>
 
-      <NoContextWarning count={item.supporting_material_count} />
+      <NoContextWarning count={item.supporting_material_count} requestedAt={item.needs_context_requested_at} />
 
       {payload ? (
         <div className="dv__context" dangerouslySetInnerHTML={{ __html: contextHtml }} />
