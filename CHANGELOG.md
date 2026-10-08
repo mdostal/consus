@@ -4,6 +4,12 @@
 
 ### Added
 
+- **Editable decision context** (PANT-937). `PATCH /api/decisions/:id/context` replaces
+  `research`, `doc` and/or `context` on an unanswered decision (409 once answered, 422 for a bad
+  shape, audited before/after). `DELETE /api/items/:id/artifact-links/:linkId` removes a dead link
+  with an audit row. `POST /api/items/:id/close` closes a decision, or every open member of a
+  survey, for any survey, not only Pantheon-linked ones. It is audited, never deletes, and is
+  idempotent.
 - **Push-in REST seam for Pantheon question tickets** — `POST /api/questions/import` imports a
   question ticket as a survey (201 create, 200 on repeat, 422 when nothing maps), sharing one
   import path with the feed puller; `POST /api/questions/:ticket/close` closes a ticket's

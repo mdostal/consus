@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import type { Verdict } from "../decision-contract/parser.js";
+import { closeOpenItems } from "../kb/store.js";
 import { recordSyncFailure, recordSyncSuccess, safeRecord } from "./sync-status.js";
 
 // --- Pantheon feed types ---
@@ -164,32 +165,17 @@ export function closeQuestionTicket(
     .get(ticketId) as { survey_id: string } | undefined;
   if (!link) return { found: false };
 
-  const open = db
-    .prepare(
-      `SELECT i.id, i.status FROM items i
-       JOIN question_links ql ON ql.item_id = i.id
-       WHERE ql.ticket_id = ? AND i.decided_at IS NULL AND i.status != 'closed'`,
-    )
-    .all(ticketId) as Array<{ id: string; status: string }>;
+  const linked = db
+    .prepare("SELECT item_id FROM question_links WHERE ticket_id = ? ORDER BY rowid")
+    .all(ticketId) as Array<{ item_id: string }>;
+  const closedItemIds = closeOpenItems(
+    db,
+    linked.map((l) => l.item_id),
+    actor,
+    `Closed upstream: ${reason}`,
+  );
 
-  const now = new Date().toISOString();
-  const tx = db.transaction(() => {
-    for (const item of open) {
-      db.prepare("UPDATE items SET status = 'closed', updated_at = ? WHERE id = ?").run(now, item.id);
-      db.prepare(
-        "INSERT INTO audit_log (item_id, actor, field, old_value, new_value, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-      ).run(item.id, actor, "status", item.status, "closed", now);
-      db.prepare("INSERT INTO comments (item_id, author, body, created_at) VALUES (?, ?, ?, ?)").run(
-        item.id,
-        actor,
-        `Closed upstream: ${reason}`,
-        now,
-      );
-    }
-  });
-  tx();
-
-  return { found: true, surveyId: link.survey_id, closedItemIds: open.map((i) => i.id) };
+  return { found: true, surveyId: link.survey_id, closedItemIds };
 }
 
 // --- Pull ---

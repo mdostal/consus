@@ -277,6 +277,39 @@ retry loop or timer; a failed delivery is recorded as `needs_context_push` in
 `GET /api/metrics`' sync status and is not resent. Standalone mode (no `PANTHEON_API_URL`) sends
 nothing. The 201 response carries `supporting_material_count` and `needs_context_requested_at`.
 
+### `PATCH /api/decisions/:id/context`
+Fixes or fills a decision's context after it was created (PANT-937). Replaces whichever of
+`research`, `doc` and `context` the body carries in `decision_payload`; omitted fields are left
+as they are, and `doc: null` removes the pointer. Only while the decision is unanswered: once a
+verdict has decided it (`decided_at` set), the context it was answered against is frozen.
+
+**Request body:** `{ "research"?: ResearchSection[], "doc"?: { repo, path, ref? } | null, "context"?: string, "actor": string }`
+where `ResearchSection` is `{ "title": string, "body": string, "sources"?: string[] }`. A research
+section that cites at least one source counts toward `supporting_material_count`, as does a `doc`
+pointer, so filling them in clears the "No context attached" warning.
+
+Writes one `audit_log` row (`field: "decision_context"`, `old_value`/`new_value` the edited
+fields as JSON before and after).
+
+**Response 200:** the updated decision, same shape as `GET /api/decisions` returns for it.
+**400** without `actor` or with none of `research`/`doc`/`context`. **404** for an unknown
+decision. **409** if the decision is already answered. **422** for an invalid `research`, `doc`
+or `context` shape (nothing is written).
+
+### `POST /api/items/:id/close`
+The generic close (PANT-937): `:id` is a decision id, which closes that decision, or a survey id,
+which closes every open member of the survey. Like `POST /api/questions/:ticket/close`, nothing is
+deleted: each closed item gets `status: "closed"`, an `audit_log` row (`field: "status"`,
+`old_value` the prior status, `new_value: "closed"`), and a comment `Closed: <reason>`.
+Already-decided and already-closed items are left alone. Closed items drop out of the pending
+`GET /api/decisions` queue (still listed under `?all=1`), and a verdict on one returns **409**.
+
+**Body:** `{ "reason": string, "actor": string }`
+
+**Response 200:** `{ id, kind: "item" | "survey", closed_item_ids }`. A repeat call is a no-op
+that returns 200 with `closed_item_ids: []`. **400** without `reason` or `actor`. **404** if `:id`
+is neither an item nor a survey.
+
 ### `POST /api/items/:id/decide`
 Submits a verdict on any item (not just decisions — any item with a `decision_payload`, or
 without one). Writes an append-only `audit_log` entry and marks the item decided.
@@ -796,6 +829,15 @@ Artifact's content.
 Lists an item's linked Artifacts.
 
 **Response 200:** array of `{ id, url, label }`
+
+### `DELETE /api/items/:id/artifact-links/:linkId`
+Removes one link (PANT-937), where `:linkId` is the numeric `id` from the list above. The link
+row is deleted; an `audit_log` row (`field: "artifact_link"`, `old_value` the removed
+`{ id, url, label }` as JSON, `new_value: null`) keeps the history.
+
+**Request:** `actor` in the JSON body (`{ "actor": string }`) or as `?actor=<name>`.
+
+**Response 204** (no body). **400** without `actor`. **404** if the link doesn't exist on this item.
 
 ## Attachments
 
