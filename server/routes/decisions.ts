@@ -10,6 +10,8 @@ import type {
   RankingPayload,
   RatingPayload,
 } from "../decision-contract/parser.js";
+import { validateDocPointer, validateResearchSections } from "../decision-contract/parser.js";
+import { closeOpenItems } from "../kb/store.js";
 import { classifyItem } from "../decision-contract/classifier.js";
 import { nativeContextCount, requestNeedsContext } from "../pantheon/needs-context.js";
 
@@ -71,6 +73,18 @@ interface CreateDecisionBody {
     | RankingPayload
     | ConceptSelectionPayload;
   survey_id?: string;
+}
+
+interface EditContextBody {
+  research?: unknown;
+  doc?: unknown;
+  context?: unknown;
+  actor?: unknown;
+}
+
+interface CloseItemBody {
+  reason?: unknown;
+  actor?: unknown;
 }
 
 /** Structural validation only — this route stores what a caller supplies, it
@@ -329,6 +343,122 @@ export function registerDecisionRoutes(
       decision_payload: row.decision_payload ? JSON.parse(row.decision_payload) : null,
       supporting_material_count: materialCount,
     });
+  });
+
+  /**
+   * PANT-937: lets an agent fix or fill a decision's context after creation —
+   * replaces whichever of `research`, `doc` and `context` the body carries in
+   * decision_payload (`doc: null` removes the pointer). Only while the item is
+   * unanswered: once a verdict has decided it (decided_at set) the context the
+   * human answered against is frozen, so this is a 409. One audit_log row
+   * (`field: "decision_context"`) records the edited fields before and after.
+   */
+  app.patch<{ Params: { id: string }; Body: EditContextBody }>(
+    "/api/decisions/:id/context",
+    async (request, reply) => {
+      const { id } = request.params;
+      const body = request.body ?? {};
+      const { actor } = body;
+
+      if (typeof actor !== "string" || !actor) {
+        return reply.code(400).send({ error: "actor is required" });
+      }
+      const fields = (["research", "doc", "context"] as const).filter((f) => body[f] !== undefined);
+      if (fields.length === 0) {
+        return reply.code(400).send({ error: "at least one of research, doc, context is required" });
+      }
+
+      const item = db.prepare("SELECT decided_at, decision_payload FROM items WHERE id = ?").get(id) as
+        | { decided_at: string | null; decision_payload: string | null }
+        | undefined;
+      if (!item || !item.decision_payload) {
+        return reply.code(404).send({ error: `decision not found: ${id}` });
+      }
+      if (item.decided_at) {
+        return reply.code(409).send({ error: "decision is already answered; its context can no longer be edited" });
+      }
+
+      const shapeError =
+        (body.research !== undefined ? validateResearchSections(body.research) : null) ??
+        (body.doc !== undefined && body.doc !== null ? validateDocPointer(body.doc) : null) ??
+        (body.context !== undefined && typeof body.context !== "string" ? "context must be a string" : null);
+      if (shapeError) {
+        return reply.code(422).send({ error: shapeError });
+      }
+
+      const payload = JSON.parse(item.decision_payload) as Record<string, unknown>;
+      const before: Record<string, unknown> = {};
+      const after: Record<string, unknown> = {};
+      for (const field of fields) {
+        before[field] = payload[field] ?? null;
+        after[field] = body[field];
+        if (body[field] === null) delete payload[field];
+        else payload[field] = body[field];
+      }
+      const payloadError = validateDecisionPayload(payload);
+      if (payloadError) {
+        return reply.code(422).send({ error: payloadError });
+      }
+
+      const now = new Date().toISOString();
+      db.transaction(() => {
+        db.prepare("UPDATE items SET decision_payload = ?, updated_at = ? WHERE id = ?").run(
+          JSON.stringify(payload),
+          now,
+          id,
+        );
+        db.prepare(
+          "INSERT INTO audit_log (item_id, actor, field, old_value, new_value, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+        ).run(id, actor, "decision_context", JSON.stringify(before), JSON.stringify(after), now);
+      })();
+
+      const row = db
+        .prepare(
+          `SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch, survey_id, needs_context_requested_at, ${SUPPORTING_MATERIAL_COUNT_SQL} FROM items WHERE id = ?`,
+        )
+        .get(id) as ItemRow;
+      return reply.code(200).send({
+        ...row,
+        decision_payload: payload,
+        supporting_material_count: supportingMaterialCount(row.supporting_material_count, payload),
+      });
+    },
+  );
+
+  /**
+   * PANT-937: the generic close — what POST /api/questions/:ticket/close does
+   * for Pantheon-linked surveys, for any decision or survey. `:id` is an item
+   * id (closes that one decision) or, failing that, a survey id (closes every
+   * open member). Nothing is deleted; decided or already-closed items are left
+   * alone, so a repeat call is a 200 no-op with `closed_item_ids: []`.
+   */
+  app.post<{ Params: { id: string }; Body: CloseItemBody }>("/api/items/:id/close", async (request, reply) => {
+    const { id } = request.params;
+    const { reason, actor } = request.body ?? {};
+
+    if (typeof reason !== "string" || !reason.trim()) {
+      return reply.code(400).send({ error: "reason is required" });
+    }
+    if (typeof actor !== "string" || !actor) {
+      return reply.code(400).send({ error: "actor is required" });
+    }
+
+    let kind: "item" | "survey";
+    let itemIds: string[];
+    if (db.prepare("SELECT id FROM items WHERE id = ?").get(id)) {
+      kind = "item";
+      itemIds = [id];
+    } else if (db.prepare("SELECT id FROM surveys WHERE id = ?").get(id)) {
+      kind = "survey";
+      itemIds = (
+        db.prepare("SELECT id FROM items WHERE survey_id = ? ORDER BY created_at ASC").all(id) as Array<{ id: string }>
+      ).map((r) => r.id);
+    } else {
+      return reply.code(404).send({ error: `no decision or survey with id: ${id}` });
+    }
+
+    const closedItemIds = closeOpenItems(db, itemIds, actor, `Closed: ${reason.trim()}`);
+    return reply.code(200).send({ id, kind, closed_item_ids: closedItemIds });
   });
 }
 
