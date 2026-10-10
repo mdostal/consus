@@ -129,6 +129,46 @@ curl localhost:8722/api/decisions   # open, undecided decision-request items
 
 The full HTTP contract lives in [`docs/api-reference.md`](docs/api-reference.md) — a harness author can use Consus from that doc alone.
 
+## Run with Docker
+
+The repo's `Dockerfile` builds Consus from a clean clone, with no other checkout needed:
+
+```bash
+docker build -t consus .
+docker run --rm -p 8722:8722 -v consus-data:/data consus
+curl localhost:8722/health          # { "status": "ok", "sqlite": "connected", ... }
+curl localhost:8722/api/projects    # { "projects": ["consus"], "paths": { "consus": "/app" } }
+```
+
+The UI is served from the same port at `http://localhost:8722/`.
+
+| | Value |
+|---|---|
+| Port | `8722` (`EXPOSE`d; change with `-e PORT=...`) |
+| Volume | `/data`: SQLite DB, attachments and the projects config. Mount it to keep state across containers. |
+| Repos | Mount the repos Consus should read (read-only is enough, Consus never writes them), e.g. `-v /srv/repos:/repos:ro`, then register them in `/data/consus-projects.json` or through `POST /api/projects`. |
+| Healthcheck | `GET /health`, built into the image |
+| User | runs as `node` (uid 1000), not root |
+
+Environment defaults in the image (outside Docker, the three paths default to `.pHive/` under the working directory):
+
+| Env var | Image default |
+|---|---|
+| `HOST` | `0.0.0.0` |
+| `PORT` | `8722` |
+| `CONSUS_DB_PATH` | `/data/consus.sqlite` |
+| `CONSUS_ATTACHMENTS_DIR` | `/data/attachments` |
+| `CONSUS_PROJECTS_CONFIG` | `/data/consus-projects.json` |
+
+Every other variable (`CONSUS_HARNESS`, `PANTHEON_API_URL`, `REPOS_BASE_DIR`, `CONSUS_DISCOVERY_ROOTS`, ...) is unset and keeps the defaults in [`docs/configuration.md`](docs/configuration.md). Connecting to Pantheon, for example:
+
+```bash
+docker run --rm -p 8722:8722 -v consus-data:/data \
+  -e CONSUS_HARNESS=pantheon -e PANTHEON_API_URL=http://core-api:8800 consus
+```
+
+With no projects config, Consus registers one project, `consus`, at the working directory (`/app`). The image ships this repo's `.pHive/planning` and `.pHive/epics` there, so a fresh container has docs to show.
+
 ## Desktop app
 
 Consus also ships as a native macOS app (Tauri) — a menu-bar-resident window around the same server, with its own app-local SQLite/config under `~/Library/Application Support/com.mdostal.consus/` (fully separate from any `.pHive/consus.sqlite` used by the CLI/dev flow, so the app always starts with an empty project list on first run).
