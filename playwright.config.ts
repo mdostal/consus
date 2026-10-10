@@ -1,29 +1,30 @@
 import { defineConfig, devices } from "@playwright/test";
 
-/** PANT-960: browser checks against a throwaway server (e2e/serve.mjs) that
- *  serves the built web app. Run with `npm run test:e2e`. */
-const port = process.env.CONSUS_E2E_PORT ?? "18960";
+// PANT-965: browser checks against the built app. `npm run test:e2e` builds
+// first; e2e/server.mjs starts the server with a fixture repo.
+const PORT = Number(process.env.E2E_PORT ?? 18965);
 
 export default defineConfig({
   testDir: "e2e",
-  timeout: 30_000,
+  fullyParallel: false,
+  workers: 1,
   reporter: "list",
   use: {
-    baseURL: `http://127.0.0.1:${port}`,
+    baseURL: `http://127.0.0.1:${PORT}`,
     trace: "retain-on-failure",
   },
-  // Firefox too: in some containers headless Chromium's renderer crashes on
-  // the main app view (also on unmodified dev), so `--project=firefox` is
-  // the fallback there.
+  // Firefox too (PANT-960): in some containers headless Chromium's renderer
+  // crashes on the main app view, on unmodified dev as well, so
+  // `--project=firefox` is the fallback there.
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
     { name: "firefox", use: { ...devices["Desktop Firefox"] } },
   ],
   webServer: {
-    command: "npm run build:web && node e2e/serve.mjs",
-    url: `http://127.0.0.1:${port}/health`,
+    command: "node e2e/server.mjs",
+    url: `http://127.0.0.1:${PORT}/health`,
     reuseExistingServer: false,
-    timeout: 120_000,
-    stdout: "pipe",
+    env: { E2E_PORT: String(PORT) },
+    timeout: 60_000,
   },
 });

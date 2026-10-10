@@ -411,7 +411,9 @@ Everything waiting on the operator, across all clients, newest first:
 
 - `question` — a decision item with no verdict that isn't closed
 - `proposal` — a proposal still `pending` its harness result
-- `reply` — an item whose newest comment arrived after it was last marked seen (or never seen).
+- `reply` — an item whose newest comment arrived after it was last marked seen (or never seen), or
+  an agent thread (`/api/threads`) whose last message is an agent reply newer than that mark
+  (`key` is `reply:thread:<threadId>`; once the operator answers in the thread it drops out).
   Recording a verdict or posting a comment marks the item seen. When this feature first migrates
   an existing database, every existing thread is marked seen, so only later replies show up.
 
@@ -424,13 +426,87 @@ Everything waiting on the operator, across all clients, newest first:
 questions).
 
 ### `POST /api/inbox/seen`
-Marks an item's thread seen now, clearing its `reply` entry until a newer comment arrives. The web
+Marks an item's comments and agent threads seen now, clearing its `reply` entries until something
+newer arrives. `itemId` may also be the item id of an agent thread with no item row. The web
 UI calls this when an inbox entry is opened.
 
 **Body:** `{ "itemId": string }`
 
-**Response 200:** `{ "itemId": string, "seen": true }`. **400** without `itemId`. **404** for an
-unknown item.
+**Response 200:** `{ "itemId": string, "seen": true }`. **400** without `itemId`. **404** when no
+item or thread has that id.
+
+## Agent threads (comment threads an outside agent answers)
+
+Threads attach to any item by `itemType` + `itemId` (doc, section, diagram, decision, proposal, …)
+plus an optional `anchor` object. Each operator message is sent out once as a
+`consus.thread.message` event; the agent answers with `POST /api/threads/:id/replies`. The full
+wire contract (event payload, delivery, reply rules, standalone CLI) is in
+[`agent-integration/threads.md`](agent-integration/threads.md).
+
+Every route below returns a **thread**:
+
+```json
+{
+  "id": "<uuid>",
+  "itemType": "doc",
+  "itemId": "doc:consus:docs/index.md",
+  "anchor": { "section": "Install", "line": 4 } | null,
+  "state": "awaiting_agent" | "delivery_failed" | "answered",
+  "createdAt": "<iso>",
+  "updatedAt": "<iso>",
+  "messages": [
+    {
+      "id": 1, "threadId": "<uuid>", "role": "operator" | "agent", "author": "Mathew", "body": "…",
+      "proposalId": null, "proposalUrl": null, "proposal": null,
+      "delivery": { "status": "pending" | "delivered" | "failed", "error": null, "target": "webhook", "attemptedAt": "<iso>" } | null,
+      "createdAt": "<iso>"
+    }
+  ]
+}
+```
+
+### `GET /api/threads?itemType=<type>&itemId=<id>`
+Threads for an item, oldest first, each with its messages. Both filters are optional.
+
+### `GET /api/threads/stream?itemType=<type>&itemId=<id>`
+Server-sent events. Each change to a matching thread (new thread, operator message, delivery
+outcome, agent reply) is pushed as `event: thread` with the full thread JSON as `data`. Push only,
+nothing polls; the UI keeps one stream open per item it shows.
+
+### `GET /api/threads/:id`
+One thread. **404** for an unknown id.
+
+### `POST /api/threads`
+Starts a thread and sends its first message out.
+
+**Request body:** `{ "itemType": string, "itemId": string, "body": string, "anchor"?: object, "author"?: string }`.
+`itemType` is lowercase letters, digits, `-` or `_` (max 32). `anchor` is a JSON object of at most
+2 KB. `author` defaults to `Mathew`.
+
+**Response 201:** the thread after the delivery attempt. **400** on a missing/invalid field.
+
+### `POST /api/threads/:id/messages`
+The operator's next message in a thread; sent out the same way.
+
+**Request body:** `{ "body": string, "author"?: string }`. **Response 201:** the thread. **404** for an
+unknown thread, **400** for an empty body.
+
+### `POST /api/threads/:id/replies`
+The inbound side: an agent appends its reply. The `replyUrl` in every outbound event points here.
+
+**Request body:** `{ "author": string, "body": string, "proposalId"?: string, "proposalUrl"?: string }`.
+`proposalId` links a proposal the agent opened; when it names a proposal in this Consus, the
+message's `proposal` field carries `{ id, status, description, targetType }` and the UI shows the
+diff inline. `proposalUrl` (absolute URL) is shown as an external link.
+
+**Response 201:** the thread (`state: "answered"`). **404** for an unknown thread, **400** when
+`author` or `body` is missing, `proposalId` is empty, or `proposalUrl` is not absolute.
+
+### `POST /api/threads/:id/redeliver`
+Manual retry when the thread's latest operator message failed to deliver. One attempt, no timer.
+
+**Response 200:** the thread after the attempt. **404** for an unknown thread, **409** when there is
+nothing to redeliver.
 
 ## Docs (generated briefs/PRDs/architecture/specs)
 
@@ -458,24 +534,49 @@ Optional `ref` reads the doc's content at that git ref instead of the working tr
 ref:path`, via `execFileSync`'s argument-array form — no shell, immune to metacharacter
 injection). **400** if `ref` doesn't resolve (bad ref, path not present at that ref).
 
-**Response 200:** `{ "repo": string, "path": string, "format": "md"|"html", "content": string, "itemId": string, "phase": string|null, "ref"?: string }`
+**Response 200:** `{ "repo": string, "path": string, "format": "md"|"html"|"mmd", "content": string, "itemId": string, "phase": string|null, "ref"?: string }`
 (`ref` present only when the request included one). `phase` is the doc's current `doc_index`
-tag (`planning`, `overview`, `brand`, …), or `null` if the working-tree file isn't indexed.
+tag (`planning`, `overview`, `brand`, `diagram`, …), or `null` if the working-tree file isn't indexed.
+`format` is `mmd` for a standalone Mermaid diagram file (`.mmd`).
 **404** if `repo` isn't configured or the file doesn't exist; **400** if `path` escapes the repo.
 
 ### `GET /api/docs/features?project=<name>`
 The same `doc_index` rows as `GET /api/docs`, regrouped for the feature-review UI: one bucket per
-epic, plus separate `overview` and `brand` (`.pHive/brand/**`) buckets. Omit `project` for every
-configured project. Never scans disk.
+epic, plus separate `overview`, `brand` (`.pHive/brand/**`) and `diagrams` (every `.mmd` file)
+buckets. Omit `project` for every configured project. Never scans disk.
 
 **Response 200:**
 ```json
 {
   "features": [{ "epic": "consus-phase24", "docCount": 2, "docs": [{ "file_path": "...", "content_hash": "...", "last_scanned_at": "..." }] }],
   "overview": [{ "file_path": "...", "content_hash": "...", "last_scanned_at": "..." }],
-  "brand": []
+  "brand": [],
+  "diagrams": [{ "file_path": "docs/architecture/system.mmd", "content_hash": "...", "last_scanned_at": "..." }]
 }
 ```
+
+### `GET /api/docs/templates`
+The starter templates for a new doc or diagram: `blank`, `adr`, `architecture-overview` (all
+`.md`), and `mmd-flowchart`, `mmd-sequence` (`.mmd`).
+
+**Response 200:** `{ "templates": [{ "id": string, "label": string, "kind": "doc"|"diagram", "extension": ".md"|".mmd", "content": string }] }`
+
+### `POST /api/docs/new`
+Proposes a new doc or diagram file. Consus does not create the file: it fires a change proposal
+through the active harness transport, like any other edit, and the harness creates the file.
+
+**Body:** `{ "repo": string, "path": string, "template"?: string, "content"?: string, "description"?: string, "requestedBy"?: string }`
+— `path` is repo-relative and must end in `.md` or `.mmd`. `content` (when given) replaces the
+template's starter text. `description` defaults to `Create <path>`.
+
+The proposal targets item `doc:<repo>:<path>` with `targetType: "doc"`. Its diff marks a new
+file: a `--- /dev/null` / `+++ b/<path>` header, then every line prefixed `+ `.
+
+**Response 201:** `{ "repo": string, "path": string, "itemId": string, "proposal": <proposal row> }`.
+**400** if `repo`/`path` is missing, `path` escapes the repo or has another extension, the
+template is unknown or doesn't match the extension, or neither `template` nor `content` is given.
+**404** if `repo` isn't configured. **409** if the file already exists or a proposal for that
+path is still pending.
 
 ### `GET /api/docs/diff?repo=<name>&path=<file_path>&ref=<git-ref>&base=<git-ref>`
 What changed in one doc on `ref` relative to `base` (`git diff <base>...<ref> -- <path>`).
@@ -519,6 +620,10 @@ are served separately, see `GET /api/design-assets` below. A design topic whose 
 real feature's epic folds into that feature's existing doc group in
 `GET /api/docs/features` (below), rather than appearing as a separate bucket. A repo with no
 `.pHive/design/` directory is entirely unaffected — this scan root is purely additive.
+
+Every `.mmd` file anywhere in the repo is indexed as a diagram (`phase: "diagram"`, `epic: null`),
+skipping `.git`, `node_modules`, and build/vendor directories (`dist`, `dist-server`, `build`,
+`coverage`, `target`, `vendor`, `.venv`, `venv`).
 
 ### Brand manifest decision synthesis (`.pHive/brand/logo-concepts.yaml`)
 As of `consus-phase29-brand-decision-review` (s4), every scan (`POST /api/projects`,
@@ -733,14 +838,20 @@ configured, or the webhook answered non-2xx). Such a proposal can be retried wit
 ### `POST /api/proposals/:id/result`
 Called by the harness once it's actually applied (or failed to apply) the proposed change.
 
-**Request body:** `{ "status": "applied"|"failed", "appliedDiff"?: string, "reason"?: string }`
+**Request body:** `{ "status": "applied"|"failed", "appliedDiff"?: string, "reason"?: string, "prUrl"?: string }`
 
 On `"applied"`, writes an `audit_log` entry (`field: "proposal:<targetType>"`, `new_value` the
 applied diff). On `"failed"`, no audit_log entry.
 
+`prUrl` (also accepted as `pr_url`) is the pull request the harness opened for the change. It is
+stored on the proposal as `pr_url` and shown as a link on the item; it must be an `http(s)` URL
+(**400** otherwise) and is ignored on `"failed"`. Without it, `pr_url` stays `null`.
+
 Only a `pending` proposal changes. The endpoint is safe to retry: reporting the same status again
 for a proposal that is already resolved does nothing (no second `audit_log` row, `resolved_at` and
-the diff/reason are left as they are) and returns the current row with 200.
+the diff/reason are left as they are) and returns the current row with 200. The one exception: a
+repeated `"applied"` that carries a PR link fills in `pr_url` if the proposal has none yet; an
+existing `pr_url` is never replaced.
 
 **Response 200:** the updated proposal row, or the unchanged row for a repeated identical result.
 **404** for an unknown proposal id. **409** if the proposal is already resolved with the other
@@ -767,6 +878,11 @@ Lists every proposal for an item, most recent first — pending, applied, and fa
 (this is what the audit-trail panel surfaces).
 
 **Response 200:** array of proposal rows. **400** if `itemId` is omitted.
+
+### `GET /api/proposals/:id`
+One proposal row by id. A thread reply's **View change** link opens this.
+
+**Response 200:** the proposal row. **404** for an unknown id.
 
 With no transport configured the server uses `NOOP_HARNESS_TRANSPORT` and every proposal
 resolves to `"failed"` immediately with a clear reason (no startup error).
@@ -903,7 +1019,7 @@ at from shape alone.
 ```json
 [
   { "kind": "audit", "id": 1, "actor": "mathew", "field": "status", "old_value": "open", "new_value": "approved", "timestamp": "..." },
-  { "kind": "proposal", "id": "uuid", "target_type": "diagram", "description": "...", "status": "applied", "requested_by": "mathew", "timestamp": "...", "applied_diff": "...", "failure_reason": null }
+  { "kind": "proposal", "id": "uuid", "target_type": "diagram", "description": "...", "status": "applied", "requested_by": "mathew", "timestamp": "...", "applied_diff": "...", "failure_reason": null, "pr_url": "https://github.com/..." }
 ]
 ```
 
@@ -1045,7 +1161,7 @@ send it as one envelope (webhook: the request body; stdio: one line on the child
 | `params.proposalId` | string (UUID) | Proposal id. Use it to report back: `POST /api/proposals/:proposalId/result`. |
 | `params.itemId` | string | The Consus item the change is for. |
 | `params.targetType` | string | A label (`decision`, `diagram`, `doc`, …). Consus never branches on it. |
-| `params.diff` | string | The proposed change. |
+| `params.diff` | string | The proposed change. A new file (`POST /api/docs/new`) starts with a `--- /dev/null` / `+++ b/<path>` header. |
 | `params.description` | string | Human-readable summary of the change. |
 | `params.sourceRepo` | string \| null | The item's source repo, or `null` when it has none. |
 

@@ -105,9 +105,11 @@ export function wrapStandaloneHtml(title: string, bodyHtml: string, itemId: stri
   ].join("\n");
 }
 
-export function docToStandaloneHtml(title: string, format: "md" | "html", content: string, itemId: string): string {
+export function docToStandaloneHtml(title: string, format: "md" | "html" | "mmd", content: string, itemId: string): string {
   // An .html doc that is already a full page (e.g. a brand doc) ships as-is.
   if (format === "html" && /<html[\s>]/i.test(content)) return content;
+  // A standalone .mmd diagram file (PANT-965) is one diagram, not markdown.
+  if (format === "mmd") return wrapStandaloneHtml(title, mermaidFigure(content), itemId);
   return wrapStandaloneHtml(title, format === "md" ? markdownToHtmlBody(content) : content, itemId);
 }
 

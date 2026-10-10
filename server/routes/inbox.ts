@@ -24,7 +24,11 @@ export function registerInboxRoutes(app: FastifyInstance, { db, repos }: InboxRo
     if (typeof itemId !== "string" || !itemId) {
       return reply.code(400).send({ error: "itemId is required" });
     }
-    if (!db.prepare("SELECT 1 FROM items WHERE id = ?").get(itemId)) {
+    // An agent thread (PANT-962) can attach to an id with no items row.
+    const known =
+      db.prepare("SELECT 1 FROM items WHERE id = ?").get(itemId) ??
+      db.prepare("SELECT 1 FROM threads WHERE item_id = ? LIMIT 1").get(itemId);
+    if (!known) {
       return reply.code(404).send({ error: `unknown item: ${itemId}` });
     }
     markInboxSeen(db, itemId);

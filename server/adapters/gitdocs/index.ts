@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve, sep } from "node:path";
-import { readDocContent } from "../doc-scanner/index.js";
+import { docFormatFor, readDocContent, type DocFormat } from "../doc-scanner/index.js";
 
 /**
  * REQ-20 foundation: port of `mdostal/delphi`'s `server/gitdocs.mjs` pipeline
@@ -81,7 +81,7 @@ export function readGitDoc(
   repoPath: string,
   relPath: string,
   ref?: string,
-): { content: string; format: "md" | "html" } {
+): { content: string; format: DocFormat } {
   if (!ref) {
     return readDocContent(repoPath, relPath);
   }
@@ -90,6 +90,5 @@ export function readGitDoc(
     cwd: repoPath,
     encoding: "utf-8",
   });
-  const format = relPath.endsWith(".html") ? "html" : "md";
-  return { content, format };
+  return { content, format: docFormatFor(relPath) };
 }

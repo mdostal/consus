@@ -11,9 +11,34 @@
   includes a `clients` map and `GET /api/clients` returns the grouping. The masthead's client
   switcher (shown once any client exists) scopes the Projects, Docs, Decisions, Events and KB views
   to that client's repos and is remembered per browser; ungrouped projects show under
-  "All clients". The new **Inbox** tab lists open questions, pending proposals and threads with a
-  new reply across every client (`GET /api/inbox`, `POST /api/inbox/seen`); opening an entry
-  switches to its client and jumps to it. Playwright check: `npm run test:e2e`.
+  "All clients". The new **Inbox** tab lists open questions, pending proposals and new replies
+  (comments, and agent replies on agent threads) across every client (`GET /api/inbox`, `POST /api/inbox/seen`); opening an entry
+  switches to its client and jumps to it. Playwright check: `e2e/client-switcher.spec.ts`.
+- **Mermaid diagrams, a diagram editor, and new docs** (PANT-965). ```` ```mermaid ```` fences
+  in a doc now render as diagrams; a syntax error shows mermaid's message and the failing source
+  instead of a blank. Each fence, and every standalone `.mmd` file, opens in a split
+  source/preview editor that re-renders as you type; saving fires a change proposal. Every
+  `.mmd` file in a repo is indexed as a diagram (`phase: "diagram"`, a new `diagrams` bucket in
+  `GET /api/docs/features`, and `format: "mmd"` from `GET /api/docs/content`). "New doc" / "New
+  diagram" in a project pick a path and a template (`GET /api/docs/templates`: blank, ADR,
+  architecture overview, `.mmd` flowchart, `.mmd` sequence) and fire a new-file proposal through
+  `POST /api/docs/new`; its diff starts with a `--- /dev/null` / `+++ b/<path>` header. Consus
+  still never writes the repo. The per-project docs view can now propose doc edits too, the same
+  way the Docs tab does. Adds Playwright browser checks (`npm run test:e2e`).
+- **PR link on applied change proposals** (consus#203, PANT-976). `POST /api/proposals/:id/result`
+  takes an optional `prUrl` (or Pantheon's `pr_url`), stored on the proposal as `pr_url` and
+  returned by `GET /api/proposals` and the audit trail. The Pantheon result puller forwards
+  `result.pr_url`. The history panel and the doc view link to the PR next to the applied change.
+  A result without a PR link behaves as before.
+- **Agent threads** (PANT-962). Comment threads on any doc, doc section, diagram node, decision or
+  proposal that an outside agent answers. Each operator message is sent once as a generic
+  `consus.thread.message` event to `CONSUS_THREAD_WEBHOOK_URL`, or through the harness transport
+  when that is unset (the file transport writes `<dir>/threads/*.json`, answered with
+  `node bin/handoff.mjs threads` / `reply`). Agents answer with `POST /api/threads/:id/replies`,
+  optionally linking a proposal that the UI shows inline under **View change**. The UI shows
+  "Waiting for agent…" and receives replies over SSE (`GET /api/threads/stream`), with no polling.
+  Failed deliveries are retried by hand only. Also adds `GET /api/proposals/:id`. The contract is
+  in `docs/agent-integration/threads.md`.
 - **Send out: export, Open in Claude, import back** (PANT-964). Every doc and diagram has a
   **Send out** panel: download as `.md`, self-contained HTML (Mermaid flowcharts rendered to inline
   SVG by a built-in renderer, no scripts or network), `.mmd` or SVG; copy as markdown; or **Open in

@@ -103,6 +103,7 @@ dev.log
 # CONSUS_ATTACHMENTS_DIR default (s1-attachment-storage-and-api)
 .pHive/attachments/
 
-# Playwright (PANT-960)
+# Playwright (PANT-965) — fixture repo/DB written by e2e/server.mjs, and run output
+e2e/.fixture/
 test-results/
 playwright-report/

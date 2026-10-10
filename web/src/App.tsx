@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { marked } from "marked";
 import { AnswerControl } from "./features/decisions/answer-shapes/AnswerControl";
 import { CommentsPanel } from "./features/comments/CommentsPanel";
+import { AgentThreadsSection } from "./features/threads/ThreadsPanel";
+import { docSectionAnchors, diagramNodeAnchors } from "./features/threads/anchors";
 import { GlobalView, type KbEntrySummary } from "./features/projects/GlobalView";
 import { ProjectView } from "./features/projects/ProjectView";
 import { BranchPicker } from "./features/projects/BranchPicker";
@@ -17,6 +19,9 @@ import { FeatureDetailView } from "./features/docs/FeatureDetailView";
 import { DocSearch, type DocSearchResult } from "./features/docs/DocSearch";
 import { DocRenderer } from "./features/docs/DocRenderer";
 import { FullPageDocViewer } from "./features/docs/FullPageDocViewer";
+import { useDocProposal } from "./features/docs/useDocProposal";
+import { MmdDiagramView } from "./features/diagrams/MmdDiagramView";
+import { NewDocForm, type NewDocCreated, type NewDocKind } from "./features/diagrams/NewDocForm";
 import { EventsList, type EventRow, type EventStatus } from "./features/events/EventsList";
 import { EventProposeComposer } from "./features/events/EventProposeComposer";
 import type { AnyDecisionPayload, DecisionPayload, Verdict } from "./features/decisions/answer-shapes/types";
@@ -71,8 +76,27 @@ function docsAreEmpty(grouped: GroupedDocs): boolean {
  * s3 (consus-phase29-brand-decision-review): `brand` is optional here so a
  * caller that hasn't loaded it yet (or a server response predating the
  * brand bucket) doesn't blow this up — treated as empty when absent. */
-function featureDataIsEmpty(data: { features: Feature[]; overview: FeatureDoc[]; brand?: FeatureDoc[] }): boolean {
-  return data.features.length === 0 && data.overview.length === 0 && (data.brand?.length ?? 0) === 0;
+function featureDataIsEmpty(data: {
+  features: Feature[];
+  overview: FeatureDoc[];
+  brand?: FeatureDoc[];
+  diagrams?: FeatureDoc[];
+}): boolean {
+  return (
+    data.features.length === 0 &&
+    data.overview.length === 0 &&
+    (data.brand?.length ?? 0) === 0 &&
+    (data.diagrams?.length ?? 0) === 0
+  );
+}
+
+/** The doc-browser payload both docs views hold, after `repo` is attached
+ *  to every doc client-side. */
+interface FeatureData {
+  features: Feature[];
+  overview: FeatureDoc[];
+  brand: FeatureDoc[];
+  diagrams: FeatureDoc[];
 }
 
 /** phase='brand' (s1's scan tagging, s3's reliable signal) is the one and
@@ -277,6 +301,8 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
         <h3 className="dv__section-title">Discussion</h3>
         <CommentsPanel itemId={item.id} />
       </section>
+
+      <AgentThreadsSection itemType="decision" itemId={item.id} />
 
       <section>
         <h3 className="dv__section-title">Attachments</h3>
@@ -830,13 +856,14 @@ function ProjectDiagram({
         onProposalCreated={() => loadAuditTrail(data.itemId)}
       />
       <DiagramView
-      repo={repo}
-      epics={data.epics}
-      pendingProposal={pendingProposalId !== null}
-      onProposeChange={proposeChange}
-      auditEntries={auditEntries}
-      onPendingChangesChange={onPendingChangesChange}
-    />
+        repo={repo}
+        epics={data.epics}
+        pendingProposal={pendingProposalId !== null}
+        onProposeChange={proposeChange}
+        auditEntries={auditEntries}
+        onPendingChangesChange={onPendingChangesChange}
+      />
+      <AgentThreadsSection itemType="diagram" itemId={data.itemId} anchors={diagramNodeAnchors(data.epics)} />
     </>
   );
 }
@@ -925,6 +952,11 @@ function ProjectArchitectureDiagram({
  * to every doc client-side (the endpoint's response is repo-agnostic per
  * doc; see FeatureBrowser.tsx). Clicking a feature opens FeatureDetailView,
  * which stays read-only same as before — no onProposeChange wired in.
+ *
+ * PANT-965: an opened doc is now editable here too (useDocProposal — the
+ * same POST /api/proposals flow as the global Docs tab), `.mmd` diagrams
+ * open in MmdDiagramView, and "New doc" / "New diagram" open NewDocForm,
+ * which fires a new-file proposal for this repo.
  */
 function ProjectDocs({
   repo,
@@ -939,19 +971,22 @@ function ProjectDocs({
    *  component's behavior byte-identical to before this story. */
   branch?: string | null;
 }) {
-  const [featureData, setFeatureData] = useState<{ features: Feature[]; overview: FeatureDoc[]; brand: FeatureDoc[] } | null>(
-    null,
-  );
+  const [featureData, setFeatureData] = useState<FeatureData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
   const [openDoc, setOpenDoc] = useState<
-    { format: "md" | "html"; content: string; path: string; phase: string | null } | null
+    { format: "md" | "html" | "mmd"; content: string; path: string; phase: string | null; itemId: string } | null
   >(null);
+  const [newDocKind, setNewDocKind] = useState<NewDocKind | null>(null);
+  const [created, setCreated] = useState<NewDocCreated | null>(null);
+  const docProposal = useDocProposal(openDoc?.itemId ?? null);
 
   useEffect(() => {
     setFeatureData(null);
     setSelectedFeature(null);
     setOpenDoc(null);
+    setNewDocKind(null);
+    setCreated(null);
     fetch(`/api/docs/features?project=${encodeURIComponent(repo)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(
@@ -959,11 +994,13 @@ function ProjectDocs({
           features: Array<Omit<Feature, "docs"> & { docs: Omit<FeatureDoc, "repo">[] }>;
           overview: Omit<FeatureDoc, "repo">[];
           brand?: Omit<FeatureDoc, "repo">[];
+          diagrams?: Omit<FeatureDoc, "repo">[];
         }) => {
           setFeatureData({
             features: body.features.map((f) => ({ ...f, docs: f.docs.map((d) => ({ ...d, repo })) })),
             overview: body.overview.map((d) => ({ ...d, repo })),
             brand: (body.brand ?? []).map((d) => ({ ...d, repo })),
+            diagrams: (body.diagrams ?? []).map((d) => ({ ...d, repo })),
           });
         },
       )
@@ -976,7 +1013,13 @@ function ProjectDocs({
     );
     if (res.ok) {
       const data = await res.json();
-      setOpenDoc({ format: data.format, content: data.content, path: filePath, phase: data.phase ?? null });
+      setOpenDoc({
+        format: data.format,
+        content: data.content,
+        path: filePath,
+        phase: data.phase ?? null,
+        itemId: data.itemId,
+      });
     }
   }
 
@@ -1007,8 +1050,40 @@ function ProjectDocs({
         </button>
         <SendOutPanel target={{ type: "doc", repo, path: openDoc.path }} />
         {branch ? <DocDiffCheck repo={repo} path={openDoc.path} branch={branch} /> : null}
-        <DocRenderer format={openDoc.format} content={openDoc.content} />
+        {openDoc.format === "mmd" ? (
+          <MmdDiagramView
+            path={openDoc.path}
+            content={openDoc.content}
+            onProposeChange={docProposal.proposeChange}
+            pendingProposal={docProposal.pendingProposal}
+            proposalFailureReason={docProposal.proposalFailureReason}
+            auditEntries={docProposal.auditEntries}
+          />
+        ) : (
+          <DocRenderer
+            format={openDoc.format}
+            content={openDoc.content}
+            onProposeChange={docProposal.proposeChange}
+            pendingProposal={docProposal.pendingProposal}
+            proposalFailureReason={docProposal.proposalFailureReason}
+            auditEntries={docProposal.auditEntries}
+          />
+        )}
       </div>
+    );
+  }
+
+  if (newDocKind) {
+    return (
+      <NewDocForm
+        repo={repo}
+        kind={newDocKind}
+        onCancel={() => setNewDocKind(null)}
+        onCreated={(result) => {
+          setCreated(result);
+          setNewDocKind(null);
+        }}
+      />
     );
   }
 
@@ -1026,6 +1101,21 @@ function ProjectDocs({
   return (
     <div>
       <h3 className="dv__section-title">Docs</h3>
+      <div className="new-doc-actions">
+        <button type="button" onClick={() => setNewDocKind("doc")}>
+          New doc
+        </button>
+        <button type="button" onClick={() => setNewDocKind("diagram")}>
+          New diagram
+        </button>
+      </div>
+      {created ? (
+        <p className="state" role="status" data-testid="new-doc-created">
+          {created.proposal.status === "pending"
+            ? `Proposed new file ${created.path} — waiting for the harness to create it.`
+            : `Proposal for ${created.path} failed: ${created.proposal.failure_reason ?? "unknown error"}`}
+        </p>
+      ) : null}
       {empty ? (
         <div className="empty">
           <strong>No docs indexed yet</strong>
@@ -1036,6 +1126,7 @@ function ProjectDocs({
           features={featureData.features}
           overview={featureData.overview}
           brand={featureData.brand}
+          diagrams={featureData.diagrams}
           onSelectFeature={setSelectedFeature}
           onOpenDoc={open}
         />
@@ -1112,13 +1203,11 @@ function DocsSection() {
   // PANT-960: only the selected client's repos.
   const { inScope } = useClientScope();
   const projects = useMemo(() => allProjects?.filter((p) => inScope(p)) ?? null, [allProjects, inScope]);
-  const [featureData, setFeatureData] = useState<{ features: Feature[]; overview: FeatureDoc[]; brand: FeatureDoc[] } | null>(
-    null,
-  );
+  const [featureData, setFeatureData] = useState<FeatureData | null>(null);
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openDoc, setOpenDoc] = useState<
-    { format: "md" | "html"; content: string; path: string; repo: string; itemId: string; phase: string | null } | null
+    { format: "md" | "html" | "mmd"; content: string; path: string; repo: string; itemId: string; phase: string | null } | null
   >(null);
   const [pendingProposalId, setPendingProposalId] = useState<string | null>(null);
   const [proposalFailureReason, setProposalFailureReason] = useState<string | null>(null);
@@ -1141,7 +1230,7 @@ function DocsSection() {
   useEffect(() => {
     if (!projects) return;
     if (projects.length === 0) {
-      setFeatureData({ features: [], overview: [], brand: [] });
+      setFeatureData({ features: [], overview: [], brand: [], diagrams: [] });
       return;
     }
 
@@ -1149,6 +1238,7 @@ function DocsSection() {
       features: Array<{ epic: string; docCount: number; docs: Omit<FeatureDoc, "repo">[] }>;
       overview: Omit<FeatureDoc, "repo">[];
       brand?: Omit<FeatureDoc, "repo">[];
+      diagrams?: Omit<FeatureDoc, "repo">[];
     };
 
     Promise.all(
@@ -1162,6 +1252,7 @@ function DocsSection() {
         const byEpic = new Map<string, Feature>();
         const overview: FeatureDoc[] = [];
         const brand: FeatureDoc[] = [];
+        const diagrams: FeatureDoc[] = [];
         for (const { project, body } of results) {
           for (const f of body.features) {
             const docs = f.docs.map((d) => ({ ...d, repo: project }));
@@ -1175,9 +1266,10 @@ function DocsSection() {
           }
           overview.push(...body.overview.map((d) => ({ ...d, repo: project })));
           brand.push(...(body.brand ?? []).map((d) => ({ ...d, repo: project })));
+          diagrams.push(...(body.diagrams ?? []).map((d) => ({ ...d, repo: project })));
         }
         const features = Array.from(byEpic.values()).sort((a, b) => a.epic.localeCompare(b.epic));
-        setFeatureData({ features, overview, brand });
+        setFeatureData({ features, overview, brand, diagrams });
       })
       .catch((e) => setError(e.message));
   }, [projects]);
@@ -1276,6 +1368,7 @@ function DocsSection() {
             onProposalCreated={() => loadAuditTrail(openDoc.itemId)}
           />
           <FullPageDocViewer content={openDoc.content} title={openDoc.path} />
+          <AgentThreadsSection itemType="doc" itemId={openDoc.itemId} />
         </div>
       );
     }
@@ -1290,13 +1383,29 @@ function DocsSection() {
           target={{ type: "doc", repo: openDoc.repo, path: openDoc.path }}
           onProposalCreated={() => loadAuditTrail(openDoc.itemId)}
         />
-        <DocRenderer
-          format={openDoc.format}
-          content={openDoc.content}
-          onProposeChange={proposeChange}
-          pendingProposal={pendingProposalId !== null}
-          proposalFailureReason={proposalFailureReason}
-          auditEntries={auditEntries}
+        {openDoc.format === "mmd" ? (
+          <MmdDiagramView
+            path={openDoc.path}
+            content={openDoc.content}
+            onProposeChange={proposeChange}
+            pendingProposal={pendingProposalId !== null}
+            proposalFailureReason={proposalFailureReason}
+            auditEntries={auditEntries}
+          />
+        ) : (
+          <DocRenderer
+            format={openDoc.format}
+            content={openDoc.content}
+            onProposeChange={proposeChange}
+            pendingProposal={pendingProposalId !== null}
+            proposalFailureReason={proposalFailureReason}
+            auditEntries={auditEntries}
+          />
+        )}
+        <AgentThreadsSection
+          itemType="doc"
+          itemId={openDoc.itemId}
+          anchors={openDoc.format === "md" ? docSectionAnchors(openDoc.content) : []}
         />
       </div>
     );
@@ -1330,6 +1439,7 @@ function DocsSection() {
             features={featureData.features}
             overview={featureData.overview}
             brand={featureData.brand}
+            diagrams={featureData.diagrams}
             onSelectFeature={setSelectedFeature}
             onOpenDoc={open}
           />

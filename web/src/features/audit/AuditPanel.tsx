@@ -24,7 +24,22 @@ export type AuditTrailEntry =
        *  can be retried via POST /api/proposals/:id/redeliver. Absent on
        *  older servers. */
       delivery_error?: string | null;
+      /** The PR the harness opened for an applied change (consus#203).
+       *  Absent on older servers. */
+      pr_url?: string | null;
     };
+
+/** Only an http(s) link is ever rendered as an href — mirrors the server's
+ *  isPrUrl check, in case an older row or server slips something else by. */
+export function safePrUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? value : null;
+  } catch {
+    return null;
+  }
+}
 
 /** The proposal fields POST /api/proposals/:id/redeliver hands back. */
 interface RedeliveredProposal {
@@ -104,6 +119,7 @@ function ProposalEntry({
   retryError: string | null;
   onRedeliver: () => void;
 }) {
+  const prUrl = entry.status === "applied" ? safePrUrl(entry.pr_url) : null;
   return (
     <li className="audit-panel__entry audit-panel__entry--proposal">
       <span className={`audit-panel__badge audit-panel__badge--${entry.status}`}>
@@ -113,6 +129,11 @@ function ProposalEntry({
         {entry.requested_by} proposed a change to this {entry.target_type}: {entry.description}
         {entry.status === "failed" && entry.failure_reason ? ` (${entry.failure_reason})` : null}
       </span>
+      {prUrl ? (
+        <a className="audit-panel__pr-link" href={prUrl} target="_blank" rel="noopener noreferrer">
+          View PR
+        </a>
+      ) : null}
       <time dateTime={entry.timestamp}>{entry.timestamp}</time>
       {entry.status === "failed" && entry.delivery_error ? (
         <button type="button" onClick={onRedeliver} disabled={retrying}>

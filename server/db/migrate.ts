@@ -249,6 +249,11 @@ export function runMigration(db: Database.Database): void {
   // via POST /api/proposals/:id/redeliver. NULL once delivery succeeds.
   addColumnIfMissing(db, "proposals", "delivery_error", "TEXT");
 
+  // consus#203: the pull request the harness opened for an applied change
+  // (Pantheon's result.pr_url), so the item can link to it next to the
+  // applied diff. NULL when the harness reported none.
+  addColumnIfMissing(db, "proposals", "pr_url", "TEXT");
+
   // s6-consus-pantheon-question-adapter: tracks the mapping between a
   // Consus decision item and a Pantheon question ticket/qid pair. One row
   // per question — (ticket_id, qid) is unique so idempotent re-pulls never
@@ -298,6 +303,40 @@ export function runMigration(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_question_deliveries_ticket_id ON question_deliveries(ticket_id);
   `);
 
+  // d4-consus-threads-generic (PANT-962): agent-answerable comment threads.
+  // Deliberately keyed by a generic (item_type, item_id) pair with no FK to
+  // items — a thread can sit on a doc, a section/line anchor within it, a
+  // diagram, a decision or a proposal. Operator messages carry their own
+  // outbound delivery state (server/threads/notifier.ts); agent replies come
+  // back through POST /api/threads/:id/replies and may link a proposal.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS threads (
+      id         TEXT PRIMARY KEY,
+      item_type  TEXT NOT NULL,
+      item_id    TEXT NOT NULL,
+      anchor     TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_threads_item ON threads(item_type, item_id);
+
+    CREATE TABLE IF NOT EXISTS thread_messages (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      thread_id           TEXT NOT NULL REFERENCES threads(id),
+      role                TEXT NOT NULL CHECK(role IN ('operator', 'agent')),
+      author              TEXT NOT NULL,
+      body                TEXT NOT NULL,
+      proposal_id         TEXT,
+      proposal_url        TEXT,
+      delivery_status     TEXT CHECK(delivery_status IN ('pending', 'delivered', 'failed')),
+      delivery_error      TEXT,
+      delivery_target     TEXT,
+      delivery_attempted_at TEXT,
+      created_at          TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_thread_messages_thread_id ON thread_messages(thread_id);
+  `);
+
   // PANT-809: last success / failure per Pantheon sync direction
   // (server/pantheon/sync-status.ts), read by GET /api/metrics and /health.
   db.exec(`
@@ -345,7 +384,11 @@ export function runMigration(db: Database.Database): void {
   if (!hadInboxSeen) {
     db.exec(`
       INSERT INTO inbox_seen (item_id, seen_at)
-      SELECT item_id, MAX(created_at) FROM comments GROUP BY item_id
+      SELECT item_id, MAX(at) FROM (
+        SELECT item_id, created_at AS at FROM comments
+        UNION ALL
+        SELECT t.item_id, m.created_at AS at FROM thread_messages m JOIN threads t ON t.id = m.thread_id
+      ) GROUP BY item_id
     `);
   }
 }

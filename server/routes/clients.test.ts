@@ -139,5 +139,27 @@ describe("project clients and inbox routes", () => {
     expect(seen.json()).toEqual({ itemId: "q-consus", seen: true });
     expect((await app.inject({ method: "POST", url: "/api/inbox/seen", payload: { itemId: "missing" } })).statusCode).toBe(404);
     expect((await app.inject({ method: "POST", url: "/api/inbox/seen", payload: {} })).statusCode).toBe(400);
+
+    // An agent reply on a thread (PANT-962) shows up, and opening it clears it.
+    const thread = await app.inject({
+      method: "POST",
+      url: "/api/threads",
+      payload: { itemType: "decision", itemId: "q-consus", body: "Can you expand on option B?" },
+    });
+    expect(thread.statusCode).toBe(201);
+    const threadId = thread.json().id as string;
+    expect((await inboxFor()).filter((i) => i.kind === "reply")).toEqual([]);
+
+    await new Promise((r) => setTimeout(r, 5));
+    const agentReply = await app.inject({
+      method: "POST",
+      url: `/api/threads/${threadId}/replies`,
+      payload: { author: "builder-agent", body: "Option B trades latency for cost." },
+    });
+    expect(agentReply.statusCode).toBe(201);
+    expect((await inboxFor("?client=Pantheon")).map((i) => [i.kind, i.itemId])).toContainEqual(["reply", "q-consus"]);
+
+    await app.inject({ method: "POST", url: "/api/inbox/seen", payload: { itemId: "q-consus" } });
+    expect((await inboxFor()).filter((i) => i.kind === "reply")).toEqual([]);
   });
 });

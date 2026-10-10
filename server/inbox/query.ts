@@ -7,7 +7,9 @@ import type { ProjectClients } from "../clients/store.js";
  *  - question: an undecided, unclosed decision item
  *  - proposal: a proposal still waiting for its harness result (pending)
  *  - reply:    an item whose newest comment arrived after the operator last
- *              opened it (inbox_seen), or that was never opened
+ *              opened it (inbox_seen), or that was never opened; or an
+ *              agent thread (PANT-962) whose last message is an agent reply
+ *              that arrived after the item was last opened
  * Each entry carries its repo and that repo's client so the UI can label it
  * and jump there.
  */
@@ -94,6 +96,34 @@ export function listInbox(db: Database.Database, { clients, client }: InboxQuery
     )
     .all() as Array<ItemRow & { author: string; body: string; created_at: string }>;
 
+  // Agent threads (thread_messages): a thread whose last message is an
+  // agent reply newer than the item's seen mark. Threads attach to an item by
+  // id; the items row supplies title and repo when it exists.
+  const threadReplies = db
+    .prepare(
+      `SELECT t.id AS thread_id, t.item_type, t.item_id,
+              i.title, i.source_repo, (i.decision_payload IS NOT NULL) AS has_payload,
+              m.author, m.body, m.created_at
+       FROM thread_messages m
+       JOIN threads t ON t.id = m.thread_id
+       LEFT JOIN items i ON i.id = t.item_id
+       LEFT JOIN inbox_seen s ON s.item_id = t.item_id
+       WHERE m.id = (SELECT MAX(id) FROM thread_messages WHERE thread_id = m.thread_id)
+         AND m.role = 'agent'
+         AND (s.seen_at IS NULL OR m.created_at > s.seen_at)`,
+    )
+    .all() as Array<{
+    thread_id: string;
+    item_type: string;
+    item_id: string;
+    title: string | null;
+    source_repo: string | null;
+    has_payload: number | null;
+    author: string;
+    body: string;
+    created_at: string;
+  }>;
+
   const entries: InboxItem[] = [
     ...questions.map((row) => ({
       kind: "question" as const,
@@ -117,6 +147,18 @@ export function listInbox(db: Database.Database, { clients, client }: InboxQuery
       at: row.created_at,
       detail: clip(`${row.author}: ${row.body}`),
     })),
+    ...threadReplies.map((row) => ({
+      kind: "reply" as const,
+      key: `reply:thread:${row.thread_id}`,
+      itemId: row.item_id,
+      itemType: row.item_type,
+      isDecision: row.has_payload === 1 || (row.title === null && row.item_type === "decision"),
+      title: row.title ?? row.item_id,
+      repo: row.source_repo,
+      client: row.source_repo ? (clients[row.source_repo] ?? null) : null,
+      at: row.created_at,
+      detail: clip(`${row.author}: ${row.body}`),
+    })),
   ];
 
   return entries
@@ -124,8 +166,8 @@ export function listInbox(db: Database.Database, { clients, client }: InboxQuery
     .sort((a, b) => (a.at === b.at ? a.key.localeCompare(b.key) : b.at.localeCompare(a.at)));
 }
 
-/** Records that the operator has seen an item's thread up to now, clearing
- *  its reply entry until a newer comment arrives. */
+/** Records that the operator has seen an item's comments and agent threads
+ *  up to now, clearing its reply entries until something newer arrives. */
 export function markInboxSeen(db: Database.Database, itemId: string, at = new Date().toISOString()): void {
   db.prepare(
     `INSERT INTO inbox_seen (item_id, seen_at) VALUES (?, ?)

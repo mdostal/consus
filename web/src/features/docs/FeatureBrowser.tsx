@@ -40,6 +40,10 @@ export interface FeatureBrowserProps {
    *  defaulted to [] so every existing caller (and every existing test)
    *  that doesn't yet pass it keeps working unchanged. */
   brand?: FeatureDoc[];
+  /** PANT-965: every standalone `.mmd` diagram in the repo (phase='diagram'
+   *  rows, GET /api/docs/features's `diagrams` field), opened through the
+   *  same onOpenDoc callback. Optional, defaulted to []. */
+  diagrams?: FeatureDoc[];
   /** Fires with the full Feature (epic, docCount, and its docs) when a
    *  feature row is clicked — the caller navigates to FeatureDetailView
    *  with it, matching this app's existing "hold the selection in local
@@ -55,7 +59,14 @@ export interface FeatureBrowserProps {
   onOpenDoc: (repo: string, filePath: string) => void;
 }
 
-export function FeatureBrowser({ features, overview, brand = [], onSelectFeature, onOpenDoc }: FeatureBrowserProps) {
+export function FeatureBrowser({
+  features,
+  overview,
+  brand = [],
+  diagrams = [],
+  onSelectFeature,
+  onOpenDoc,
+}: FeatureBrowserProps) {
   return (
     <div className="feature-browser">
       <section className="feature-browser__features">
@@ -99,6 +110,23 @@ export function FeatureBrowser({ features, overview, brand = [], onSelectFeature
         ) : (
           <ul>
             {overview.map((doc) => (
+              <li key={`${doc.repo} ${doc.file_path}`}>
+                <button type="button" onClick={() => onOpenDoc(doc.repo, doc.file_path)}>
+                  {doc.file_path}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="feature-browser__diagrams">
+        <h2>Diagrams</h2>
+        {diagrams.length === 0 ? (
+          <p className="feature-browser__empty">No .mmd diagrams indexed yet.</p>
+        ) : (
+          <ul>
+            {diagrams.map((doc) => (
               <li key={`${doc.repo} ${doc.file_path}`}>
                 <button type="button" onClick={() => onOpenDoc(doc.repo, doc.file_path)}>
                   {doc.file_path}

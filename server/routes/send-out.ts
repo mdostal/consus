@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type Database from "better-sqlite3";
 import { basename } from "node:path";
 import type { HarnessTransport } from "../harness/transport.js";
-import { readDocContent, DocPathEscapesRepoError } from "../adapters/doc-scanner/index.js";
+import { readDocContent, DocPathEscapesRepoError, type DocFormat } from "../adapters/doc-scanner/index.js";
 import { generateArchitectureDiagrams } from "../lib/diagram-generator.js";
 import { mermaidToSvg } from "../lib/mermaid-svg.js";
 import {
@@ -70,7 +70,7 @@ function sendExport(reply: FastifyReply, format: string, filename: string, body:
   return reply.send(body);
 }
 
-type ReadResult = { ok: true; content: string; format: "md" | "html" } | { ok: false; code: number; error: string };
+type ReadResult = { ok: true; content: string; format: DocFormat } | { ok: false; code: number; error: string };
 
 function readDoc(repos: Record<string, string>, repo: string, path: string): ReadResult {
   const repoPath = repos[repo];
@@ -120,7 +120,7 @@ export function registerSendOutRoutes(app: FastifyInstance, { db, repos, transpo
         return sendExport(reply, format, `${stem}.html`, docToStandaloneHtml(path, doc.format, doc.content, itemId));
       }
       // "md" is the raw source as stored — for an .html doc that's its HTML.
-      return sendExport(reply, doc.format === "html" ? "html" : "md", basename(path), doc.content);
+      return sendExport(reply, doc.format, basename(path), doc.content);
     },
   );
 

@@ -4,6 +4,7 @@ import {
   queryDocIndex,
   readDocContent,
   DocPathEscapesRepoError,
+  type DocFormat,
   type DocIndexRow,
 } from "../adapters/doc-scanner/index.js";
 import { extractDocCandidates, readGitDoc, resolveInRepos } from "../adapters/gitdocs/index.js";
@@ -49,6 +50,10 @@ interface FeatureGroupedDocs {
    *  ships, this bucket carries an active pending decision overview never
    *  does. */
   brand: FeatureDoc[];
+  /** PANT-965: phase='diagram' rows — every standalone `.mmd` file in the
+   *  repo, epic=null always. Opened through the diagram editor, not
+   *  DocRenderer. */
+  diagrams: FeatureDoc[];
 }
 
 /** The item id a doc's propose-a-change proposals target (s5). One item per
@@ -146,6 +151,7 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutes
     // (.pHive/brand/**), epic=null always — same fixed-tag shape as
     // overview above, bucketed separately (see FeatureGroupedDocs.brand).
     const brand: FeatureDoc[] = [];
+    const diagrams: FeatureDoc[] = [];
 
     for (const repo of scopedRepos) {
       for (const row of queryDocIndex(db, repo)) {
@@ -158,6 +164,8 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutes
           overview.push(doc);
         } else if (row.phase === "brand") {
           brand.push(doc);
+        } else if (row.phase === "diagram") {
+          diagrams.push(doc);
         } else if (row.epic !== null) {
           const docs = docsByEpic.get(row.epic) ?? [];
           docs.push(doc);
@@ -170,7 +178,7 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutes
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([epic, docs]) => ({ epic, docCount: docs.length, docs }));
 
-    const result: FeatureGroupedDocs = { features, overview, brand };
+    const result: FeatureGroupedDocs = { features, overview, brand, diagrams };
     return result;
   });
 
@@ -184,7 +192,7 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutes
       }
 
       let content: string;
-      let format: "md" | "html";
+      let format: DocFormat;
       if (ref) {
         // git show exits non-zero (execFileSync throws) for an invalid/
         // nonexistent ref — caught here so callers get a clear 400 instead

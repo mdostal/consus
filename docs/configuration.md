@@ -23,10 +23,12 @@ Consus is configured via environment variables and a JSON config file for regist
 | `CONSUS_HARNESS_FILE_DIR` | _(none)_ | Selects the file transport: each proposal is written as `<dir>/<proposalId>.json` |
 | `CONSUS_HARNESS_COMMAND` | _(none)_ | Selects the stdio transport: the executable to spawn per proposal |
 | `CONSUS_HARNESS_ARGS` | _(none)_ | Comma-separated list of arguments to pass to `CONSUS_HARNESS_COMMAND` |
+| `CONSUS_THREAD_WEBHOOK_URL` | _(none)_ | Where agent-thread messages are POSTed (one `consus.thread.message` event per operator message). Unset: they go through the harness transport instead. See [Agent threads](#agent-threads). Startup fails if set to an invalid URL. |
+| `CONSUS_PUBLIC_URL` | _(request host)_ | Base URL Consus is reachable at, used for the `replyUrl` in outbound thread events. Set it when the agent reaches Consus at a different address than the browser does (container, proxy). |
 
 With no harness transport selected, "Fire to harness" records every proposal as `failed` immediately.
 
-The handoff CLI (`bin/handoff.mjs`) reads its own env: `CONSUS_HANDOFF_DIR` (default `.pHive/handoffs`), `CONSUS_URL` (default `http://localhost:${PORT}`), and `PORT`.
+The handoff CLI (`bin/handoff.mjs`) reads its own env: `CONSUS_HANDOFF_DIR` (default `.pHive/handoffs`), `CONSUS_URL` (default `http://localhost:${PORT}`), `PORT`, and `CONSUS_AGENT_NAME` (author of `reply`, default `agent`).
 
 ### HOST binding
 
@@ -77,6 +79,17 @@ npm run agent:init   # installs skills/consus/SKILL.md → ~/.claude/skills/cons
 ```
 
 See [Harness Transport](agent-integration/harness-transport.md) for the full stdio protocol, and the "Harness transports" section of `docs/api-reference.md` for the HTTP calls each transport makes.
+
+---
+
+## Agent threads
+
+Comment threads on docs, sections, diagrams, decisions and proposals can be answered by an outside agent ([contract](agent-integration/threads.md)). Each operator message goes out once:
+
+1. `CONSUS_THREAD_WEBHOOK_URL` set — POSTed there as the bare event JSON.
+2. otherwise — handed to the harness transport above as a `threadMessage` call. The file transport writes `<CONSUS_HARNESS_FILE_DIR>/threads/<threadId>.<messageId>.json` (answer with `node bin/handoff.mjs threads` / `reply`); stdio and `CONSUS_HARNESS=webhook` send `{ "method": "threadMessage", "params": <event> }`. The Pantheon proposal transport does not take thread messages, so in Pantheon mode set `CONSUS_THREAD_WEBHOOK_URL`.
+
+With neither, the message is stored and marked "not delivered: no agent configured". A failed delivery is retried only by hand (**Retry** in the thread, or `POST /api/threads/:id/redeliver`).
 
 ---
 

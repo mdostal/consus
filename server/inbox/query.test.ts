@@ -114,6 +114,82 @@ describe("listInbox", () => {
   });
 });
 
+function insertThreadMessage(
+  db: Database.Database,
+  threadId: string,
+  item: { type: string; id: string },
+  role: "operator" | "agent",
+  body: string,
+  at: string,
+) {
+  db.prepare(
+    `INSERT OR IGNORE INTO threads (id, item_type, item_id, anchor, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?)`,
+  ).run(threadId, item.type, item.id, at, at);
+  db.prepare(
+    `INSERT INTO thread_messages (thread_id, role, author, body, created_at) VALUES (?, ?, ?, ?, ?)`,
+  ).run(threadId, role, role === "agent" ? "builder-agent" : "operator", body, at);
+}
+
+describe("listInbox — agent threads (PANT-962)", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    runMigration(db);
+  });
+
+  it("lists a thread whose last message is an agent reply, with the item's repo and client", () => {
+    insertItem(db, "doc:flayr:a.md", { repo: "flayr" });
+    insertThreadMessage(db, "t1", { type: "doc", id: "doc:flayr:a.md" }, "operator", "Why?", "2026-10-02T00:00:00.000Z");
+    insertThreadMessage(db, "t1", { type: "doc", id: "doc:flayr:a.md" }, "agent", "Because", "2026-10-03T00:00:00.000Z");
+
+    const items = listInbox(db, { clients: CLIENTS });
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: "reply",
+      key: "reply:thread:t1",
+      itemId: "doc:flayr:a.md",
+      itemType: "doc",
+      repo: "flayr",
+      client: "Firefly",
+      detail: "builder-agent: Because",
+      at: "2026-10-03T00:00:00.000Z",
+    });
+    expect(listInbox(db, { clients: CLIENTS, client: "Pantheon" })).toEqual([]);
+  });
+
+  it("leaves out a thread still waiting on the agent, or answered by the operator since", () => {
+    insertItem(db, "doc:flayr:a.md", { repo: "flayr" });
+    insertThreadMessage(db, "waiting", { type: "doc", id: "doc:flayr:a.md" }, "operator", "Q", "2026-10-02T00:00:00.000Z");
+    insertThreadMessage(db, "answered", { type: "doc", id: "doc:flayr:a.md" }, "agent", "A", "2026-10-02T00:00:00.000Z");
+    insertThreadMessage(db, "answered", { type: "doc", id: "doc:flayr:a.md" }, "operator", "Thanks", "2026-10-03T00:00:00.000Z");
+
+    expect(listInbox(db, { clients: CLIENTS })).toEqual([]);
+  });
+
+  it("clears once the item is seen and returns on a newer agent reply", () => {
+    insertItem(db, "decision:flayr:q", { repo: "flayr", decision: true, decidedAt: "2026-10-01T00:00:00.000Z" });
+    insertThreadMessage(db, "t1", { type: "decision", id: "decision:flayr:q" }, "agent", "first", "2026-10-02T00:00:00.000Z");
+    expect(listInbox(db, { clients: CLIENTS }).map((i) => [i.kind, i.isDecision])).toEqual([["reply", true]]);
+
+    markInboxSeen(db, "decision:flayr:q", "2026-10-02T00:00:01.000Z");
+    expect(listInbox(db, { clients: CLIENTS })).toEqual([]);
+
+    insertThreadMessage(db, "t1", { type: "decision", id: "decision:flayr:q" }, "agent", "second", "2026-10-03T00:00:00.000Z");
+    expect(listInbox(db, { clients: CLIENTS }).map((i) => i.detail)).toEqual(["builder-agent: second"]);
+  });
+
+  it("falls back to the item id when the thread's item has no items row", () => {
+    insertThreadMessage(db, "t1", { type: "proposal", id: "proposal-123" }, "agent", "done", "2026-10-02T00:00:00.000Z");
+    expect(listInbox(db, { clients: CLIENTS })[0]).toMatchObject({
+      title: "proposal-123",
+      repo: null,
+      client: null,
+      isDecision: false,
+    });
+  });
+});
+
 describe("inbox_seen migration backfill", () => {
   it("marks every pre-existing thread seen the first time the table is created", () => {
     const db = new Database(":memory:");
@@ -123,6 +199,12 @@ describe("inbox_seen migration backfill", () => {
     // Simulate a database from before PANT-960.
     db.exec("DROP TABLE inbox_seen");
 
+    runMigration(db);
+    expect(listInbox(db, { clients: CLIENTS })).toEqual([]);
+
+    // Pre-existing agent thread replies are backfilled as seen too.
+    db.exec("DROP TABLE inbox_seen");
+    insertThreadMessage(db, "t-old", { type: "doc", id: "doc:flayr:a.md" }, "agent", "old", "2026-10-02T12:00:00.000Z");
     runMigration(db);
     expect(listInbox(db, { clients: CLIENTS })).toEqual([]);
 

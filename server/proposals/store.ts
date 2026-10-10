@@ -33,6 +33,8 @@ export interface ProposalRow {
   /** Set when the last dispatch never reached the harness; such a proposal
    *  is 'failed' and can be retried with redeliverProposal. */
   delivery_error: string | null;
+  /** The pull request the harness opened for an applied change, if any. */
+  pr_url: string | null;
 }
 
 export interface ProposeChangeInput {
@@ -159,6 +161,21 @@ export interface ReportProposalResultInput {
   appliedDiff?: string;
   /** Failure reason, when status is 'failed'. */
   reason?: string;
+  /** The pull request the harness opened, when status is 'applied'. Must be
+   *  an http(s) URL (see isPrUrl) — it's rendered as a link. */
+  prUrl?: string;
+}
+
+/** True for an absolute http(s) URL — the only kind of PR link stored or
+ *  rendered, so a `javascript:` (or any other scheme) never becomes a link. */
+export function isPrUrl(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -173,7 +190,7 @@ export type ReportProposalResultResult =
 
 export async function reportProposalResult(
   db: Database.Database,
-  { proposalId, status, appliedDiff, reason }: ReportProposalResultInput,
+  { proposalId, status, appliedDiff, reason, prUrl }: ReportProposalResultInput,
 ): Promise<ReportProposalResultResult> {
   // Read-check-write inside one transaction, and the UPDATE is guarded on
   // status = 'pending', so only the first result for a proposal ever lands —
@@ -187,6 +204,12 @@ export async function reportProposalResult(
 
     if (proposal.status !== "pending") {
       if (proposal.status === status) {
+        // The one field a replay may still fill in: a PR link that wasn't
+        // known when the result first landed (e.g. the puller applied it
+        // before Pantheon's push carried pr_url). Never overwrites one.
+        if (status === "applied" && prUrl && !proposal.pr_url) {
+          db.prepare("UPDATE proposals SET pr_url = ? WHERE id = ? AND pr_url IS NULL").run(prUrl, proposalId);
+        }
         return { ok: true, alreadyResolved: true };
       }
       return {
@@ -201,8 +224,8 @@ export async function reportProposalResult(
     if (status === "applied") {
       const finalDiff = appliedDiff ?? proposal.diff;
       db.prepare(
-        "UPDATE proposals SET status = 'applied', resolved_at = ?, applied_diff = ? WHERE id = ? AND status = 'pending'",
-      ).run(now, finalDiff, proposalId);
+        "UPDATE proposals SET status = 'applied', resolved_at = ?, applied_diff = ?, pr_url = ? WHERE id = ? AND status = 'pending'",
+      ).run(now, finalDiff, prUrl ?? null, proposalId);
 
       db.prepare(
         "INSERT INTO audit_log (item_id, actor, field, old_value, new_value, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
