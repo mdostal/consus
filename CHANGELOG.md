@@ -9,6 +9,15 @@
   returned by `GET /api/proposals` and the audit trail. The Pantheon result puller forwards
   `result.pr_url`. The history panel and the doc view link to the PR next to the applied change.
   A result without a PR link behaves as before.
+- **Agent threads** (PANT-962). Comment threads on any doc, doc section, diagram node, decision or
+  proposal that an outside agent answers. Each operator message is sent once as a generic
+  `consus.thread.message` event to `CONSUS_THREAD_WEBHOOK_URL`, or through the harness transport
+  when that is unset (the file transport writes `<dir>/threads/*.json`, answered with
+  `node bin/handoff.mjs threads` / `reply`). Agents answer with `POST /api/threads/:id/replies`,
+  optionally linking a proposal that the UI shows inline under **View change**. The UI shows
+  "Waiting for agent…" and receives replies over SSE (`GET /api/threads/stream`), with no polling.
+  Failed deliveries are retried by hand only. Also adds `GET /api/proposals/:id`. The contract is
+  in `docs/agent-integration/threads.md`.
 - **Send out: export, Open in Claude, import back** (PANT-964). Every doc and diagram has a
   **Send out** panel: download as `.md`, self-contained HTML (Mermaid flowcharts rendered to inline
   SVG by a built-in renderer, no scripts or network), `.mmd` or SVG; copy as markdown; or **Open in

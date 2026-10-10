@@ -303,6 +303,40 @@ export function runMigration(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_question_deliveries_ticket_id ON question_deliveries(ticket_id);
   `);
 
+  // d4-consus-threads-generic (PANT-962): agent-answerable comment threads.
+  // Deliberately keyed by a generic (item_type, item_id) pair with no FK to
+  // items — a thread can sit on a doc, a section/line anchor within it, a
+  // diagram, a decision or a proposal. Operator messages carry their own
+  // outbound delivery state (server/threads/notifier.ts); agent replies come
+  // back through POST /api/threads/:id/replies and may link a proposal.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS threads (
+      id         TEXT PRIMARY KEY,
+      item_type  TEXT NOT NULL,
+      item_id    TEXT NOT NULL,
+      anchor     TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_threads_item ON threads(item_type, item_id);
+
+    CREATE TABLE IF NOT EXISTS thread_messages (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      thread_id           TEXT NOT NULL REFERENCES threads(id),
+      role                TEXT NOT NULL CHECK(role IN ('operator', 'agent')),
+      author              TEXT NOT NULL,
+      body                TEXT NOT NULL,
+      proposal_id         TEXT,
+      proposal_url        TEXT,
+      delivery_status     TEXT CHECK(delivery_status IN ('pending', 'delivered', 'failed')),
+      delivery_error      TEXT,
+      delivery_target     TEXT,
+      delivery_attempted_at TEXT,
+      created_at          TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_thread_messages_thread_id ON thread_messages(thread_id);
+  `);
+
   // PANT-809: last success / failure per Pantheon sync direction
   // (server/pantheon/sync-status.ts), read by GET /api/metrics and /health.
   db.exec(`

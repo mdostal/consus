@@ -83,6 +83,13 @@ export function registerProposalRoutes(app: FastifyInstance, { db, transport }: 
     return db.prepare("SELECT * FROM proposals WHERE id = ?").get(id);
   });
 
+  // One proposal by id — what a thread reply's "view change" link opens (PANT-962).
+  app.get<{ Params: { id: string } }>("/api/proposals/:id", async (request, reply) => {
+    const row = db.prepare("SELECT * FROM proposals WHERE id = ?").get(request.params.id);
+    if (!row) return reply.code(404).send({ error: "proposal not found" });
+    return row;
+  });
+
   app.get<{ Querystring: { itemId?: string } }>("/api/proposals", async (request, reply) => {
     const { itemId } = request.query;
     if (!itemId) {
