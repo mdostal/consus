@@ -240,6 +240,12 @@ export function runMigration(db: Database.Database): void {
   // cross-referenced against their Pantheon ticket.
   addColumnIfMissing(db, "proposals", "harness_ticket_id", "TEXT");
 
+  // d9-consus-generic-webhook-transport: why the last dispatch never reached
+  // the harness (non-2xx, timeout, network error), so a delivery failure is
+  // distinguishable from a harness-reported failure and can be redelivered
+  // via POST /api/proposals/:id/redeliver. NULL once delivery succeeds.
+  addColumnIfMissing(db, "proposals", "delivery_error", "TEXT");
+
   // s6-consus-pantheon-question-adapter: tracks the mapping between a
   // Consus decision item and a Pantheon question ticket/qid pair. One row
   // per question — (ticket_id, qid) is unique so idempotent re-pulls never

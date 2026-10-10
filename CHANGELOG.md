@@ -4,6 +4,13 @@
 
 ### Added
 
+- **Generic webhook harness transport** (PANT-967). `CONSUS_HARNESS=webhook` +
+  `CONSUS_HARNESS_WEBHOOK_URL` POSTs each proposal as `{ "method": "proposeChange", "params": … }`,
+  the same JSON the stdio transport writes, to any receiver; results come back through
+  `POST /api/proposals/:id/result`. A failed delivery is recorded on the proposal
+  (`delivery_error`) and retried by hand with `POST /api/proposals/:id/redeliver` or the
+  **Retry delivery** button in the history panel. One attempt per dispatch, no retry loop. The
+  payload contract is in `docs/api-reference.md`.
 - **Editable decision context** (PANT-937). `PATCH /api/decisions/:id/context` replaces
   `research`, `doc` and/or `context` on an unanswered decision (409 once answered, 422 for a bad
   shape, audited before/after). `DELETE /api/items/:id/artifact-links/:linkId` removes a dead link

@@ -24,7 +24,7 @@ keep matching on them.
 { "status": "ok", "sqlite": "connected", "transport": "pantheon", "degraded": false }
 ```
 
-- `transport`: the active harness transport: `pantheon`, `file`, `stdio`, `noop` (none configured)
+- `transport`: the active harness transport: `pantheon`, `webhook`, `file`, `stdio`, `noop` (none configured)
   or `custom` (an injected transport).
 - `degraded`: `true` only in Pantheon mode, when any sync direction's last failure is newer than its
   last success (see `pantheon.directions` under `GET /api/metrics`). Always `false` otherwise.
@@ -663,6 +663,8 @@ what's on the other end. A harness applies the real change and reports back via
 [Harness transports](#harness-transports)):
 - `CONSUS_HARNESS=pantheon` (requires `PANTHEON_API_URL`) — **Pantheon transport**. POSTs each
   proposal to the Pantheon board feed; results are pulled back automatically.
+- `CONSUS_HARNESS=webhook` (requires `CONSUS_HARNESS_WEBHOOK_URL`) — **webhook transport**. POSTs
+  each proposal to the URL; the receiver reports results via `POST /api/proposals/:id/result`.
 - `CONSUS_HARNESS_FILE_DIR` — **file transport** (standalone, no Pantheon). Writes each proposal as
   `<dir>/<proposalId>.json`. A harness reads those files and posts results via `node bin/handoff.mjs`.
 - `CONSUS_HARNESS_COMMAND` — **stdio transport**. Spawns the given command; `CONSUS_HARNESS_ARGS`
@@ -675,7 +677,9 @@ Fires a new change proposal.
 **Request body:** `{ "itemId": string, "targetType": string, "diff": string, "description": string, "requestedBy": string }`
 
 **Response 201:** the created proposal row, `status: "pending"` — or already `"failed"` with a
-`failure_reason` if dispatch to the harness itself failed (e.g. no harness configured).
+`failure_reason` and `delivery_error` if dispatch to the harness itself failed (e.g. no harness
+configured, or the webhook answered non-2xx). Such a proposal can be retried with
+`POST /api/proposals/:id/redeliver`.
 **404** if `itemId` doesn't reference an existing item.
 
 ### `POST /api/proposals/:id/result`
@@ -695,6 +699,20 @@ the diff/reason are left as they are) and returns the current row with 200.
 status (`applied` then `failed`, or `failed` then `applied`). The row stays unchanged and the body is
 `{ "error": "proposal <id> is already <status>; cannot report <status>" }`. A proposal whose
 dispatch failed is already `failed`, so a later `applied` for it also gets 409.
+
+### `POST /api/proposals/:id/redeliver`
+Manual retry for a proposal whose dispatch never reached the harness (`status: "failed"` with
+`delivery_error` set). Resets it to `pending` and dispatches the original payload once more
+through the active transport. One attempt per call: Consus never retries on its own.
+
+**Request body:** none.
+
+**Response 200:** the proposal row after the attempt: `pending` with `delivery_error: null` when
+delivery succeeded, or `failed` again with the new `delivery_error`. **404** for an unknown
+proposal id. **409** when there is no delivery failure to retry (the proposal is pending, applied,
+or failed by the harness's own report).
+
+The audit-trail panel shows a **Retry delivery** button on such proposals that calls this route.
 
 ### `GET /api/proposals?itemId=<id>`
 Lists every proposal for an item, most recent first — pending, applied, and failed all included
@@ -878,9 +896,57 @@ Mutually exclusive; the first match wins.
 | Priority | Env | Transport | Behaviour |
 |---|---|---|---|
 | 1 | `CONSUS_HARNESS=pantheon` + `PANTHEON_API_URL` | Pantheon | `POST {PANTHEON_API_URL}/api/feed/changes` per proposal. Startup fails if `PANTHEON_API_URL` is missing. |
-| 2 | `CONSUS_HARNESS_FILE_DIR=<dir>` | File | Writes `<dir>/<proposalId>.json`; a harness reads it with the handoff CLI below. |
-| 3 | `CONSUS_HARNESS_COMMAND=<cmd>` (+ `CONSUS_HARNESS_ARGS`, comma-separated) | Stdio | Spawns the command per proposal, one JSON object per line over stdin/stdout. |
-| 4 | _(none)_ | NOOP | Proposals fail immediately with `NO_ADAPTER`. |
+| 2 | `CONSUS_HARNESS=webhook` + `CONSUS_HARNESS_WEBHOOK_URL` | Webhook | `POST {CONSUS_HARNESS_WEBHOOK_URL}` per proposal, one attempt. Startup fails if the URL is missing or invalid. |
+| 3 | `CONSUS_HARNESS_FILE_DIR=<dir>` | File | Writes `<dir>/<proposalId>.json`; a harness reads it with the handoff CLI below. |
+| 4 | `CONSUS_HARNESS_COMMAND=<cmd>` (+ `CONSUS_HARNESS_ARGS`, comma-separated) | Stdio | Spawns the command per proposal, one JSON object per line over stdin/stdout. |
+| 5 | _(none)_ | NOOP | Proposals fail immediately with `NO_ADAPTER`. |
+
+### Proposal payload contract
+
+The webhook, stdio, and file transports all carry the same `proposeChange` call. Webhook and stdio
+send it as one envelope (webhook: the request body; stdio: one line on the child's stdin):
+
+```json
+{
+  "method": "proposeChange",
+  "params": {
+    "proposalId": "3f6c0f1e-…",
+    "itemId": "diagram:consus",
+    "targetType": "diagram",
+    "diff": "- old line\n+ new line",
+    "description": "removed the load balancer node",
+    "sourceRepo": "consus"
+  }
+}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `method` | `"proposeChange"` | The only method Consus sends today. |
+| `params.proposalId` | string (UUID) | Proposal id. Use it to report back: `POST /api/proposals/:proposalId/result`. |
+| `params.itemId` | string | The Consus item the change is for. |
+| `params.targetType` | string | A label (`decision`, `diagram`, `doc`, …). Consus never branches on it. |
+| `params.diff` | string | The proposed change. |
+| `params.description` | string | Human-readable summary of the change. |
+| `params.sourceRepo` | string \| null | The item's source repo, or `null` when it has none. |
+
+The file transport writes `params` alone (pretty-printed) to `<dir>/<proposalId>.json`.
+
+### Webhook transport (`CONSUS_HARNESS=webhook`)
+
+For any receiver (Pantheon or anything else) that should get proposals pushed over HTTP:
+
+- **Request.** `POST {CONSUS_HARNESS_WEBHOOK_URL}` with `Content-Type: application/json` and the
+  envelope above as the body. 30-second timeout.
+- **Accepted.** Any 2xx. The body is optional; if it is JSON with a `ticket_id` string, Consus
+  stores it as the proposal's `harness_ticket_id`. The proposal stays `pending`.
+- **Delivery failure.** A non-2xx, a timeout, or a network error. The proposal is set to `failed`
+  with `failure_reason` and `delivery_error` both holding the cause, for example
+  `INTERNAL_ERROR: HTTP 502: bad gateway`, `AUTH_FAILURE: HTTP 401`, `RATE_LIMIT: HTTP 429`,
+  or `TIMEOUT: webhook did not respond: <url>`. There is one attempt and no retry loop: retry by
+  hand with `POST /api/proposals/:id/redeliver` (the **Retry delivery** button in the history panel).
+- **Results.** The receiver reports the outcome through `POST /api/proposals/:id/result`
+  (`applied` / `failed`). Nothing is polled.
 
 ### Pantheon transport (`CONSUS_HARNESS=pantheon`)
 
