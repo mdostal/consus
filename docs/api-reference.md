@@ -849,6 +849,77 @@ Mermaid `graph TD` source string, one shallow (top-level dirs only) and one rich
 design-doc mentions). **404** with `{ "error": "unknown repo: <repo>" }` for an unconfigured repo
 — the same shape the cascade endpoint above uses.
 
+## Send out (export, Open in Claude, import back)
+
+PANT-964. Every doc and diagram can leave Consus as a file, go to an interactive Claude session,
+and come back as a proposal. Consus still never writes a repo: import-back only ever creates a
+proposal through the configured harness transport, exactly like `POST /api/proposals`.
+
+Diagram `kind` is one of `cascade` (the epic/story org-tree), `architecture` (top-level dirs) or
+`architecture-full` (depth-2 plus design-doc mentions). All three are Mermaid flowcharts; SVG and
+HTML are rendered server-side by a built-in flowchart renderer, so exported files need no
+mermaid.js, CDN or network to display.
+
+### `GET /api/export/doc?repo=<name>&path=<file_path>&format=<md|html|claude-prompt>`
+Exports one doc. `format` defaults to `md`.
+
+- `md`: the raw source, byte for byte, as an attachment named after the file (an `.html` doc's
+  raw source is its HTML).
+- `html`: a self-contained page (inline CSS, no scripts, no external URLs). Markdown is rendered;
+  each ` ```mermaid ` block becomes an inline SVG with its source in a `<details>` beside it (a
+  non-flowchart Mermaid block is kept as visible source). The page carries the item id in
+  `<meta name="consus-item-id">` and its footer. An `.html` doc that is already a full page ships
+  unchanged.
+- `claude-prompt`: the "Open in Claude" prompt as inline `text/plain` (no download header): the
+  content, its Consus item id, and the `PUT …/claude-artifact` and `POST …/import` calls a Claude
+  Code session uses to record the published artifact and send the final back as a proposal.
+
+Upserts the doc's item (`doc:<repo>:<path>`). **400** for a missing `repo`/`path`, an unknown
+`format` or a path escaping the repo; **404** for an unknown repo or missing file.
+
+### `GET /api/export/diagram?repo=<name>&kind=<kind>&format=<mmd|svg|md|html|claude-prompt>`
+Exports one diagram. `kind` defaults to `cascade`, `format` to `mmd`. `mmd` is the Mermaid
+source (for the cascade, identical to the UI's source panel); `svg` a standalone SVG; `md` a
+markdown file with the source in a ` ```mermaid ` fence; `html` a self-contained page with the
+SVG and the source; `claude-prompt` as above, with `kind` included in the import call.
+Downloads are named `<repo>-<kind>.<ext>`. Upserts `diagram:<repo>`. **400** for a missing repo,
+unknown kind or format; **404** for an unknown repo.
+
+### `GET /api/items/:id/claude-artifact`
+The claude.ai artifact URL this item was published as from an "Open in Claude" session
+(`items.claude_artifact_url`). **Response 200:** `{ "itemId": string, "url": string | null }`.
+**404** for an unknown item.
+
+### `PUT /api/items/:id/claude-artifact`
+Sets the URL, or clears it with `url: null` / `""`. Writes an `audit_log` row
+(`field: "claude_artifact_url"`, old and new value).
+
+**Request body:** `{ "url": "https://…" | null, "actor": string }`
+
+**Response 200:** `{ "itemId": string, "url": string | null }`. **400** for a missing `actor` or a
+URL that isn't `https://`; **404** for an unknown item.
+
+### `POST /api/items/:id/import`
+Import back: the edited content (pasted or uploaded) becomes a proposal against a `doc` or
+`diagram` item. The diff is a line diff (the same format the in-app editor sends) between the
+item's current content and the import. Before diffing, the import is normalized: CRLF → LF; for
+a doc, a whole-document ` ```markdown ` fence is stripped; for a diagram, the first
+` ```mermaid ` block is used when the import is markdown; the trailing newline follows the
+original's.
+
+**Request body:**
+```json
+{ "content": "string", "filename": "arch.md", "description": "what changed", "requestedBy": "mathew", "kind": "cascade" }
+```
+`filename` and `description` are optional and only shape the proposal description
+(`Imported from outside Consus (<filename | pasted content>): <description>`). `kind` applies to
+diagram items only (default `cascade`).
+
+**Response 201:** the new proposal row, as `POST /api/proposals` returns it (`target_type` is the
+item's type). **400** for missing `content`/`requestedBy`, an unknown diagram `kind`, or an item
+that is neither a doc nor a diagram; **404** for an unknown item, repo or file; **422** when the
+import is identical to the current content (nothing to propose).
+
 ## Audit Trail (the shared history panel's data source)
 
 ### `GET /api/items/:id/audit-trail`

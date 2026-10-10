@@ -203,6 +203,9 @@ export function runMigration(db: Database.Database): void {
   addColumnIfMissing(db, "items", "decision_payload", "TEXT");
   addColumnIfMissing(db, "items", "decision_type", "TEXT");
   addColumnIfMissing(db, "items", "triage_bucket", "TEXT");
+  // PANT-964: the claude.ai artifact a doc/diagram was published as from an
+  // "Open in Claude" session, shown as a link on the item. NULL = none yet.
+  addColumnIfMissing(db, "items", "claude_artifact_url", "TEXT");
   addColumnIfMissing(db, "kb_entries", "source_repo", "TEXT");
   addColumnIfMissing(db, "audit_log", "chat_summary", "TEXT");
   // REQ (kb-01): collection grouping for KB entries. Ported from
