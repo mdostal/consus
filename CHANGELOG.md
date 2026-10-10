@@ -4,6 +4,17 @@
 
 ### Added
 
+- **Mermaid diagrams, a diagram editor, and new docs** (PANT-965). ```` ```mermaid ```` fences
+  in a doc now render as diagrams; a syntax error shows mermaid's message and the failing source
+  instead of a blank. Each fence, and every standalone `.mmd` file, opens in a split
+  source/preview editor that re-renders as you type; saving fires a change proposal. Every
+  `.mmd` file in a repo is indexed as a diagram (`phase: "diagram"`, a new `diagrams` bucket in
+  `GET /api/docs/features`, and `format: "mmd"` from `GET /api/docs/content`). "New doc" / "New
+  diagram" in a project pick a path and a template (`GET /api/docs/templates`: blank, ADR,
+  architecture overview, `.mmd` flowchart, `.mmd` sequence) and fire a new-file proposal through
+  `POST /api/docs/new`; its diff starts with a `--- /dev/null` / `+++ b/<path>` header. Consus
+  still never writes the repo. The per-project docs view can now propose doc edits too, the same
+  way the Docs tab does. Adds Playwright browser checks (`npm run test:e2e`).
 - **PR link on applied change proposals** (consus#203, PANT-976). `POST /api/proposals/:id/result`
   takes an optional `prUrl` (or Pantheon's `pr_url`), stored on the proposal as `pr_url` and
   returned by `GET /api/proposals` and the audit trail. The Pantheon result puller forwards

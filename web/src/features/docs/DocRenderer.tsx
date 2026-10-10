@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { marked, Renderer } from "marked";
 import { AuditPanel, safePrUrl, type AuditTrailEntry } from "../audit/AuditPanel";
 import { VisualDiff, parseLineDiff } from "../diff/VisualDiff";
 import { computeLineDiff } from "./textDiff";
 import { splitIntoSections } from "./sections";
+import { extractMermaidBlocks, isMermaidLang, replaceMermaidBlock } from "../diagrams/mermaidBlocks";
+import { MermaidDiagram } from "../diagrams/MermaidDiagram";
+import { MermaidEditor } from "../diagrams/MermaidEditor";
 import "../../theme/tokens.css";
 
 export interface ProposeChangeInput {
@@ -78,6 +82,13 @@ function initialSectionState(section: string): SectionState {
  * section is being edited; an identical draft shows an explicit "no
  * changes yet" state instead. This is purely a rendering addition — the
  * diff string handed to onProposeChange (fire, below) is unchanged.
+ *
+ * PANT-965: ```mermaid fences render as diagrams. marked emits a numbered
+ * placeholder for each one, and each placeholder gets a MermaidDiagram
+ * portaled into it (a syntax error shows the error, not a blank). With
+ * onProposeChange set, each diagram also gets an "Edit diagram" button that
+ * opens the split source/preview MermaidEditor; saving fires a proposal
+ * whose diff is the whole doc with just that fence's source replaced.
  */
 export function DocRenderer({
   format,
@@ -91,19 +102,40 @@ export function DocRenderer({
   const html = useMemo(() => {
     if (format !== "md") return content;
 
+    const renderer = new Renderer();
+
+    // PANT-965: a mermaid fence becomes an empty, numbered placeholder; the
+    // diagram itself is portaled in below. Numbering follows document
+    // order, the same order extractMermaidBlocks returns blocks in.
+    const defaultCode = renderer.code.bind(renderer);
+    let mermaidIndex = 0;
+    renderer.code = (token) => {
+      if (!isMermaidLang(token.lang)) return defaultCode(token);
+      const index = mermaidIndex++;
+      return `<div class="doc-renderer__mermaid" data-mermaid-index="${index}"></div>\n`;
+    };
+
     // resolveImageSrc rewrites only the `href` of an <img> — title/text are
     // passed through to the default renderer's own image() untouched, so
     // alt text/title behavior is identical to the no-resolver case.
-    if (!resolveImageSrc) {
-      return marked.parse(content, { async: false }) as string;
+    if (resolveImageSrc) {
+      const defaultImage = renderer.image.bind(renderer);
+      renderer.image = (token) => defaultImage({ ...token, href: resolveImageSrc(token.href) });
     }
-
-    const renderer = new Renderer();
-    const defaultImage = renderer.image.bind(renderer);
-    renderer.image = (token) => defaultImage({ ...token, href: resolveImageSrc(token.href) });
 
     return marked.parse(content, { async: false, renderer }) as string;
   }, [format, content, resolveImageSrc]);
+
+  const mermaidBlocks = useMemo(() => (format === "md" ? extractMermaidBlocks(content) : []), [format, content]);
+  const [htmlEl, setHtmlEl] = useState<HTMLDivElement | null>(null);
+  const [mermaidSlots, setMermaidSlots] = useState<HTMLElement[]>([]);
+  const [editingBlock, setEditingBlock] = useState<number | null>(null);
+
+  // The placeholders only exist once the html is in the DOM, so they're
+  // collected after layout and the portals mount on the next render.
+  useLayoutEffect(() => {
+    setMermaidSlots(htmlEl ? Array.from(htmlEl.querySelectorAll<HTMLElement>("[data-mermaid-index]")) : []);
+  }, [htmlEl, html]);
 
   // consus#203: the PR behind the most recent applied proposal, shown as a
   // pill next to the pending/failed ones. Derived from auditEntries (newest
@@ -121,6 +153,7 @@ export function DocRenderer({
   // to view mode — no draft survives a navigation.
   useEffect(() => {
     setSectionStates(splitIntoSections(content).map(initialSectionState));
+    setEditingBlock(null);
   }, [content]);
 
   const setSectionState = (index: number, update: Partial<SectionState>) => {
@@ -142,6 +175,15 @@ export function DocRenderer({
     setSectionState(index, { mode: "view", draft: section, description: "" });
   };
 
+  const saveMermaidBlock = (index: number, source: string, description: string) => {
+    const next = replaceMermaidBlock(content, index, source);
+    if (next === null || !onProposeChange) return;
+    onProposeChange({ diff: computeLineDiff(content, next), description });
+    setEditingBlock(null);
+  };
+
+  const editingMermaid = editingBlock !== null ? mermaidBlocks[editingBlock] : undefined;
+
   return (
     <div className="doc-renderer-wrap">
       {onProposeChange ? (
@@ -158,7 +200,16 @@ export function DocRenderer({
         </div>
       ) : null}
 
-      {content ? (
+      {editingMermaid && editingBlock !== null ? (
+        <MermaidEditor
+          initialSource={editingMermaid.source}
+          title={`Edit diagram ${editingBlock + 1}`}
+          onCancel={() => setEditingBlock(null)}
+          onSave={({ source, description }) => saveMermaidBlock(editingBlock, source, description)}
+        />
+      ) : null}
+
+      {content && !editingMermaid ? (
         sections.map((section, index) => {
           const state = sectionStates[index];
           if (!state) return null;
@@ -227,9 +278,29 @@ export function DocRenderer({
         })
       ) : null}
 
-      {sectionStates.every((state) => state.mode === "view") ? (
-        <div data-testid="doc-html" className="doc-renderer" dangerouslySetInnerHTML={{ __html: html }} />
+      {!editingMermaid && sectionStates.every((state) => state.mode === "view") ? (
+        <div ref={setHtmlEl} data-testid="doc-html" className="doc-renderer" dangerouslySetInnerHTML={{ __html: html }} />
       ) : null}
+
+      {mermaidSlots.map((slot) => {
+        const index = Number(slot.dataset.mermaidIndex);
+        const block = mermaidBlocks[index];
+        if (!block || !slot.isConnected) return null;
+        return createPortal(
+          <div className="doc-renderer__mermaid-block" data-testid={`doc-mermaid-${index}`}>
+            {onProposeChange && block.editable ? (
+              <div className="doc-renderer__edit-header">
+                <button type="button" onClick={() => setEditingBlock(index)} aria-label={`Edit diagram ${index + 1}`}>
+                  Edit diagram
+                </button>
+              </div>
+            ) : null}
+            <MermaidDiagram source={block.source} />
+          </div>,
+          slot,
+          `${index}:${block.source}`,
+        );
+      })}
 
       {auditEntries ? (
         <div className="doc-renderer__history">

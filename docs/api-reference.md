@@ -483,24 +483,49 @@ Optional `ref` reads the doc's content at that git ref instead of the working tr
 ref:path`, via `execFileSync`'s argument-array form — no shell, immune to metacharacter
 injection). **400** if `ref` doesn't resolve (bad ref, path not present at that ref).
 
-**Response 200:** `{ "repo": string, "path": string, "format": "md"|"html", "content": string, "itemId": string, "phase": string|null, "ref"?: string }`
+**Response 200:** `{ "repo": string, "path": string, "format": "md"|"html"|"mmd", "content": string, "itemId": string, "phase": string|null, "ref"?: string }`
 (`ref` present only when the request included one). `phase` is the doc's current `doc_index`
-tag (`planning`, `overview`, `brand`, …), or `null` if the working-tree file isn't indexed.
+tag (`planning`, `overview`, `brand`, `diagram`, …), or `null` if the working-tree file isn't indexed.
+`format` is `mmd` for a standalone Mermaid diagram file (`.mmd`).
 **404** if `repo` isn't configured or the file doesn't exist; **400** if `path` escapes the repo.
 
 ### `GET /api/docs/features?project=<name>`
 The same `doc_index` rows as `GET /api/docs`, regrouped for the feature-review UI: one bucket per
-epic, plus separate `overview` and `brand` (`.pHive/brand/**`) buckets. Omit `project` for every
-configured project. Never scans disk.
+epic, plus separate `overview`, `brand` (`.pHive/brand/**`) and `diagrams` (every `.mmd` file)
+buckets. Omit `project` for every configured project. Never scans disk.
 
 **Response 200:**
 ```json
 {
   "features": [{ "epic": "consus-phase24", "docCount": 2, "docs": [{ "file_path": "...", "content_hash": "...", "last_scanned_at": "..." }] }],
   "overview": [{ "file_path": "...", "content_hash": "...", "last_scanned_at": "..." }],
-  "brand": []
+  "brand": [],
+  "diagrams": [{ "file_path": "docs/architecture/system.mmd", "content_hash": "...", "last_scanned_at": "..." }]
 }
 ```
+
+### `GET /api/docs/templates`
+The starter templates for a new doc or diagram: `blank`, `adr`, `architecture-overview` (all
+`.md`), and `mmd-flowchart`, `mmd-sequence` (`.mmd`).
+
+**Response 200:** `{ "templates": [{ "id": string, "label": string, "kind": "doc"|"diagram", "extension": ".md"|".mmd", "content": string }] }`
+
+### `POST /api/docs/new`
+Proposes a new doc or diagram file. Consus does not create the file: it fires a change proposal
+through the active harness transport, like any other edit, and the harness creates the file.
+
+**Body:** `{ "repo": string, "path": string, "template"?: string, "content"?: string, "description"?: string, "requestedBy"?: string }`
+— `path` is repo-relative and must end in `.md` or `.mmd`. `content` (when given) replaces the
+template's starter text. `description` defaults to `Create <path>`.
+
+The proposal targets item `doc:<repo>:<path>` with `targetType: "doc"`. Its diff marks a new
+file: a `--- /dev/null` / `+++ b/<path>` header, then every line prefixed `+ `.
+
+**Response 201:** `{ "repo": string, "path": string, "itemId": string, "proposal": <proposal row> }`.
+**400** if `repo`/`path` is missing, `path` escapes the repo or has another extension, the
+template is unknown or doesn't match the extension, or neither `template` nor `content` is given.
+**404** if `repo` isn't configured. **409** if the file already exists or a proposal for that
+path is still pending.
 
 ### `GET /api/docs/diff?repo=<name>&path=<file_path>&ref=<git-ref>&base=<git-ref>`
 What changed in one doc on `ref` relative to `base` (`git diff <base>...<ref> -- <path>`).
@@ -544,6 +569,10 @@ are served separately, see `GET /api/design-assets` below. A design topic whose 
 real feature's epic folds into that feature's existing doc group in
 `GET /api/docs/features` (below), rather than appearing as a separate bucket. A repo with no
 `.pHive/design/` directory is entirely unaffected — this scan root is purely additive.
+
+Every `.mmd` file anywhere in the repo is indexed as a diagram (`phase: "diagram"`, `epic: null`),
+skipping `.git`, `node_modules`, and build/vendor directories (`dist`, `dist-server`, `build`,
+`coverage`, `target`, `vendor`, `.venv`, `venv`).
 
 ### Brand manifest decision synthesis (`.pHive/brand/logo-concepts.yaml`)
 As of `consus-phase29-brand-decision-review` (s4), every scan (`POST /api/projects`,
@@ -1081,7 +1110,7 @@ send it as one envelope (webhook: the request body; stdio: one line on the child
 | `params.proposalId` | string (UUID) | Proposal id. Use it to report back: `POST /api/proposals/:proposalId/result`. |
 | `params.itemId` | string | The Consus item the change is for. |
 | `params.targetType` | string | A label (`decision`, `diagram`, `doc`, …). Consus never branches on it. |
-| `params.diff` | string | The proposed change. |
+| `params.diff` | string | The proposed change. A new file (`POST /api/docs/new`) starts with a `--- /dev/null` / `+++ b/<path>` header. |
 | `params.description` | string | Human-readable summary of the change. |
 | `params.sourceRepo` | string \| null | The item's source repo, or `null` when it has none. |
 
