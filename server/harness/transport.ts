@@ -43,6 +43,7 @@ export class FileHarnessTransport implements HarnessTransport {
   constructor(private readonly handoffsDir: string) {}
 
   async invoke<T = unknown>(method: string, params?: unknown): Promise<HarnessResult<T>> {
+    if (method === "threadMessage") return this.writeThreadMessage<T>(params);
     if (method !== "proposeChange") {
       return { ok: false, recoverable: false, code: "UNKNOWN_METHOD" };
     }
@@ -58,6 +59,26 @@ export class FileHarnessTransport implements HarnessTransport {
       mkdirSync(this.handoffsDir, { recursive: true });
       const filePath = join(this.handoffsDir, `${envelope.proposalId}.json`);
       writeFileSync(filePath, JSON.stringify(envelope, null, 2) + "\n", "utf8");
+      return { ok: true, result: { handoffFile: filePath } as unknown as T };
+    } catch (err) {
+      return { ok: false, recoverable: true, code: "INTERNAL_ERROR", message: String(err) };
+    }
+  }
+
+  /** PANT-962: a thread event lands as `<dir>/threads/<threadId>.<messageId>.json`
+   *  for `consus-handoff threads` / `reply` (bin/handoff.mjs) to pick up. */
+  private async writeThreadMessage<T>(params: unknown): Promise<HarnessResult<T>> {
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const event = params as { threadId?: string; message?: { id?: number } } | undefined;
+    if (!event?.threadId || event.message?.id === undefined) {
+      return { ok: false, recoverable: false, code: "INTERNAL_ERROR", message: "missing threadId or message.id in params" };
+    }
+    try {
+      const dir = join(this.handoffsDir, "threads");
+      mkdirSync(dir, { recursive: true });
+      const filePath = join(dir, `${event.threadId}.${event.message.id}.json`);
+      writeFileSync(filePath, JSON.stringify(event, null, 2) + "\n", "utf8");
       return { ok: true, result: { handoffFile: filePath } as unknown as T };
     } catch (err) {
       return { ok: false, recoverable: true, code: "INTERNAL_ERROR", message: String(err) };

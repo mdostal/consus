@@ -11,6 +11,12 @@
 //   node bin/handoff.mjs list                             # list pending handoffs
 //   node bin/handoff.mjs result <proposalId> applied      # mark applied
 //   node bin/handoff.mjs result <proposalId> failed [reason]  # mark failed
+//   node bin/handoff.mjs threads                          # list thread messages awaiting a reply
+//   node bin/handoff.mjs reply <threadId> [--proposal <id>] <body...>  # answer a thread
+//
+// Thread messages (PANT-962) land under <CONSUS_HANDOFF_DIR>/threads/ as
+// <threadId>.<messageId>.json; `reply` posts to the thread's replyUrl and
+// removes that thread's pending files. Contract: docs/agent-integration/threads.md.
 //
 // Environment:
 //   CONSUS_HANDOFF_DIR  — handoff file directory (default: .pHive/handoffs)
@@ -21,6 +27,7 @@ import { readdirSync, readFileSync, unlinkSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 const HANDOFF_DIR = process.env.CONSUS_HANDOFF_DIR ?? ".pHive/handoffs";
+const THREADS_DIR = join(HANDOFF_DIR, "threads");
 const PORT = process.env.PORT ?? "8722";
 const CONSUS_URL = process.env.CONSUS_URL ?? `http://localhost:${PORT}`;
 
@@ -34,9 +41,17 @@ switch (subcommand) {
   case "result":
     await cmdResult(rest);
     break;
+  case "threads":
+    cmdThreads();
+    break;
+  case "reply":
+    await cmdReply(rest);
+    break;
   default:
     console.error(`Unknown subcommand: ${subcommand}`);
-    console.error("Usage: consus handoff [list|result <proposalId> <applied|failed> [reason]]");
+    console.error(
+      "Usage: consus handoff [list|result <proposalId> <applied|failed> [reason]|threads|reply <threadId> [--proposal <id>] <body...>]",
+    );
     process.exit(1);
 }
 
@@ -105,4 +120,75 @@ async function cmdResult([proposalId, status, ...reasonParts]) {
   if (existsSync(handoffFile)) unlinkSync(handoffFile);
 
   console.log(`Proposal ${proposalId} marked ${status}.`);
+}
+
+
+function readThreadEvents() {
+  if (!existsSync(THREADS_DIR)) return [];
+  return readdirSync(THREADS_DIR)
+    .filter((f) => f.endsWith(".json"))
+    .map((f) => {
+      try {
+        return { file: join(THREADS_DIR, f), event: JSON.parse(readFileSync(join(THREADS_DIR, f), "utf8")) };
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.event.message.id - b.event.message.id);
+}
+
+function cmdThreads() {
+  const pending = readThreadEvents();
+  if (pending.length === 0) {
+    console.log("No thread messages awaiting a reply.");
+    return;
+  }
+  console.log(`${pending.length} thread message(s) awaiting a reply in ${THREADS_DIR}:\n`);
+  for (const { event } of pending) {
+    console.log(`  threadId : ${event.threadId}`);
+    console.log(`  item     : ${event.item.type} ${event.item.id}`);
+    if (event.anchor) console.log(`  anchor   : ${JSON.stringify(event.anchor)}`);
+    for (const m of event.context) console.log(`    [${m.role}] ${m.author}: ${m.body}`);
+    console.log(`  > ${event.message.author}: ${event.message.body}`);
+    console.log(`  replyUrl : ${event.replyUrl}`);
+    console.log();
+  }
+}
+
+async function cmdReply(args) {
+  const [threadId, ...restArgs] = args;
+  let proposalId;
+  const bodyParts = [];
+  for (let i = 0; i < restArgs.length; i++) {
+    if (restArgs[i] === "--proposal") proposalId = restArgs[++i];
+    else bodyParts.push(restArgs[i]);
+  }
+  const body = bodyParts.join(" ").trim();
+  if (!threadId || !body) {
+    console.error("Usage: consus handoff reply <threadId> [--proposal <id>] <body...>");
+    process.exit(1);
+  }
+  const author = process.env.CONSUS_AGENT_NAME ?? "agent";
+  const files = readThreadEvents().filter(({ event }) => event.threadId === threadId);
+  const url = files.length > 0 ? files[files.length - 1].event.replyUrl : `${CONSUS_URL}/api/threads/${threadId}/replies`;
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ author, body, ...(proposalId ? { proposalId } : {}) }),
+    });
+  } catch (err) {
+    console.error(`Failed to reach Consus at ${url}: ${err.message}`);
+    process.exit(1);
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "(unreadable)");
+    console.error(`Consus returned ${res.status}: ${text}`);
+    process.exit(1);
+  }
+  for (const { file } of files) unlinkSync(file);
+  console.log(`Replied to thread ${threadId}.`);
 }

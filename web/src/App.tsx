@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { marked } from "marked";
 import { AnswerControl } from "./features/decisions/answer-shapes/AnswerControl";
 import { CommentsPanel } from "./features/comments/CommentsPanel";
+import { AgentThreadsSection } from "./features/threads/ThreadsPanel";
+import { docSectionAnchors, diagramNodeAnchors } from "./features/threads/anchors";
 import { GlobalView, type KbEntrySummary } from "./features/projects/GlobalView";
 import { ProjectView } from "./features/projects/ProjectView";
 import { BranchPicker } from "./features/projects/BranchPicker";
@@ -272,6 +274,8 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
         <h3 className="dv__section-title">Discussion</h3>
         <CommentsPanel itemId={item.id} />
       </section>
+
+      <AgentThreadsSection itemType="decision" itemId={item.id} />
 
       <section>
         <h3 className="dv__section-title">Attachments</h3>
@@ -796,14 +800,17 @@ function ProjectDiagram({
   if (!data) return <p className="state">Loading diagram…</p>;
 
   return (
-    <DiagramView
-      repo={repo}
-      epics={data.epics}
-      pendingProposal={pendingProposalId !== null}
-      onProposeChange={proposeChange}
-      auditEntries={auditEntries}
-      onPendingChangesChange={onPendingChangesChange}
-    />
+    <>
+      <DiagramView
+        repo={repo}
+        epics={data.epics}
+        pendingProposal={pendingProposalId !== null}
+        onProposeChange={proposeChange}
+        auditEntries={auditEntries}
+        onPendingChangesChange={onPendingChangesChange}
+      />
+      <AgentThreadsSection itemType="diagram" itemId={data.itemId} anchors={diagramNodeAnchors(data.epics)} />
+    </>
   );
 }
 
@@ -1230,6 +1237,7 @@ function DocsSection() {
             </button>
           </div>
           <FullPageDocViewer content={openDoc.content} title={openDoc.path} />
+          <AgentThreadsSection itemType="doc" itemId={openDoc.itemId} />
         </div>
       );
     }
@@ -1247,6 +1255,11 @@ function DocsSection() {
           pendingProposal={pendingProposalId !== null}
           proposalFailureReason={proposalFailureReason}
           auditEntries={auditEntries}
+        />
+        <AgentThreadsSection
+          itemType="doc"
+          itemId={openDoc.itemId}
+          anchors={openDoc.format === "md" ? docSectionAnchors(openDoc.content) : []}
         />
       </div>
     );

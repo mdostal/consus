@@ -4,6 +4,15 @@
 
 ### Added
 
+- **Agent threads** (PANT-962). Comment threads on any doc, doc section, diagram node, decision or
+  proposal that an outside agent answers. Each operator message is sent once as a generic
+  `consus.thread.message` event to `CONSUS_THREAD_WEBHOOK_URL`, or through the harness transport
+  when that is unset (the file transport writes `<dir>/threads/*.json`, answered with
+  `node bin/handoff.mjs threads` / `reply`). Agents answer with `POST /api/threads/:id/replies`,
+  optionally linking a proposal that the UI shows inline under **View change**. The UI shows
+  "Waiting for agent…" and receives replies over SSE (`GET /api/threads/stream`), with no polling.
+  Failed deliveries are retried by hand only. Also adds `GET /api/proposals/:id`. The contract is
+  in `docs/agent-integration/threads.md`.
 - **Generic webhook harness transport** (PANT-967). `CONSUS_HARNESS=webhook` +
   `CONSUS_HARNESS_WEBHOOK_URL` POSTs each proposal as `{ "method": "proposeChange", "params": … }`,
   the same JSON the stdio transport writes, to any receiver; results come back through
