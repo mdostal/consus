@@ -22,7 +22,7 @@ import { registerSurveyRoutes } from "./routes/surveys.js";
 import { registerQuestionRoutes } from "./routes/questions.js";
 import { registerMetricsRoutes } from "./routes/metrics.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
-import { StdioHarnessTransport, FileHarnessTransport, PantheonHarnessTransport, NOOP_HARNESS_TRANSPORT, transportName, type HarnessTransport } from "./harness/transport.js";
+import { StdioHarnessTransport, FileHarnessTransport, PantheonHarnessTransport, WebhookHarnessTransport, NOOP_HARNESS_TRANSPORT, transportName, type HarnessTransport } from "./harness/transport.js";
 import { isSyncDegraded } from "./pantheon/sync-status.js";
 import { startPantheonSync, type PantheonSyncHandles } from "./pantheon/start-sync.js";
 import { createStorageAdapter } from "./storage/index.js";
@@ -40,13 +40,15 @@ const WEB_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../dist-web");
  *
  *  Priority order (mutually exclusive transports, first match wins):
  *    1. CONSUS_HARNESS=pantheon  — hosted Pantheon integration (requires PANTHEON_API_URL)
- *    2. CONSUS_HARNESS_FILE_DIR  — standalone file transport (no Pantheon, s9)
- *    3. CONSUS_HARNESS_COMMAND   — stdio transport (legacy/custom harness)
- *    4. (default)                — NOOP (proposals fail immediately with NO_ADAPTER)
+ *    2. CONSUS_HARNESS=webhook   — generic webhook (requires CONSUS_HARNESS_WEBHOOK_URL)
+ *    3. CONSUS_HARNESS_FILE_DIR  — standalone file transport (no Pantheon, s9)
+ *    4. CONSUS_HARNESS_COMMAND   — stdio transport (legacy/custom harness)
+ *    5. (default)                — NOOP (proposals fail immediately with NO_ADAPTER)
  */
 export function selectHarnessTransport(env: {
   CONSUS_HARNESS?: string;
   PANTHEON_API_URL?: string;
+  CONSUS_HARNESS_WEBHOOK_URL?: string;
   CONSUS_HARNESS_FILE_DIR?: string;
   CONSUS_HARNESS_COMMAND?: string;
   CONSUS_HARNESS_ARGS?: string;
@@ -56,6 +58,15 @@ export function selectHarnessTransport(env: {
       throw new Error("PANTHEON_API_URL is required when CONSUS_HARNESS=pantheon");
     }
     return new PantheonHarnessTransport(env.PANTHEON_API_URL);
+  }
+  if (env.CONSUS_HARNESS === "webhook") {
+    if (!env.CONSUS_HARNESS_WEBHOOK_URL) {
+      throw new Error("CONSUS_HARNESS_WEBHOOK_URL is required when CONSUS_HARNESS=webhook");
+    }
+    if (!URL.canParse(env.CONSUS_HARNESS_WEBHOOK_URL)) {
+      throw new Error(`CONSUS_HARNESS_WEBHOOK_URL is not a valid URL: ${env.CONSUS_HARNESS_WEBHOOK_URL}`);
+    }
+    return new WebhookHarnessTransport(env.CONSUS_HARNESS_WEBHOOK_URL);
   }
   if (env.CONSUS_HARNESS_FILE_DIR) {
     return new FileHarnessTransport(env.CONSUS_HARNESS_FILE_DIR);

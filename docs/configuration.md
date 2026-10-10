@@ -14,7 +14,8 @@ Consus is configured via environment variables and a JSON config file for regist
 | `CONSUS_PROJECTS_CONFIG` | `.pHive/consus-projects.json` | Path to the JSON file mapping project names to repo paths |
 | `CONSUS_ATTACHMENTS_DIR` | `.pHive/attachments` | Where uploaded item attachments are stored |
 | `CONSUS_DISCOVERY_ROOTS` | _(none)_ | Comma-separated list of absolute directory paths that `GET /api/projects/discover` should scan for candidate repos |
-| `CONSUS_HARNESS` | _(none)_ | Set to `pantheon` to select the Pantheon transport (requires `PANTHEON_API_URL`). See [Harness wiring](#harness-wiring). |
+| `CONSUS_HARNESS` | _(none)_ | Set to `pantheon` to select the Pantheon transport (requires `PANTHEON_API_URL`), or `webhook` to select the generic webhook transport (requires `CONSUS_HARNESS_WEBHOOK_URL`). See [Harness wiring](#harness-wiring). |
+| `CONSUS_HARNESS_WEBHOOK_URL` | _(none)_ | Where `CONSUS_HARNESS=webhook` POSTs each proposal. Required in webhook mode. |
 | `CONSUS_PANTHEON_POLL` | `0` | Set to `1` (or `true`) to start the Pantheon question puller in Pantheon mode. Off by default: Pantheon pushes question tickets in instead. See [Harness wiring](#harness-wiring). |
 | `CONSUS_PANTHEON_RESULT_POLL` | `1` | Set to `0` (or `false`) to stop the Pantheon change result puller in Pantheon mode. On by default: Pantheon doesn't push change results yet. See [Harness wiring](#harness-wiring). |
 | `PANTHEON_API_URL` | _(none)_ | Base URL of a Pantheon server. Required by `CONSUS_HARNESS=pantheon`; on its own it still enables the verdict bridge and the tenant-path check below. |
@@ -58,9 +59,10 @@ If the file doesn't exist, Consus defaults to `{ "consus": <cwd> }` — the curr
 Consus picks one transport at startup; the first match in this order wins:
 
 1. `CONSUS_HARNESS=pantheon` + `PANTHEON_API_URL` — **Pantheon.** Proposals go to `{PANTHEON_API_URL}/api/feed/changes`. A result puller applies Pantheon's results back to proposals every 60 seconds; `CONSUS_PANTHEON_RESULT_POLL=0` turns it off, leaving `POST /api/proposals/:id/result` as the only way in. Question tickets are pushed in through `POST /api/questions/import` and `POST /api/questions/:ticket/close` (see `docs/api-reference.md`); set `CONSUS_PANTHEON_POLL=1` to also start a question adapter that turns pending Pantheon question tickets (`GET /api/feed/questions?status=pending&surface=decision`) into surveys every 60 seconds. Answering a question-linked item posts `partial`, then `submit` once the ticket is fully answered, back to Pantheon. Startup fails if `PANTHEON_API_URL` is missing.
-2. `CONSUS_HARNESS_FILE_DIR=<dir>` — **file** (standalone). Proposals are written as JSON files; a harness lists them and reports results with `node bin/handoff.mjs list` / `node bin/handoff.mjs result <proposalId> applied|failed [reason]`. Point `CONSUS_HANDOFF_DIR` at the same directory.
-3. `CONSUS_HARNESS_COMMAND=<cmd>` — **stdio**, described next.
-4. none of the above — **NOOP**.
+2. `CONSUS_HARNESS=webhook` + `CONSUS_HARNESS_WEBHOOK_URL` — **webhook.** Each proposal is POSTed to the URL as `{ "method": "proposeChange", "params": { … } }`, the same JSON the stdio transport writes (payload contract in `docs/api-reference.md#proposal-payload-contract`). The receiver reports results through `POST /api/proposals/:id/result`. A non-2xx, timeout, or network error marks the proposal `failed` with a `delivery_error`; there is one attempt and no retry loop, so retry by hand with `POST /api/proposals/:id/redeliver` or the **Retry delivery** button in the history panel. Startup fails if the URL is missing or invalid.
+3. `CONSUS_HARNESS_FILE_DIR=<dir>` — **file** (standalone). Proposals are written as JSON files; a harness lists them and reports results with `node bin/handoff.mjs list` / `node bin/handoff.mjs result <proposalId> applied|failed [reason]`. Point `CONSUS_HANDOFF_DIR` at the same directory.
+4. `CONSUS_HARNESS_COMMAND=<cmd>` — **stdio**, described next.
+5. none of the above — **NOOP**.
 
 For the stdio transport, set `CONSUS_HARNESS_COMMAND` to an executable that can receive a JSON payload over stdin and write a JSON response to stdout:
 

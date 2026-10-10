@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import Database from "better-sqlite3";
 import { runMigration } from "../db/migrate.js";
-import { proposeChange, reportProposalResult, listProposals } from "./store.js";
+import { proposeChange, reportProposalResult, redeliverProposal, listProposals } from "./store.js";
 import type { HarnessTransport, HarnessResult } from "../harness/transport.js";
 
 function insertItem(db: Database.Database, id: string) {
@@ -336,5 +336,101 @@ describe("listProposals", () => {
 
     expect(rows).toHaveLength(2);
     expect(rows.map((r) => r.description)).toEqual(["second", "first"]);
+  });
+});
+
+describe("redeliverProposal", () => {
+  let db: Database.Database;
+  const INPUT = { itemId: "item-1", targetType: "doc", diff: "+ x", description: "add x", requestedBy: "mathew" };
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    runMigration(db);
+    insertItem(db, "item-1");
+  });
+
+  function row(id: string) {
+    return db.prepare("SELECT * FROM proposals WHERE id = ?").get(id) as Record<string, unknown>;
+  }
+
+  async function undelivered() {
+    const down = fakeTransport({ ok: false, recoverable: true, code: "INTERNAL_ERROR", message: "HTTP 502" });
+    const result = await proposeChange(db, down, INPUT);
+    if (!result.ok) throw new Error(result.error);
+    return result.proposalId;
+  }
+
+  it("a dispatch failure records delivery_error alongside failure_reason", async () => {
+    const id = await undelivered();
+    expect(row(id)).toMatchObject({ status: "failed", failure_reason: "INTERNAL_ERROR: HTTP 502", delivery_error: "INTERNAL_ERROR: HTTP 502" });
+  });
+
+  it("a successful dispatch leaves delivery_error null", async () => {
+    const result = await proposeChange(db, fakeTransport({ ok: true, result: null }), INPUT);
+    if (!result.ok) throw new Error(result.error);
+    expect(row(result.proposalId)).toMatchObject({ status: "pending", delivery_error: null });
+  });
+
+  it("redelivers the original payload once and puts the proposal back to pending", async () => {
+    const id = await undelivered();
+    const up = fakeTransport({ ok: true, result: { ticket_id: "T-1" } });
+
+    expect(await redeliverProposal(db, up, id)).toEqual({ ok: true });
+
+    expect(up.calls).toEqual([
+      {
+        method: "proposeChange",
+        params: { proposalId: id, itemId: "item-1", targetType: "doc", diff: "+ x", description: "add x", sourceRepo: null },
+      },
+    ]);
+    expect(row(id)).toMatchObject({
+      status: "pending",
+      resolved_at: null,
+      failure_reason: null,
+      delivery_error: null,
+      harness_ticket_id: "T-1",
+    });
+  });
+
+  it("a redelivery that fails again records the new delivery error", async () => {
+    const id = await undelivered();
+    const stillDown = fakeTransport({ ok: false, recoverable: true, code: "TIMEOUT" });
+    expect(await redeliverProposal(db, stillDown, id)).toEqual({ ok: true });
+    expect(row(id)).toMatchObject({ status: "failed", delivery_error: "TIMEOUT", failure_reason: "TIMEOUT" });
+  });
+
+  it("refuses a harness-reported failure (not a delivery failure) with conflict and does not dispatch", async () => {
+    const result = await proposeChange(db, fakeTransport({ ok: true, result: null }), INPUT);
+    if (!result.ok) throw new Error(result.error);
+    await reportProposalResult(db, { proposalId: result.proposalId, status: "failed", reason: "merge conflict" });
+
+    const t = fakeTransport({ ok: true, result: null });
+    expect(await redeliverProposal(db, t, result.proposalId)).toMatchObject({ ok: false, code: "conflict" });
+    expect(t.calls).toHaveLength(0);
+    expect(row(result.proposalId)).toMatchObject({ status: "failed", failure_reason: "merge conflict" });
+  });
+
+  it("refuses a pending proposal with conflict", async () => {
+    const result = await proposeChange(db, fakeTransport({ ok: true, result: null }), INPUT);
+    if (!result.ok) throw new Error(result.error);
+    expect(await redeliverProposal(db, fakeTransport({ ok: true, result: null }), result.proposalId)).toMatchObject({
+      ok: false,
+      code: "conflict",
+    });
+  });
+
+  it("only one of two concurrent retries dispatches", async () => {
+    const id = await undelivered();
+    const t = fakeTransport({ ok: true, result: null });
+    const results = await Promise.all([redeliverProposal(db, t, id), redeliverProposal(db, t, id)]);
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(t.calls).toHaveLength(1);
+  });
+
+  it("returns not_found for an unknown proposal", async () => {
+    expect(await redeliverProposal(db, fakeTransport({ ok: true, result: null }), "nope")).toMatchObject({
+      ok: false,
+      code: "not_found",
+    });
   });
 });

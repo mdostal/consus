@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
 import type { HarnessTransport } from "../harness/transport.js";
-import { proposeChange, reportProposalResult, listProposals } from "../proposals/store.js";
+import { proposeChange, reportProposalResult, redeliverProposal, listProposals } from "../proposals/store.js";
 
 export interface ProposalRoutesOptions {
   db: Database.Database;
@@ -62,6 +62,18 @@ export function registerProposalRoutes(app: FastifyInstance, { db, transport }: 
       return row;
     },
   );
+
+  // Manual retry for a delivery failure (delivery_error set): one more
+  // dispatch attempt through the active transport. 409 when there's nothing
+  // to redeliver (pending, applied, or a harness-reported failure).
+  app.post<{ Params: { id: string } }>("/api/proposals/:id/redeliver", async (request, reply) => {
+    const { id } = request.params;
+    const result = await redeliverProposal(db, transport, id);
+    if (!result.ok) {
+      return reply.code(result.code === "conflict" ? 409 : 404).send({ error: result.error });
+    }
+    return db.prepare("SELECT * FROM proposals WHERE id = ?").get(id);
+  });
 
   app.get<{ Querystring: { itemId?: string } }>("/api/proposals", async (request, reply) => {
     const { itemId } = request.query;

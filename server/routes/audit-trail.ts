@@ -27,6 +27,7 @@ type AuditTrailEntry =
       timestamp: string;
       applied_diff: string | null;
       failure_reason: string | null;
+      delivery_error: string | null;
     };
 
 /**
@@ -61,6 +62,7 @@ export function registerAuditTrailRoutes(app: FastifyInstance, { db }: AuditTrai
       timestamp: row.requested_at,
       applied_diff: row.applied_diff,
       failure_reason: row.failure_reason,
+      delivery_error: row.delivery_error,
     }));
 
     return [...auditEntries, ...proposalEntries].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
