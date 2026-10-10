@@ -9,6 +9,15 @@
   returned by `GET /api/proposals` and the audit trail. The Pantheon result puller forwards
   `result.pr_url`. The history panel and the doc view link to the PR next to the applied change.
   A result without a PR link behaves as before.
+- **Send out: export, Open in Claude, import back** (PANT-964). Every doc and diagram has a
+  **Send out** panel: download as `.md`, self-contained HTML (Mermaid flowcharts rendered to inline
+  SVG by a built-in renderer, no scripts or network), `.mmd` or SVG; copy as markdown; or **Open in
+  Claude**, which copies a ready-to-paste prompt (content plus Consus item id) for an interactive
+  Claude Code session to publish as an artifact, iterate, and send the final back. The published
+  artifact URL is stored on the item (`items.claude_artifact_url`, audited) and shown as a link.
+  **Import back** (paste or upload `.md`/`.mmd`) creates a proposal against the original item with
+  the computed diff; Consus never writes the repo. Routes: `GET /api/export/doc`,
+  `GET /api/export/diagram`, `GET|PUT /api/items/:id/claude-artifact`, `POST /api/items/:id/import`.
 - **Generic webhook harness transport** (PANT-967). `CONSUS_HARNESS=webhook` +
   `CONSUS_HARNESS_WEBHOOK_URL` POSTs each proposal as `{ "method": "proposeChange", "params": … }`,
   the same JSON the stdio transport writes, to any receiver; results come back through
