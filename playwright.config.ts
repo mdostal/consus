@@ -13,7 +13,13 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${PORT}`,
     trace: "retain-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  // Firefox too (PANT-960): in some containers headless Chromium's renderer
+  // crashes on the main app view, on unmodified dev as well, so
+  // `--project=firefox` is the fallback there.
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    { name: "firefox", use: { ...devices["Desktop Firefox"] } },
+  ],
   webServer: {
     command: "node e2e/server.mjs",
     url: `http://127.0.0.1:${PORT}/health`,

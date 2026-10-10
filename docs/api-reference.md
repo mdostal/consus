@@ -83,12 +83,30 @@ no background work or caching.
 Lists the configured project names (from `CONSUS_PROJECTS_CONFIG`, default
 `.pHive/consus-projects.json`; defaults to `{ consus: <cwd> }` when no config file exists).
 
-**Response 200:** `{ "projects": string[], "paths": Record<string, string> }` — `paths` maps every
-registered project name to its absolute repo path on disk (same map `CONSUS_PROJECTS_CONFIG`
-loads into), e.g.:
+**Response 200:** `{ "projects": string[], "paths": Record<string, string>, "clients": Record<string, string | null> }`
+— `paths` maps every registered project name to its absolute repo path on disk (same map
+`CONSUS_PROJECTS_CONFIG` loads into); `clients` maps every project to its client (group), or `null`
+when it is ungrouped, e.g.:
 ```json
-{ "projects": ["consus"], "paths": { "consus": "/Users/example/repos/consus" } }
+{ "projects": ["consus"], "paths": { "consus": "/Users/example/repos/consus" }, "clients": { "consus": null } }
 ```
+
+### `PATCH /api/projects/:project`
+Sets or clears a project's client (group). Clients are how the web UI's header switcher scopes the
+docs, decisions, diagrams and events views to several repos at once. Stored in the Consus database
+(`project_clients`), not in `CONSUS_PROJECTS_CONFIG`, so that file keeps its `name -> path` shape.
+
+**Body:** `{ "client": string | null }` — the name is trimmed (max 80 characters); `null` or `""`
+makes the project ungrouped again.
+
+**Response 200:** `{ "project": string, "client": string | null }`. **400** when `client` is missing
+or not a string/null. **404** for an unregistered project.
+
+### `GET /api/clients`
+Registered projects grouped by client, for the header client switcher.
+
+**Response 200:** `{ "clients": [{ "name": string, "projects": string[] }], "ungrouped": string[] }`
+— clients and their projects sorted by name; `ungrouped` lists projects with no client.
 
 ### `GET /api/projects/discover`
 > **Loopback-only.** Built directly on `GET /api/fs/list`'s exposure category (see its callout
@@ -114,12 +132,13 @@ Registers a new project: names it, points it at a repo path on disk, persists th
 `CONSUS_PROJECTS_CONFIG` so it survives a restart, and immediately runs the same scan
 `POST /api/projects/:project/ingest` does.
 
-**Body:** `{ "name": string, "path": string }` — `name` may only contain letters, numbers, `-` and
-`_` (it doubles as a URL segment and part of internal item ids); `path` is resolved to an absolute
-path and must exist on disk.
+**Body:** `{ "name": string, "path": string, "client"?: string | null }` — `name` may only contain
+letters, numbers, `-` and `_` (it doubles as a URL segment and part of internal item ids); `path` is
+resolved to an absolute path and must exist on disk; `client` optionally puts the project in a
+client group (see `PATCH /api/projects/:project`).
 
-**Response 201:** `{ "project": string, "path": string, "docsScanned": number, "eventsCreated": number }`.
-**400** for a missing/invalid `name` or `path` that doesn't exist. **409** if `name` is already
+**Response 201:** `{ "project": string, "path": string, "client": string | null, "docsScanned": number, "eventsCreated": number }`.
+**400** for a missing/invalid `name`, a `path` that doesn't exist, or an invalid `client`. **409** if `name` is already
 registered, or if the resolved `path` is already registered under a *different* name (found live:
 registering the same repo under two names silently produced duplicate decisions, one per name,
 since decision ids are `decision:<project-name>:<file-path>` — this is a real path-identity check,
@@ -382,7 +401,39 @@ Appends a comment to an item's thread.
 
 **Request body:** `{ "author"?: string, "body": string }` (`author` defaults to `"Mathew"`)
 
-**Response 201:** `{ id, author, body, createdAt }`. **400** if `body` is empty/missing.
+**Response 201:** `{ id, author, body, createdAt }`. **400** if `body` is empty/missing. Posting also
+marks the thread seen for the inbox (below), so your own comment is never a "new reply".
+
+## Inbox (one queue across every client)
+
+### `GET /api/inbox?client=<name>`
+Everything waiting on the operator, across all clients, newest first:
+
+- `question` — a decision item with no verdict that isn't closed
+- `proposal` — a proposal still `pending` its harness result
+- `reply` — an item whose newest comment arrived after it was last marked seen (or never seen), or
+  an agent thread (`/api/threads`) whose last message is an agent reply newer than that mark
+  (`key` is `reply:thread:<threadId>`; once the operator answers in the thread it drops out).
+  Recording a verdict or posting a comment marks the item seen. When this feature first migrates
+  an existing database, every existing thread is marked seen, so only later replies show up.
+
+`client` (optional) keeps only entries whose repo belongs to that client.
+
+**Response 200:** `{ "items": [{ "kind": "question" | "proposal" | "reply", "key": string,
+"itemId": string, "itemType": string, "isDecision": boolean, "title": string, "repo": string | null,
+"client": string | null, "at": string, "detail": string | null, "proposalId"?: string }] }` —
+`client` is `null` when the repo is ungrouped, unregistered, or unknown (e.g. Pantheon-imported
+questions).
+
+### `POST /api/inbox/seen`
+Marks an item's comments and agent threads seen now, clearing its `reply` entries until something
+newer arrives. `itemId` may also be the item id of an agent thread with no item row. The web
+UI calls this when an inbox entry is opened.
+
+**Body:** `{ "itemId": string }`
+
+**Response 200:** `{ "itemId": string, "seen": true }`. **400** without `itemId`. **404** when no
+item or thread has that id.
 
 ## Agent threads (comment threads an outside agent answers)
 

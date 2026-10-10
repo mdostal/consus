@@ -25,6 +25,7 @@ import { registerMetricsRoutes } from "./routes/metrics.js";
 import { registerThreadRoutes } from "./routes/threads.js";
 import { HarnessThreadNotifier, selectThreadNotifier, type ThreadNotifier } from "./threads/notifier.js";
 import { registerSendOutRoutes } from "./routes/send-out.js";
+import { registerInboxRoutes } from "./routes/inbox.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
 import { StdioHarnessTransport, FileHarnessTransport, PantheonHarnessTransport, WebhookHarnessTransport, NOOP_HARNESS_TRANSPORT, transportName, type HarnessTransport } from "./harness/transport.js";
 import { isSyncDegraded } from "./pantheon/sync-status.js";
@@ -204,6 +205,7 @@ export function buildServer({
   registerDesignAssetRoutes(app, { repos });
   registerSurveyRoutes(app, { db });
   registerQuestionRoutes(app, { db });
+  registerInboxRoutes(app, { db, repos });
   const activeTransport = transportName(transport);
   registerThreadRoutes(app, {
     db,

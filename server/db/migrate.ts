@@ -354,4 +354,41 @@ export function runMigration(db: Database.Database): void {
       last_ingest_at TEXT NOT NULL
     );
   `);
+
+  // PANT-960: the optional client (group) each project belongs to, so the
+  // web UI can switch by client. Kept here rather than in the project
+  // registry file so that file's name -> path shape stays unchanged. No row =
+  // ungrouped.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_clients (
+      project    TEXT PRIMARY KEY,
+      client     TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_project_clients_client ON project_clients(client);
+  `);
+
+  // PANT-960: when the operator last opened each item's thread, so the
+  // cross-client inbox can list threads with a newer reply. On first
+  // creation every existing thread is marked seen, so the inbox starts from
+  // replies that arrive after this feature ships rather than all history.
+  const hadInboxSeen = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'inbox_seen'")
+    .get();
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS inbox_seen (
+      item_id TEXT PRIMARY KEY,
+      seen_at TEXT NOT NULL
+    );
+  `);
+  if (!hadInboxSeen) {
+    db.exec(`
+      INSERT INTO inbox_seen (item_id, seen_at)
+      SELECT item_id, MAX(at) FROM (
+        SELECT item_id, created_at AS at FROM comments
+        UNION ALL
+        SELECT t.item_id, m.created_at AS at FROM thread_messages m JOIN threads t ON t.id = m.thread_id
+      ) GROUP BY item_id
+    `);
+  }
 }

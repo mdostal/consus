@@ -3428,6 +3428,105 @@ button:focus-visible {
 }
 
 /* ============================================================= */
+/* Client switcher, project client field, cross-client inbox      */
+/* (PANT-960)                                                     */
+/* ============================================================= */
+.client-switcher {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--consus-font-ui);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--consus-ink-muted);
+  font-weight: 600;
+}
+.client-switcher select {
+  font-family: var(--consus-font-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--consus-ink);
+  background: var(--consus-bg-subtle);
+  border: 1px solid var(--consus-line);
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  padding: 5px 8px;
+}
+
+.project-client-field {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  font-family: var(--consus-font-ui);
+}
+.project-client-field label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--consus-ink-muted);
+}
+.project-client-field input {
+  padding: 7px 10px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg-subtle);
+  color: var(--consus-ink);
+  font: inherit;
+}
+
+.inbox-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.inbox-item__open {
+  width: 100%;
+  display: grid;
+  grid-template-columns: max-content 1fr max-content;
+  gap: 4px 14px;
+  align-items: baseline;
+  text-align: left;
+  font: inherit;
+  color: var(--consus-ink);
+  background: var(--consus-bg-subtle);
+  border: 1px solid var(--consus-line);
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
+  padding: 12px 14px;
+  cursor: pointer;
+}
+.inbox-item__open:hover,
+.inbox-item__open:focus-visible {
+  border-color: color-mix(in srgb, var(--consus-accent) 50%, transparent);
+}
+.inbox-item__kind {
+  font-family: var(--consus-font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--consus-accent);
+}
+.inbox-item__title {
+  font-weight: 600;
+}
+.inbox-item__where {
+  font-family: var(--consus-font-ui);
+  font-size: 12px;
+  color: var(--consus-ink-muted);
+}
+.inbox-item__detail {
+  grid-column: 2 / -1;
+  font-size: 13px;
+  color: var(--consus-ink-muted);
+}
+
+/* ============================================================= */
 /* Agent threads (PANT-962) — comment threads an outside agent    */
 /* answers. Reuses the comment-thread block's list/compose        */
 /* classes; only the agent-specific bits live here.               */

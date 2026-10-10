@@ -4,7 +4,8 @@
 // diagram), registers it as project "demo", and starts the built server
 // (dist-server + dist-web) on E2E_PORT with the file harness transport, so
 // every proposal lands as a JSON file under e2e/.fixture/handoffs/ for the
-// tests to read. Never talks to Pantheon. Requires `npm run build` first.
+// tests to read. Also registers a few empty projects for the client-switcher
+// check (PANT-960). Never talks to Pantheon. Requires `npm run build` first.
 
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -49,7 +50,27 @@ writeFileSync(
   join(REPO_DIR, "docs", "diagrams", "system.mmd"),
   ["flowchart TD", "  client[Client] --> api[API]", "  api --> db[(Database)]", ""].join("\n"),
 );
-writeFileSync(join(FIXTURE_DIR, "projects.json"), JSON.stringify({ demo: REPO_DIR }, null, 2));
+// PANT-960: more projects for the client-switcher check, each an empty repo
+// directory. E2E_PROJECTS_FROM=<base url> mirrors a running Consus's project
+// names instead (a read-only GET /api/projects, e.g. the hive instance).
+async function extraProjectNames() {
+  const from = process.env.E2E_PROJECTS_FROM;
+  if (!from) return ["alpha-web", "beta-app", "scratch"];
+  const res = await fetch(`${from.replace(/\/+$/, "")}/api/projects`);
+  if (!res.ok) throw new Error(`GET ${from}/api/projects -> ${res.status}`);
+  const { projects } = await res.json();
+  console.log(`[e2e] mirroring ${projects.length} project names from ${from}: ${projects.join(", ")}`);
+  return projects;
+}
+
+const registry = { demo: REPO_DIR };
+for (const name of await extraProjectNames()) {
+  if (name in registry) continue;
+  const dir = join(FIXTURE_DIR, "repos", name);
+  mkdirSync(dir, { recursive: true });
+  registry[name] = dir;
+}
+writeFileSync(join(FIXTURE_DIR, "projects.json"), JSON.stringify(registry, null, 2));
 
 const env = {
   ...process.env,

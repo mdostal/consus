@@ -3,7 +3,7 @@
   "version": "0.17.2",
   "private": true,
   "type": "module",
-  "description": "Consus — a standalone knowledgebase, graph, and doc editor for any repo's decisions, docs, and architecture",
+  "description": "Consus \u2014 a standalone knowledgebase, graph, and doc editor for any repo's decisions, docs, and architecture",
   "license": "MIT",
   "author": {
     "name": "Mathew Dostal",

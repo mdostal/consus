@@ -4,6 +4,16 @@
 
 ### Added
 
+- **Client grouping, client switcher and a cross-client inbox** (PANT-960). Projects get an
+  optional client (group), stored in the database (`project_clients`) so the projects config keeps
+  its `name -> path` shape. Set it with `PATCH /api/projects/:project`, `client` on
+  `POST /api/projects`, or the **Client** field on a project's page; `GET /api/projects` now
+  includes a `clients` map and `GET /api/clients` returns the grouping. The masthead's client
+  switcher (shown once any client exists) scopes the Projects, Docs, Decisions, Events and KB views
+  to that client's repos and is remembered per browser; ungrouped projects show under
+  "All clients". The new **Inbox** tab lists open questions, pending proposals and new replies
+  (comments, and agent replies on agent threads) across every client (`GET /api/inbox`, `POST /api/inbox/seen`); opening an entry
+  switches to its client and jumps to it. Playwright check: `e2e/client-switcher.spec.ts`.
 - **Mermaid diagrams, a diagram editor, and new docs** (PANT-965). ```` ```mermaid ```` fences
   in a doc now render as diagrams; a syntax error shows mermaid's message and the failing source
   instead of a blank. Each fence, and every standalone `.mmd` file, opens in a split

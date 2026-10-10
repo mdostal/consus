@@ -10,6 +10,7 @@ import {
   redeliverQuestionDeliveries,
 } from "../pantheon/question-adapter.js";
 import { recordSyncFailure, recordSyncSuccess, safeRecord } from "../pantheon/sync-status.js";
+import { markInboxSeen } from "../inbox/query.js";
 
 export interface InteractionRoutesOptions {
   db: Database.Database;
@@ -49,6 +50,9 @@ export function registerInteractionRoutes(
       const info = db
         .prepare("INSERT INTO comments (item_id, author, body, created_at) VALUES (?, ?, ?, ?)")
         .run(id, author ?? "Mathew", body.trim(), now);
+      // PANT-960: writing in a thread means it has been read — the operator's
+      // own comment must not show up as a new reply in the inbox.
+      markInboxSeen(db, id, now);
       return reply.code(201).send({ id: info.lastInsertRowid, author: author ?? "Mathew", body: body.trim(), createdAt: now });
     },
   );
@@ -101,6 +105,7 @@ export function registerInteractionRoutes(
           `Decision recorded: ${verdictSummary(verdict)}`,
           now,
         );
+        markInboxSeen(db, id, now);
         // Question answers are written to the delivery outbox in the same
         // transaction as the verdict, so a failed POST is retried, never lost.
         if (questionLink && decidedAt !== null && bridgeBase) {
