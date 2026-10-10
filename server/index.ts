@@ -21,6 +21,7 @@ import { registerDesignAssetRoutes } from "./routes/design-assets.js";
 import { registerSurveyRoutes } from "./routes/surveys.js";
 import { registerQuestionRoutes } from "./routes/questions.js";
 import { registerMetricsRoutes } from "./routes/metrics.js";
+import { registerSendOutRoutes } from "./routes/send-out.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
 import { StdioHarnessTransport, FileHarnessTransport, PantheonHarnessTransport, WebhookHarnessTransport, NOOP_HARNESS_TRANSPORT, transportName, type HarnessTransport } from "./harness/transport.js";
 import { isSyncDegraded } from "./pantheon/sync-status.js";
@@ -183,6 +184,7 @@ export function buildServer({
   registerInteractionRoutes(app, { db });
   registerProposalRoutes(app, { db, transport });
   registerDiagramRoutes(app, { db, repos });
+  registerSendOutRoutes(app, { db, repos, transport });
   registerAuditTrailRoutes(app, { db });
   registerEventRoutes(app, { db, repos, transport });
   registerAttachmentRoutes(app, { db, storageAdapter });

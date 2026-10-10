@@ -25,6 +25,7 @@ import { DecisionListPane, type DecisionListItem, type SurveyListItem } from "./
 import { SurveyView } from "./features/decisions/SurveyView";
 import { AttachmentsPanel } from "./features/decisions/attachments/AttachmentsPanel";
 import { ArtifactLinksPanel } from "./features/artifact-links/ArtifactLinksPanel";
+import { SendOutPanel } from "./features/send-out/SendOutPanel";
 import { NoContextWarning } from "./features/decisions/NoContextWarning";
 import { useSkinPreference } from "./theme/useSkinPreference";
 import { ThemeSkinPicker } from "./theme/ThemeSkinPicker";
@@ -796,7 +797,12 @@ function ProjectDiagram({
   if (!data) return <p className="state">Loading diagram…</p>;
 
   return (
-    <DiagramView
+    <>
+      <SendOutPanel
+        target={{ type: "diagram", repo, kinds: ["cascade"] }}
+        onProposalCreated={() => loadAuditTrail(data.itemId)}
+      />
+      <DiagramView
       repo={repo}
       epics={data.epics}
       pendingProposal={pendingProposalId !== null}
@@ -804,6 +810,7 @@ function ProjectDiagram({
       auditEntries={auditEntries}
       onPendingChangesChange={onPendingChangesChange}
     />
+    </>
   );
 }
 
@@ -865,7 +872,9 @@ function ProjectArchitectureDiagram({
   if (!data) return <p className="state">Loading architecture diagram…</p>;
 
   return (
-    <ArchitectureDiagramView
+    <>
+      <SendOutPanel target={{ type: "diagram", repo, kinds: ["architecture", "architecture-full"] }} />
+      <ArchitectureDiagramView
       repo={repo}
       topLevel={data.topLevel}
       fullComponent={data.fullComponent}
@@ -873,6 +882,7 @@ function ProjectArchitectureDiagram({
       pendingProposal={pendingProposalId !== null}
       onPendingChangesChange={onPendingChangesChange}
     />
+    </>
   );
 }
 
@@ -958,6 +968,7 @@ function ProjectDocs({
           <button className="doc-back" onClick={() => setOpenDoc(null)}>
             ← Back to docs
           </button>
+          <SendOutPanel target={{ type: "doc", repo, path: openDoc.path }} />
           <FullPageDocViewer content={openDoc.content} title={openDoc.path} />
         </div>
       );
@@ -967,6 +978,7 @@ function ProjectDocs({
         <button className="doc-back" onClick={() => setOpenDoc(null)}>
           ← Back to docs
         </button>
+        <SendOutPanel target={{ type: "doc", repo, path: openDoc.path }} />
         {branch ? <DocDiffCheck repo={repo} path={openDoc.path} branch={branch} /> : null}
         <DocRenderer format={openDoc.format} content={openDoc.content} />
       </div>
@@ -1229,6 +1241,10 @@ function DocsSection() {
               ← Back to docs
             </button>
           </div>
+          <SendOutPanel
+            target={{ type: "doc", repo: openDoc.repo, path: openDoc.path }}
+            onProposalCreated={() => loadAuditTrail(openDoc.itemId)}
+          />
           <FullPageDocViewer content={openDoc.content} title={openDoc.path} />
         </div>
       );
@@ -1240,6 +1256,10 @@ function DocsSection() {
             ← Back to docs
           </button>
         </div>
+        <SendOutPanel
+          target={{ type: "doc", repo: openDoc.repo, path: openDoc.path }}
+          onProposalCreated={() => loadAuditTrail(openDoc.itemId)}
+        />
         <DocRenderer
           format={openDoc.format}
           content={openDoc.content}
