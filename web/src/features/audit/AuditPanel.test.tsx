@@ -46,6 +46,27 @@ describe("AuditPanel", () => {
     expect(screen.getByText(/removed the load balancer node/)).toBeInTheDocument();
   });
 
+  it("links an applied proposal's PR, and shows no link when it has none (consus#203)", () => {
+    const base = {
+      kind: "proposal" as const,
+      target_type: "doc",
+      description: "clarify rollback",
+      status: "applied",
+      requested_by: "mathew",
+      timestamp: "2026-08-13T00:00:00Z",
+      applied_diff: "+ rollback",
+      failure_reason: null,
+    };
+    const { unmount } = render(
+      <AuditPanel entries={[{ ...base, id: "p-pr", pr_url: "https://github.com/acme/repo/pull/7" }]} />,
+    );
+    expect(screen.getByRole("link", { name: /view pr/i })).toHaveAttribute("href", "https://github.com/acme/repo/pull/7");
+    unmount();
+
+    render(<AuditPanel entries={[{ ...base, id: "p-none", pr_url: null }, { ...base, id: "p-bad", pr_url: "javascript:alert(1)" }]} />);
+    expect(screen.queryByRole("link", { name: /view pr/i })).not.toBeInTheDocument();
+  });
+
   it("shows the failure reason on a failed proposal", () => {
     const entries: AuditTrailEntry[] = [
       {

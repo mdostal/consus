@@ -384,6 +384,79 @@ Appends a comment to an item's thread.
 
 **Response 201:** `{ id, author, body, createdAt }`. **400** if `body` is empty/missing.
 
+## Agent threads (comment threads an outside agent answers)
+
+Threads attach to any item by `itemType` + `itemId` (doc, section, diagram, decision, proposal, …)
+plus an optional `anchor` object. Each operator message is sent out once as a
+`consus.thread.message` event; the agent answers with `POST /api/threads/:id/replies`. The full
+wire contract (event payload, delivery, reply rules, standalone CLI) is in
+[`agent-integration/threads.md`](agent-integration/threads.md).
+
+Every route below returns a **thread**:
+
+```json
+{
+  "id": "<uuid>",
+  "itemType": "doc",
+  "itemId": "doc:consus:docs/index.md",
+  "anchor": { "section": "Install", "line": 4 } | null,
+  "state": "awaiting_agent" | "delivery_failed" | "answered",
+  "createdAt": "<iso>",
+  "updatedAt": "<iso>",
+  "messages": [
+    {
+      "id": 1, "threadId": "<uuid>", "role": "operator" | "agent", "author": "Mathew", "body": "…",
+      "proposalId": null, "proposalUrl": null, "proposal": null,
+      "delivery": { "status": "pending" | "delivered" | "failed", "error": null, "target": "webhook", "attemptedAt": "<iso>" } | null,
+      "createdAt": "<iso>"
+    }
+  ]
+}
+```
+
+### `GET /api/threads?itemType=<type>&itemId=<id>`
+Threads for an item, oldest first, each with its messages. Both filters are optional.
+
+### `GET /api/threads/stream?itemType=<type>&itemId=<id>`
+Server-sent events. Each change to a matching thread (new thread, operator message, delivery
+outcome, agent reply) is pushed as `event: thread` with the full thread JSON as `data`. Push only,
+nothing polls; the UI keeps one stream open per item it shows.
+
+### `GET /api/threads/:id`
+One thread. **404** for an unknown id.
+
+### `POST /api/threads`
+Starts a thread and sends its first message out.
+
+**Request body:** `{ "itemType": string, "itemId": string, "body": string, "anchor"?: object, "author"?: string }`.
+`itemType` is lowercase letters, digits, `-` or `_` (max 32). `anchor` is a JSON object of at most
+2 KB. `author` defaults to `Mathew`.
+
+**Response 201:** the thread after the delivery attempt. **400** on a missing/invalid field.
+
+### `POST /api/threads/:id/messages`
+The operator's next message in a thread; sent out the same way.
+
+**Request body:** `{ "body": string, "author"?: string }`. **Response 201:** the thread. **404** for an
+unknown thread, **400** for an empty body.
+
+### `POST /api/threads/:id/replies`
+The inbound side: an agent appends its reply. The `replyUrl` in every outbound event points here.
+
+**Request body:** `{ "author": string, "body": string, "proposalId"?: string, "proposalUrl"?: string }`.
+`proposalId` links a proposal the agent opened; when it names a proposal in this Consus, the
+message's `proposal` field carries `{ id, status, description, targetType }` and the UI shows the
+diff inline. `proposalUrl` (absolute URL) is shown as an external link.
+
+**Response 201:** the thread (`state: "answered"`). **404** for an unknown thread, **400** when
+`author` or `body` is missing, `proposalId` is empty, or `proposalUrl` is not absolute.
+
+### `POST /api/threads/:id/redeliver`
+Manual retry when the thread's latest operator message failed to deliver. One attempt, no timer.
+
+**Response 200:** the thread after the attempt. **404** for an unknown thread, **409** when there is
+nothing to redeliver.
+
 ## Docs (generated briefs/PRDs/architecture/specs)
 
 ### `GET /api/docs?project=<name>`
@@ -714,14 +787,20 @@ configured, or the webhook answered non-2xx). Such a proposal can be retried wit
 ### `POST /api/proposals/:id/result`
 Called by the harness once it's actually applied (or failed to apply) the proposed change.
 
-**Request body:** `{ "status": "applied"|"failed", "appliedDiff"?: string, "reason"?: string }`
+**Request body:** `{ "status": "applied"|"failed", "appliedDiff"?: string, "reason"?: string, "prUrl"?: string }`
 
 On `"applied"`, writes an `audit_log` entry (`field: "proposal:<targetType>"`, `new_value` the
 applied diff). On `"failed"`, no audit_log entry.
 
+`prUrl` (also accepted as `pr_url`) is the pull request the harness opened for the change. It is
+stored on the proposal as `pr_url` and shown as a link on the item; it must be an `http(s)` URL
+(**400** otherwise) and is ignored on `"failed"`. Without it, `pr_url` stays `null`.
+
 Only a `pending` proposal changes. The endpoint is safe to retry: reporting the same status again
 for a proposal that is already resolved does nothing (no second `audit_log` row, `resolved_at` and
-the diff/reason are left as they are) and returns the current row with 200.
+the diff/reason are left as they are) and returns the current row with 200. The one exception: a
+repeated `"applied"` that carries a PR link fills in `pr_url` if the proposal has none yet; an
+existing `pr_url` is never replaced.
 
 **Response 200:** the updated proposal row, or the unchanged row for a repeated identical result.
 **404** for an unknown proposal id. **409** if the proposal is already resolved with the other
@@ -748,6 +827,11 @@ Lists every proposal for an item, most recent first — pending, applied, and fa
 (this is what the audit-trail panel surfaces).
 
 **Response 200:** array of proposal rows. **400** if `itemId` is omitted.
+
+### `GET /api/proposals/:id`
+One proposal row by id. A thread reply's **View change** link opens this.
+
+**Response 200:** the proposal row. **404** for an unknown id.
 
 With no transport configured the server uses `NOOP_HARNESS_TRANSPORT` and every proposal
 resolves to `"failed"` immediately with a clear reason (no startup error).
@@ -884,7 +968,7 @@ at from shape alone.
 ```json
 [
   { "kind": "audit", "id": 1, "actor": "mathew", "field": "status", "old_value": "open", "new_value": "approved", "timestamp": "..." },
-  { "kind": "proposal", "id": "uuid", "target_type": "diagram", "description": "...", "status": "applied", "requested_by": "mathew", "timestamp": "...", "applied_diff": "...", "failure_reason": null }
+  { "kind": "proposal", "id": "uuid", "target_type": "diagram", "description": "...", "status": "applied", "requested_by": "mathew", "timestamp": "...", "applied_diff": "...", "failure_reason": null, "pr_url": "https://github.com/..." }
 ]
 ```
 

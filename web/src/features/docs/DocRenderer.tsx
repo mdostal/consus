@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { marked, Renderer } from "marked";
-import { AuditPanel, type AuditTrailEntry } from "../audit/AuditPanel";
+import { AuditPanel, safePrUrl, type AuditTrailEntry } from "../audit/AuditPanel";
 import { VisualDiff, parseLineDiff } from "../diff/VisualDiff";
 import { computeLineDiff } from "./textDiff";
 import { splitIntoSections } from "./sections";
@@ -137,6 +137,14 @@ export function DocRenderer({
     setMermaidSlots(htmlEl ? Array.from(htmlEl.querySelectorAll<HTMLElement>("[data-mermaid-index]")) : []);
   }, [htmlEl, html]);
 
+  // consus#203: the PR behind the most recent applied proposal, shown as a
+  // pill next to the pending/failed ones. Derived from auditEntries (newest
+  // first, as the audit-trail route returns them) so it survives a re-open.
+  const appliedPrUrl = useMemo(() => {
+    const latestApplied = auditEntries?.find((entry) => entry.kind === "proposal" && entry.status === "applied");
+    return latestApplied?.kind === "proposal" ? safePrUrl(latestApplied.pr_url) : null;
+  }, [auditEntries]);
+
   const sections = useMemo(() => splitIntoSections(content), [content]);
   const [sectionStates, setSectionStates] = useState<SectionState[]>(() => sections.map(initialSectionState));
 
@@ -183,6 +191,11 @@ export function DocRenderer({
           {pendingProposal ? <span className="pill pill--pending">change proposed…</span> : null}
           {proposalFailureReason ? (
             <span className="pill pill--failed">proposal failed: {proposalFailureReason}</span>
+          ) : null}
+          {appliedPrUrl ? (
+            <a className="pill pill--applied" href={appliedPrUrl} target="_blank" rel="noopener noreferrer">
+              change applied · view PR
+            </a>
           ) : null}
         </div>
       ) : null}
