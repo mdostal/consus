@@ -57,6 +57,20 @@ export function docItemIdFor(repo: string, path: string): string {
   return `doc:${repo}:${path}`;
 }
 
+/** Upserts a doc's item row (the target its proposals need) and returns its
+ *  id. Shared with the send-out routes, which export and import against the
+ *  same item. */
+export function ensureDocItem(db: Database.Database, repo: string, path: string): string {
+  const itemId = docItemIdFor(repo, path);
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO items (id, type, title, status, source_repo, source_ref, created_at, updated_at)
+     VALUES (?, 'doc', ?, 'active', ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
+  ).run(itemId, path, repo, path, now, now);
+  return itemId;
+}
+
 export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutesOptions): void {
   // s5 (consus-phase27-feature-doc-review-ui): scopedRepos is always derived
   // from Object.keys(repos) -- the live project registry this route handler
@@ -199,13 +213,7 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutes
       // Ensure a target item exists before the caller can propose a change to
       // this doc (s3's proposeChange requires a real item row) — upserted on
       // every open, matching the diagram route's pattern (s4).
-      const itemId = docItemIdFor(repo, path);
-      const now = new Date().toISOString();
-      db.prepare(
-        `INSERT INTO items (id, type, title, status, source_repo, source_ref, created_at, updated_at)
-       VALUES (?, 'doc', ?, 'active', ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
-      ).run(itemId, path, repo, path, now, now);
+      const itemId = ensureDocItem(db, repo, path);
 
       // s3 (consus-phase29-brand-decision-review): the doc's current
       // doc_index phase tag ('brand', 'overview', 'planning', etc.), looked
