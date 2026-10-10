@@ -21,6 +21,8 @@ import { registerDesignAssetRoutes } from "./routes/design-assets.js";
 import { registerSurveyRoutes } from "./routes/surveys.js";
 import { registerQuestionRoutes } from "./routes/questions.js";
 import { registerMetricsRoutes } from "./routes/metrics.js";
+import { registerThreadRoutes } from "./routes/threads.js";
+import { HarnessThreadNotifier, selectThreadNotifier, type ThreadNotifier } from "./threads/notifier.js";
 import { registerSendOutRoutes } from "./routes/send-out.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
 import { StdioHarnessTransport, FileHarnessTransport, PantheonHarnessTransport, WebhookHarnessTransport, NOOP_HARNESS_TRANSPORT, transportName, type HarnessTransport } from "./harness/transport.js";
@@ -157,6 +159,13 @@ export interface BuildServerOptions {
   discoveryRoots?: string[];
   /** Clock for GET /api/metrics's age fields — test-only seam. */
   now?: () => Date;
+  /** Outbound side of agent threads (PANT-962). Defaults to handing thread
+   *  messages to `transport`; the isMain block below swaps in the
+   *  CONSUS_THREAD_WEBHOOK_URL webhook when that is set. */
+  threadNotifier?: ThreadNotifier;
+  /** Base URL for the replyUrl in outbound thread events
+   *  (CONSUS_PUBLIC_URL). Unset: derived from each request's host. */
+  publicUrl?: string;
 }
 
 export function buildServer({
@@ -168,6 +177,8 @@ export function buildServer({
   projectsConfigPath = ".pHive/consus-projects.json",
   discoveryRoots = [],
   now,
+  threadNotifier,
+  publicUrl,
 }: BuildServerOptions): FastifyInstance {
   const app = Fastify({ logger: false });
   const db = openDb(dbPath);
@@ -192,6 +203,11 @@ export function buildServer({
   registerSurveyRoutes(app, { db });
   registerQuestionRoutes(app, { db });
   const activeTransport = transportName(transport);
+  registerThreadRoutes(app, {
+    db,
+    notifier: threadNotifier ?? new HarnessThreadNotifier(transport, activeTransport),
+    publicUrl,
+  });
   registerMetricsRoutes(app, { db, repos, transport: activeTransport, now });
 
   // Serves the built web SPA (mdostal/consus#105 — previously GET / was a
@@ -261,7 +277,20 @@ if (isMain) {
   // Harness dispatch — see selectHarnessTransport() for priority order.
   const transport = selectHarnessTransport(process.env);
 
-  const app = buildServer({ dbPath, repos, transport, attachmentsDir, projectsConfigPath, discoveryRoots });
+  // Agent threads (PANT-962): CONSUS_THREAD_WEBHOOK_URL, else the harness above.
+  const threadNotifier = selectThreadNotifier(process.env, transport, transportName(transport));
+  const publicUrl = process.env.CONSUS_PUBLIC_URL?.trim() || undefined;
+
+  const app = buildServer({
+    dbPath,
+    repos,
+    transport,
+    attachmentsDir,
+    projectsConfigPath,
+    discoveryRoots,
+    threadNotifier,
+    publicUrl,
+  });
 
   startHarnessSync(app, { transport, dbPath, env: process.env });
   app.listen({ port, host }).then(() => {
