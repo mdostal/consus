@@ -2227,6 +2227,12 @@ button:focus-visible {
   color: var(--consus-warn);
   border: 1px solid color-mix(in srgb, var(--consus-warn) 40%, transparent);
 }
+.pill--applied {
+  background: color-mix(in srgb, var(--consus-good) 16%, transparent);
+  color: var(--consus-good);
+  border: 1px solid color-mix(in srgb, var(--consus-good) 40%, transparent);
+  text-decoration: none;
+}
 .diagram-view__propose-form {
   display: flex;
   flex-direction: column;

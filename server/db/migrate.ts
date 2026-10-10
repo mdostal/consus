@@ -249,6 +249,11 @@ export function runMigration(db: Database.Database): void {
   // via POST /api/proposals/:id/redeliver. NULL once delivery succeeds.
   addColumnIfMissing(db, "proposals", "delivery_error", "TEXT");
 
+  // consus#203: the pull request the harness opened for an applied change
+  // (Pantheon's result.pr_url), so the item can link to it next to the
+  // applied diff. NULL when the harness reported none.
+  addColumnIfMissing(db, "proposals", "pr_url", "TEXT");
+
   // s6-consus-pantheon-question-adapter: tracks the mapping between a
   // Consus decision item and a Pantheon question ticket/qid pair. One row
   // per question — (ticket_id, qid) is unique so idempotent re-pulls never

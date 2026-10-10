@@ -1,11 +1,12 @@
 import type Database from "better-sqlite3";
-import { reportProposalResult } from "../proposals/store.js";
+import { isPrUrl, reportProposalResult } from "../proposals/store.js";
 import { recordSyncFailure, recordSyncSuccess, safeRecord } from "../pantheon/sync-status.js";
 
 interface ChangeResult {
   status: "applied" | "failed";
   applied_diff?: string;
   reason?: string;
+  pr_url?: string;
   at: string;
 }
 
@@ -96,6 +97,8 @@ export class PantheonResultPuller {
         status: result.status,
         appliedDiff: result.applied_diff,
         reason: result.reason,
+        // A malformed link is dropped rather than failing the whole result.
+        prUrl: isPrUrl(result.pr_url) ? result.pr_url : undefined,
       });
 
       if (!latestAt || change.updated_at > latestAt) {

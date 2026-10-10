@@ -4,6 +4,11 @@
 
 ### Added
 
+- **PR link on applied change proposals** (consus#203, PANT-976). `POST /api/proposals/:id/result`
+  takes an optional `prUrl` (or Pantheon's `pr_url`), stored on the proposal as `pr_url` and
+  returned by `GET /api/proposals` and the audit trail. The Pantheon result puller forwards
+  `result.pr_url`. The history panel and the doc view link to the PR next to the applied change.
+  A result without a PR link behaves as before.
 - **Agent threads** (PANT-962). Comment threads on any doc, doc section, diagram node, decision or
   proposal that an outside agent answers. Each operator message is sent once as a generic
   `consus.thread.message` event to `CONSUS_THREAD_WEBHOOK_URL`, or through the harness transport
