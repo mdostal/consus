@@ -6,7 +6,8 @@ import Database from "better-sqlite3";
 import { runMigration } from "../db/migrate.js";
 import { PantheonResultPuller } from "./pantheon-result-puller.js";
 
-vi.mock("../proposals/store.js", () => ({
+vi.mock("../proposals/store.js", async (importOriginal) => ({
+  isPrUrl: (await importOriginal<typeof import("../proposals/store.js")>()).isPrUrl,
   reportProposalResult: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
@@ -74,6 +75,32 @@ describe("PantheonResultPuller.poll — happy path", () => {
       appliedDiff: undefined,
       reason: "conflict",
     });
+  });
+});
+
+describe("PantheonResultPuller.poll — PR link (consus#203)", () => {
+  it("forwards result.pr_url as prUrl, and drops one that isn't an http(s) URL", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        changes: [
+          { ...change1, result: { ...change1.result, pr_url: "https://github.com/acme/repo/pull/7" } },
+          { ...change2, origin_item_ref: { proposalId: "prop-3" }, result: { ...change1.result, pr_url: "javascript:alert(1)" } },
+        ],
+      }),
+    }));
+
+    const puller = new PantheonResultPuller(PANTHEON_URL, stubDb);
+    await puller.poll();
+
+    expect(reportProposalResult).toHaveBeenCalledWith(stubDb, expect.objectContaining({
+      proposalId: "prop-1",
+      prUrl: "https://github.com/acme/repo/pull/7",
+    }));
+    expect(reportProposalResult).toHaveBeenCalledWith(stubDb, expect.objectContaining({
+      proposalId: "prop-3",
+      prUrl: undefined,
+    }));
   });
 });
 

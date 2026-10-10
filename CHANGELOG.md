@@ -4,6 +4,11 @@
 
 ### Added
 
+- **PR link on applied change proposals** (consus#203, PANT-976). `POST /api/proposals/:id/result`
+  takes an optional `prUrl` (or Pantheon's `pr_url`), stored on the proposal as `pr_url` and
+  returned by `GET /api/proposals` and the audit trail. The Pantheon result puller forwards
+  `result.pr_url`. The history panel and the doc view link to the PR next to the applied change.
+  A result without a PR link behaves as before.
 - **Generic webhook harness transport** (PANT-967). `CONSUS_HARNESS=webhook` +
   `CONSUS_HARNESS_WEBHOOK_URL` POSTs each proposal as `{ "method": "proposeChange", "params": … }`,
   the same JSON the stdio transport writes, to any receiver; results come back through

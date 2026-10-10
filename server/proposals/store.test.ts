@@ -221,6 +221,33 @@ describe("reportProposalResult", () => {
     expect(auditRows[0].new_value).toBe("+ added X (confirmed)");
   });
 
+  it("stores the PR link with an applied result, and leaves it null when none is reported (consus#203)", async () => {
+    const withPr = await fireProposal();
+    const withoutPr = await fireProposal();
+
+    await reportProposalResult(db, { proposalId: withPr, status: "applied", prUrl: "https://github.com/acme/repo/pull/7" });
+    await reportProposalResult(db, { proposalId: withoutPr, status: "applied" });
+
+    const prUrlOf = (id: string) => (db.prepare("SELECT pr_url FROM proposals WHERE id = ?").get(id) as { pr_url: string | null }).pr_url;
+    expect(prUrlOf(withPr)).toBe("https://github.com/acme/repo/pull/7");
+    expect(prUrlOf(withoutPr)).toBeNull();
+  });
+
+  it("a repeated applied result fills in a missing PR link but never replaces one (consus#203)", async () => {
+    const proposalId = await fireProposal();
+    await reportProposalResult(db, { proposalId, status: "applied" });
+
+    const backfill = await reportProposalResult(db, { proposalId, status: "applied", prUrl: "https://github.com/acme/repo/pull/7" });
+    const replace = await reportProposalResult(db, { proposalId, status: "applied", prUrl: "https://github.com/acme/repo/pull/8" });
+
+    expect(backfill).toEqual({ ok: true, alreadyResolved: true });
+    expect(replace).toEqual({ ok: true, alreadyResolved: true });
+    const row = db.prepare("SELECT pr_url FROM proposals WHERE id = ?").get(proposalId) as { pr_url: string | null };
+    expect(row.pr_url).toBe("https://github.com/acme/repo/pull/7");
+    const auditRows = db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE item_id = ?").get("item-1") as { n: number };
+    expect(auditRows.n).toBe(1);
+  });
+
   it("transitions a pending proposal to failed with a reason, and writes no audit_log entry", async () => {
     const proposalId = await fireProposal();
 
