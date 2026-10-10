@@ -102,3 +102,7 @@ dev.log
 # Consus runtime state — uploaded decision attachments (server/storage/),
 # CONSUS_ATTACHMENTS_DIR default (s1-attachment-storage-and-api)
 .pHive/attachments/
+
+# Playwright (PANT-960)
+test-results/
+playwright-report/

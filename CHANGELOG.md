@@ -4,6 +4,16 @@
 
 ### Added
 
+- **Client grouping, client switcher and a cross-client inbox** (PANT-960). Projects get an
+  optional client (group), stored in the database (`project_clients`) so the projects config keeps
+  its `name -> path` shape. Set it with `PATCH /api/projects/:project`, `client` on
+  `POST /api/projects`, or the **Client** field on a project's page; `GET /api/projects` now
+  includes a `clients` map and `GET /api/clients` returns the grouping. The masthead's client
+  switcher (shown once any client exists) scopes the Projects, Docs, Decisions, Events and KB views
+  to that client's repos and is remembered per browser; ungrouped projects show under
+  "All clients". The new **Inbox** tab lists open questions, pending proposals and threads with a
+  new reply across every client (`GET /api/inbox`, `POST /api/inbox/seen`); opening an entry
+  switches to its client and jumps to it. Playwright check: `npm run test:e2e`.
 - **Send out: export, Open in Claude, import back** (PANT-964). Every doc and diagram has a
   **Send out** panel: download as `.md`, self-contained HTML (Mermaid flowcharts rendered to inline
   SVG by a built-in renderer, no scripts or network), `.mmd` or SVG; copy as markdown; or **Open in

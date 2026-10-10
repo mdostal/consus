@@ -34,6 +34,10 @@ import { HarnessWindowDots } from "./theme/skins/HarnessWindowDots";
 import { MastheadMark } from "./theme/BrandMark";
 import { CommandPalette } from "./features/command-palette/CommandPalette";
 import { HarnessConnectBanner } from "./features/harness-connect/HarnessConnectBanner";
+import { ClientScopeProvider, useClientScope } from "./features/clients/ClientScope";
+import { ClientSwitcher } from "./features/clients/ClientSwitcher";
+import { ProjectClientField } from "./features/clients/ProjectClientField";
+import { InboxSection, type InboxEntry } from "./features/clients/InboxSection";
 import "./theme/tokens.css";
 import "./app.css";
 import "./features/decisions/decisions-two-pane.css";
@@ -297,7 +301,7 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
 /* ---------------------------------------------------------------- */
 
 function DecisionsSection({
-  decisions,
+  decisions: allDecisions,
   reload,
 }: {
   decisions: DecisionItem[] | null;
@@ -311,6 +315,8 @@ function DecisionsSection({
   // The survey just created via the "New survey" form, whose view should take
   // keyboard focus when it mounts (PANT-812). Cleared by any other selection.
   const [justCreatedSurveyId, setJustCreatedSurveyId] = useState<string | null>(null);
+  // PANT-960: only the selected client's repos (all of them under "All clients").
+  const { inScope } = useClientScope();
 
   const loadSurveys = useCallback(() => {
     fetch("/api/surveys")
@@ -327,8 +333,9 @@ function DecisionsSection({
     loadSurveys();
   }, [loadSurveys]);
 
-  if (!decisions) return <p className="state">Loading decisions…</p>;
+  if (!allDecisions) return <p className="state">Loading decisions…</p>;
 
+  const decisions = allDecisions.filter((d) => inScope(d.source_repo));
   const open = decisions.filter((d) => !d.decided_at);
   const decided = decisions.filter((d) => d.decided_at);
 
@@ -498,9 +505,11 @@ function ProjectBranchDecisions({ repo, branch }: { repo: string; branch: string
 /* Section: Projects (cross-project + per-project KB views)         */
 /* ---------------------------------------------------------------- */
 
-function ProjectsSection() {
+function ProjectsSection({ initialProject = null }: { initialProject?: string | null }) {
   const [entries, setEntries] = useState<KbEntrySummary[] | null>(null);
-  const [projects, setProjects] = useState<string[] | null>(null);
+  const [allProjects, setProjects] = useState<string[] | null>(null);
+  // PANT-960: the header client switcher scopes which projects are listed.
+  const { inScope, projectClients, reload: reloadClients } = useClientScope();
   // s1 (consus-phase25-project-registration-ux): GET /api/projects's new
   // `paths` map — name -> absolute repo path. Defaults to {} rather than
   // null so a lookup before the first load resolves (never renders a
@@ -508,7 +517,8 @@ function ProjectsSection() {
   // undefined for a project this map hasn't heard of yet.
   const [paths, setPaths] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [project, setProject] = useState<string | null>(null);
+  // PANT-960: an inbox entry opens straight onto its project.
+  const [project, setProject] = useState<string | null>(initialProject);
   const [refreshToken, setRefreshToken] = useState(0);
   const [ingesting, setIngesting] = useState(false);
   const [ingestError, setIngestError] = useState<string | null>(null);
@@ -556,6 +566,17 @@ function ProjectsSection() {
     loadProjects();
   }, [loadProjects]);
 
+  const projects = useMemo(() => allProjects?.filter((p) => inScope(p)) ?? null, [allProjects, inScope]);
+
+  // Switching to a client that doesn't own the open project drops back to
+  // that client's overview instead of showing a project outside the scope.
+  useEffect(() => {
+    if (project !== null && projects !== null && !projects.includes(project)) {
+      setProject(null);
+      setBranch(null);
+    }
+  }, [project, projects]);
+
   async function registerProject(name: string, path: string) {
     setAddingProject(true);
     setAddProjectError(null);
@@ -570,6 +591,7 @@ function ProjectsSection() {
         throw new Error(body.error ?? `HTTP ${res.status}`);
       }
       await loadProjects();
+      reloadClients();
       loadEntries();
       setProject(name);
       setBranch(null);
@@ -619,7 +641,7 @@ function ProjectsSection() {
         </div>
       ) : (
         <>
-          <div className="consus__nav" style={{ marginBottom: 18, marginLeft: 0 }}>
+          <div className="consus__nav" data-testid="project-nav" style={{ marginBottom: 18, marginLeft: 0 }}>
             <button
               className={`consus__nav-btn ${project === null ? "consus__nav-btn--active" : ""}`}
               onClick={() => {
@@ -650,12 +672,17 @@ function ProjectsSection() {
                 project above to see its docs and diagrams even before anything's been approved.
               </div>
             ) : (
-              <GlobalView entries={entries} onSelect={() => {}} />
+              <GlobalView entries={entries.filter((e) => inScope(e.source_repo))} onSelect={() => {}} />
             )
           ) : (
             <>
               <div className="project-actions">
                 {paths[project] ? <ProjectPathField path={paths[project]} /> : null}
+                <ProjectClientField
+                  project={project}
+                  client={projectClients[project] ?? null}
+                  onSaved={() => reloadClients()}
+                />
                 <button type="button" onClick={() => ingestRepo(project)} disabled={ingesting}>
                   {ingesting ? "Ingesting…" : "Ingest repo"}
                 </button>
@@ -1081,7 +1108,10 @@ function DocsSection() {
   // merging the results client-side while attaching `repo` to every doc —
   // never a single unscoped /api/docs/features call, which would lose
   // repo association entirely and make content-fetching ambiguous.
-  const [projects, setProjects] = useState<string[] | null>(null);
+  const [allProjects, setProjects] = useState<string[] | null>(null);
+  // PANT-960: only the selected client's repos.
+  const { inScope } = useClientScope();
+  const projects = useMemo(() => allProjects?.filter((p) => inScope(p)) ?? null, [allProjects, inScope]);
   const [featureData, setFeatureData] = useState<{ features: Feature[]; overview: FeatureDoc[]; brand: FeatureDoc[] } | null>(
     null,
   );
@@ -1282,7 +1312,12 @@ function DocsSection() {
         <h1>Docs</h1>
         <p>Generated briefs, PRDs, architecture, and plans — browsed by feature, rendered in-app.</p>
       </div>
-      <DocSearch onSearch={handleSearch} results={searchResults} onOpen={open} error={searchError} />
+      <DocSearch
+        onSearch={handleSearch}
+        results={searchResults?.filter((r) => inScope(r.repo)) ?? null}
+        onOpen={open}
+        error={searchError}
+      />
       {searchResults === null ? (
         empty ? (
           <div className="empty">
@@ -1325,15 +1360,23 @@ const EVENT_STATUSES: EventStatus[] = ["new", "in_progress", "done", "dismissed"
  * joins the querystring once the operator has actually picked it.
  */
 function EventsSection() {
-  const [events, setEvents] = useState<EventRow[] | null>(null);
+  const [allEvents, setEvents] = useState<EventRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [projects, setProjects] = useState<string[] | null>(null);
+  const [allProjects, setProjects] = useState<string[] | null>(null);
+  // PANT-960: only the selected client's repos, in the filter and the list.
+  const { inScope } = useClientScope();
+  const projects = useMemo(() => allProjects?.filter((p) => inScope(p)) ?? null, [allProjects, inScope]);
+  const events = useMemo(() => allEvents?.filter((ev) => inScope(ev.project)) ?? null, [allEvents, inScope]);
 
   const [project, setProject] = useState<string | null>(null);
   const [status, setStatus] = useState<EventStatus | null>(null);
   const [sort, setSort] = useState<EventSort | null>(null);
   const [order, setOrder] = useState<EventOrder | null>(null);
   const [viewMode, setViewMode] = useState<EventViewMode>("active");
+  // A project filter left over from another client would hide every event.
+  useEffect(() => {
+    if (project !== null && projects !== null && !projects.includes(project)) setProject(null);
+  }, [project, projects]);
 
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -1719,9 +1762,10 @@ function OnboardingScreen({
 /* App shell                                                        */
 /* ---------------------------------------------------------------- */
 
-type Tab = "decisions" | "projects" | "kb" | "docs" | "events";
+type Tab = "inbox" | "decisions" | "projects" | "kb" | "docs" | "events";
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: "inbox", label: "Inbox" },
   { id: "decisions", label: "Decisions" },
   { id: "projects", label: "Projects" },
   { id: "kb", label: "KB" },
@@ -1729,8 +1773,29 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "events", label: "Events" },
 ];
 
+/** PANT-960: the client scope (header switcher) wraps the whole app so every
+ *  section reads the same selected client. */
 export function App() {
+  return (
+    <ClientScopeProvider>
+      <AppContent />
+    </ClientScopeProvider>
+  );
+}
+
+/** Points `?selected=` at a decision before the Decisions tab mounts, which
+ *  is where useSelectedDecisionId reads it. */
+function selectDecisionInUrl(id: string): void {
+  const params = new URLSearchParams(window.location.search);
+  params.set("selected", id);
+  window.history.replaceState(window.history.state, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+}
+
+function AppContent() {
   const [tab, setTab] = useState<Tab>("decisions");
+  // PANT-960: the project an inbox entry jumped to, opened by ProjectsSection.
+  const [projectFocus, setProjectFocus] = useState<string | null>(null);
+  const { inScope, setClient } = useClientScope();
   const [decisions, setDecisions] = useState<DecisionItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [onboardingCheck, setOnboardingCheck] = useState<{ docsEmpty: boolean; kbEmpty: boolean } | null>(null);
@@ -1776,7 +1841,25 @@ export function App() {
     checkOnboarding();
   }, [reload, checkOnboarding]);
 
-  const openCount = decisions?.filter((d) => !d.decided_at).length ?? 0;
+  const openCount = decisions?.filter((d) => !d.decided_at && inScope(d.source_repo)).length ?? 0;
+
+  function selectTab(next: Tab) {
+    setProjectFocus(null);
+    setTab(next);
+  }
+
+  // Opening an inbox entry switches to its client (or "All clients" when it
+  // has none, which is the only scope that shows it), then to the item.
+  function openInboxEntry(entry: InboxEntry) {
+    setClient(entry.client);
+    if (entry.isDecision) {
+      selectDecisionInUrl(entry.itemId);
+      selectTab("decisions");
+    } else if (entry.repo) {
+      setTab("projects");
+      setProjectFocus(entry.repo);
+    }
+  }
 
   const isFirstRun =
     onboardingCheck !== null &&
@@ -1826,13 +1909,14 @@ export function App() {
             <button
               key={t.id}
               className={`consus__nav-btn ${tab === t.id ? "consus__nav-btn--active" : ""}`}
-              onClick={() => setTab(t.id)}
+              onClick={() => selectTab(t.id)}
             >
               {t.label}
               {t.id === "decisions" && openCount > 0 ? <span className="consus__nav-count">{openCount}</span> : null}
             </button>
           ))}
         </nav>
+        <ClientSwitcher />
         <ThemeSkinPicker />
         {/* s4 (consus-phase18): universal across all 3 skins, not decoration
             exclusive to Harness — mounted once, here, so ⌘K/Ctrl+K works
@@ -1847,7 +1931,8 @@ export function App() {
       <main className="consus__main">
         {error ? <p className="state state--err">Could not load decisions: {error}</p> : null}
         {tab === "decisions" ? <DecisionsSection decisions={decisions} reload={reload} /> : null}
-        {tab === "projects" ? <ProjectsSection /> : null}
+        {tab === "inbox" ? <InboxSection onOpen={openInboxEntry} /> : null}
+        {tab === "projects" ? <ProjectsSection key={projectFocus ?? ""} initialProject={projectFocus} /> : null}
         {tab === "kb" ? <KbSection /> : null}
         {tab === "docs" ? <DocsSection /> : null}
         {tab === "events" ? <EventsSection /> : null}

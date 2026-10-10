@@ -3,7 +3,7 @@
   "version": "0.17.2",
   "private": true,
   "type": "module",
-  "description": "Consus — a standalone knowledgebase, graph, and doc editor for any repo's decisions, docs, and architecture",
+  "description": "Consus \u2014 a standalone knowledgebase, graph, and doc editor for any repo's decisions, docs, and architecture",
   "license": "MIT",
   "author": {
     "name": "Mathew Dostal",
@@ -30,6 +30,7 @@
     "start": "node dist-server/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "smoke:startup": "node scripts/smoke-startup.mjs",
     "agent:init": "node scripts/agent-init.mjs init",
     "agent:status": "node scripts/agent-init.mjs status",
@@ -48,6 +49,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@testing-library/jest-dom": "^6.6.2",
     "@testing-library/react": "^16.0.1",
     "@testing-library/user-event": "^14.6.7",
