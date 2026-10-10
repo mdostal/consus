@@ -3367,3 +3367,56 @@ button:focus-visible {
   font-family: var(--consus-font-mono);
   font-size: 14px;
 }
+
+/* ============================================================= */
+/* PANT-964: "Send out" — export, Open in Claude, import back    */
+/* ============================================================= */
+.send-out {
+  margin: 8px 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
+  font-family: var(--consus-font-ui);
+  font-size: 12.5px;
+}
+.send-out summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--consus-ink);
+}
+.send-out__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.send-out__button {
+  font-family: var(--consus-font-ui);
+  background: var(--consus-bg-subtle);
+  color: var(--consus-ink);
+  border: 1px solid var(--consus-line);
+  padding: 5px 12px;
+  border-radius: calc(9px * var(--consus-radius-scale, 1));
+  font-weight: 600;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.send-out__kind {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--consus-ink-muted);
+}
+.send-out__import h5 {
+  margin: 12px 0 4px;
+}
+.send-out__import textarea,
+.send-out__manual-copy {
+  width: 100%;
+  min-height: 90px;
+  font-family: var(--consus-font-mono);
+  font-size: 12px;
+}

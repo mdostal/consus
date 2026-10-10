@@ -54,7 +54,7 @@ test("edits a .mmd diagram, sees the preview update, and saves it as a proposal"
   await expect(view.locator("svg")).toContainText("Database");
 
   await view.getByRole("button", { name: "Edit diagram" }).click();
-  const source = page.getByLabel("Diagram source");
+  const source = page.getByLabel("Diagram source", { exact: true });
   const preview = page.getByTestId("mermaid-editor-preview");
   await expect(preview.locator("svg")).toContainText("Client");
   await expect(preview.locator("svg")).not.toContainText("Cache");
@@ -69,8 +69,9 @@ test("edits a .mmd diagram, sees the preview update, and saves it as a proposal"
   await expect(preview.locator("svg")).toContainText("Cache");
   await expect(preview.getByRole("alert")).toHaveCount(0);
 
-  await page.getByLabel("Description").fill("put a cache in front of the database");
-  await page.getByRole("button", { name: "Save as proposal" }).click();
+  const editor = page.getByTestId("mermaid-editor");
+  await editor.getByLabel("Description", { exact: true }).fill("put a cache in front of the database");
+  await editor.getByRole("button", { name: "Save as proposal" }).click();
   await expect(page.getByText("change proposed…")).toBeVisible();
 
   const proposal = handoffs().find((h) => h.itemId === "doc:demo:docs/diagrams/system.mmd");
