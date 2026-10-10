@@ -6,6 +6,7 @@ import fastifyStatic from "@fastify/static";
 import { openDb } from "./db/connection.js";
 import { runMigration } from "./db/migrate.js";
 import { registerDocRoutes } from "./routes/docs.js";
+import { registerNewDocRoutes } from "./routes/new-docs.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerFsRoutes } from "./routes/fs.js";
 import { registerKbRoutes } from "./routes/kb.js";
@@ -175,6 +176,7 @@ export function buildServer({
   const storageAdapter = createStorageAdapter({ baseDir: attachmentsDir });
 
   registerDocRoutes(app, { db, repos });
+  registerNewDocRoutes(app, { db, repos, transport });
   registerProjectRoutes(app, { db, repos, projectsConfigPath, discoveryRoots });
   registerFsRoutes(app, {});
   registerKbRoutes(app, { db });

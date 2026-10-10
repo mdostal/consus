@@ -4,6 +4,18 @@
 
 ### Added
 
+- **Mermaid diagrams, a diagram editor, and new docs** (PANT-965). ```` ```mermaid ```` fences
+  in a doc now render as diagrams; a syntax error shows mermaid's message and the failing source
+  instead of a blank. Each fence, and every standalone `.mmd` file, opens in a split
+  source/preview editor that re-renders as you type; saving fires a change proposal. Every
+  `.mmd` file in a repo is indexed as a diagram (`phase: "diagram"`, a new `diagrams` bucket in
+  `GET /api/docs/features`, and `format: "mmd"` from `GET /api/docs/content`). "New doc" / "New
+  diagram" in a project pick a path and a template (`GET /api/docs/templates`: blank, ADR,
+  architecture overview, `.mmd` flowchart, `.mmd` sequence) and fire a new-file proposal through
+  `POST /api/docs/new`; its diff starts with a `--- /dev/null` / `+++ b/<path>` header. Consus
+  still never writes the repo. The per-project docs view can now propose doc edits too, the same
+  way the Docs tab does. Adds Playwright browser checks (`npm run test:e2e`).
+
 - **Generic webhook harness transport** (PANT-967). `CONSUS_HARNESS=webhook` +
   `CONSUS_HARNESS_WEBHOOK_URL` POSTs each proposal as `{ "method": "proposeChange", "params": … }`,
   the same JSON the stdio transport writes, to any receiver; results come back through

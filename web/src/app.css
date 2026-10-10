@@ -3230,3 +3230,140 @@ button:focus-visible {
   font-size: 13px;
   font-family: var(--consus-font-ui);
 }
+
+/* ---------------------------------------------------------------- */
+/* PANT-965: rendered mermaid diagrams, the split diagram editor,     */
+/* the .mmd view, and the new doc/diagram form.                       */
+/* ---------------------------------------------------------------- */
+.mermaid-diagram {
+  overflow-x: auto;
+  max-width: 100%;
+  padding: 12px 0;
+}
+.mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+.mermaid-diagram--loading {
+  color: var(--consus-ink-muted);
+  font-family: var(--consus-font-ui);
+  font-size: 13px;
+}
+.mermaid-diagram--error {
+  padding: 12px 14px;
+  border: 1px solid var(--consus-bad);
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
+  background: color-mix(in srgb, var(--consus-bad) 8%, transparent);
+  color: var(--consus-ink);
+}
+.mermaid-diagram__error-title {
+  margin: 0 0 6px;
+  font-family: var(--consus-font-ui);
+  font-weight: 600;
+  color: var(--consus-bad);
+}
+.mermaid-diagram__error-message,
+.mermaid-diagram__source {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  font-family: var(--consus-font-mono);
+  font-size: 12px;
+}
+.doc-renderer__mermaid-block {
+  margin: 12px 0;
+}
+.mermaid-editor,
+.new-doc-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 18px;
+}
+.mermaid-editor__title {
+  margin: 0;
+  color: var(--consus-ink);
+}
+.mermaid-editor__split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+@media (max-width: 800px) {
+  .mermaid-editor__split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.mermaid-editor__source,
+.mermaid-editor__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.mermaid-editor__pane-label {
+  font-family: var(--consus-font-ui);
+  font-size: 12px;
+  color: var(--consus-ink-muted);
+}
+.mermaid-editor__preview {
+  padding: 8px 12px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(10px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg-subtle);
+}
+.mermaid-editor textarea,
+.new-doc-form textarea {
+  min-height: 260px;
+  font-family: var(--consus-font-mono);
+  font-size: 12.5px;
+}
+.mermaid-editor input,
+.mermaid-editor textarea,
+.new-doc-form input,
+.new-doc-form select,
+.new-doc-form textarea {
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--consus-line);
+  border-radius: calc(8px * var(--consus-radius-scale, 1));
+  background: var(--consus-bg-subtle);
+  color: var(--consus-ink);
+}
+.mermaid-editor textarea,
+.new-doc-form textarea {
+  font-family: var(--consus-font-mono);
+}
+.new-doc-form label,
+.mermaid-editor__description {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--consus-font-ui);
+  font-size: 13px;
+}
+.new-doc-form__note {
+  margin: 0;
+  color: var(--consus-ink-muted);
+}
+.mermaid-editor__actions,
+.new-doc-form__actions,
+.new-doc-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.new-doc-actions {
+  margin-bottom: 12px;
+}
+.mmd-diagram-view__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.mmd-diagram-view__path {
+  margin: 0;
+  font-family: var(--consus-font-mono);
+  font-size: 14px;
+}

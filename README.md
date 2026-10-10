@@ -10,8 +10,8 @@ The core loop: **index → open → interact → propose a change → shared-tru
 
 1. **Index** — an operator-triggered, on-demand scan (`POST /api/projects/:project/ingest`, or `POST /api/projects/scan-all` across every configured repo) walks a repo's `.pHive/planning/` and `.pHive/epics/**` and populates the doc index. Deliberately not a background poll.
 2. **Open** — the per-project view shows a project's diagram cascade, its architecture diagram, its docs, and its KB entries together.
-3. **Interact** — read a rendered doc or edit a section in place; drag, relabel, connect, and delete nodes directly on either diagram (a real editable canvas, not a static render) with a live changeset of what's pending.
-4. **Propose a change** — one "Fire to harness" action (from a doc edit or a diagram edit) sends a `{diff, description}` through whatever local harness is configured (`HarnessTransport`); the harness applies it and reports back.
+3. **Interact** — read a rendered doc or edit a section in place; drag, relabel, connect, and delete nodes directly on either diagram (a real editable canvas, not a static render) with a live changeset of what's pending. ```` ```mermaid ```` fences in a doc render as diagrams, and both those and a repo's standalone `.mmd` files open in a split source/preview editor that re-renders as you type. "New doc" / "New diagram" start a new file from a template (blank, ADR, architecture overview, `.mmd` flowchart or sequence).
+4. **Propose a change** — one "Fire to harness" action (from a doc edit or a diagram edit) sends a `{diff, description}` through whatever local harness is configured (`HarnessTransport`); the harness applies it and reports back. Saving a Mermaid edit and creating a new doc or diagram go out the same way: Consus never writes the repo itself.
 5. **Shared-truth KB** — an approved decision or doc becomes a durable, versioned `kb_entries` row, grouped by collection (`marketing` / `boundary-decisions` / `plans` / `artifacts` / `general`).
 
 Pick a visual skin (Granary — the default — Drafting Table, Case Board, or Harness) and a light/dark/system theme from the masthead — four genuinely different looks over the same interactions, not just a recolor. A `⌘K` command palette covers the keyboard-shortcut floor for everything above.
@@ -87,6 +87,10 @@ npm run dev:web      # Vite dev server, proxies /api to :8722
 
 # tests (Vitest — TDD backend / BDD UI)
 npm test
+
+# browser checks (Playwright; builds first, runs against a fixture repo)
+npx playwright install chromium   # once
+npm run test:e2e
 
 # production build + start
 npm run build        # → dist-web/ + dist-server/
