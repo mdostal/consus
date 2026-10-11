@@ -2,6 +2,114 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Client grouping, client switcher and a cross-client inbox** (PANT-960). Projects get an
+  optional client (group), stored in the database (`project_clients`) so the projects config keeps
+  its `name -> path` shape. Set it with `PATCH /api/projects/:project`, `client` on
+  `POST /api/projects`, or the **Client** field on a project's page; `GET /api/projects` now
+  includes a `clients` map and `GET /api/clients` returns the grouping. The masthead's client
+  switcher (shown once any client exists) scopes the Projects, Docs, Decisions, Events and KB views
+  to that client's repos and is remembered per browser; ungrouped projects show under
+  "All clients". The new **Inbox** tab lists open questions, pending proposals and new replies
+  (comments, and agent replies on agent threads) across every client (`GET /api/inbox`, `POST /api/inbox/seen`); opening an entry
+  switches to its client and jumps to it. Playwright check: `e2e/client-switcher.spec.ts`.
+- **Mermaid diagrams, a diagram editor, and new docs** (PANT-965). ```` ```mermaid ```` fences
+  in a doc now render as diagrams; a syntax error shows mermaid's message and the failing source
+  instead of a blank. Each fence, and every standalone `.mmd` file, opens in a split
+  source/preview editor that re-renders as you type; saving fires a change proposal. Every
+  `.mmd` file in a repo is indexed as a diagram (`phase: "diagram"`, a new `diagrams` bucket in
+  `GET /api/docs/features`, and `format: "mmd"` from `GET /api/docs/content`). "New doc" / "New
+  diagram" in a project pick a path and a template (`GET /api/docs/templates`: blank, ADR,
+  architecture overview, `.mmd` flowchart, `.mmd` sequence) and fire a new-file proposal through
+  `POST /api/docs/new`; its diff starts with a `--- /dev/null` / `+++ b/<path>` header. Consus
+  still never writes the repo. The per-project docs view can now propose doc edits too, the same
+  way the Docs tab does. Adds Playwright browser checks (`npm run test:e2e`).
+- **PR link on applied change proposals** (consus#203, PANT-976). `POST /api/proposals/:id/result`
+  takes an optional `prUrl` (or Pantheon's `pr_url`), stored on the proposal as `pr_url` and
+  returned by `GET /api/proposals` and the audit trail. The Pantheon result puller forwards
+  `result.pr_url`. The history panel and the doc view link to the PR next to the applied change.
+  A result without a PR link behaves as before.
+- **Agent threads** (PANT-962). Comment threads on any doc, doc section, diagram node, decision or
+  proposal that an outside agent answers. Each operator message is sent once as a generic
+  `consus.thread.message` event to `CONSUS_THREAD_WEBHOOK_URL`, or through the harness transport
+  when that is unset (the file transport writes `<dir>/threads/*.json`, answered with
+  `node bin/handoff.mjs threads` / `reply`). Agents answer with `POST /api/threads/:id/replies`,
+  optionally linking a proposal that the UI shows inline under **View change**. The UI shows
+  "Waiting for agent…" and receives replies over SSE (`GET /api/threads/stream`), with no polling.
+  Failed deliveries are retried by hand only. Also adds `GET /api/proposals/:id`. The contract is
+  in `docs/agent-integration/threads.md`.
+- **Send out: export, Open in Claude, import back** (PANT-964). Every doc and diagram has a
+  **Send out** panel: download as `.md`, self-contained HTML (Mermaid flowcharts rendered to inline
+  SVG by a built-in renderer, no scripts or network), `.mmd` or SVG; copy as markdown; or **Open in
+  Claude**, which copies a ready-to-paste prompt (content plus Consus item id) for an interactive
+  Claude Code session to publish as an artifact, iterate, and send the final back. The published
+  artifact URL is stored on the item (`items.claude_artifact_url`, audited) and shown as a link.
+  **Import back** (paste or upload `.md`/`.mmd`) creates a proposal against the original item with
+  the computed diff; Consus never writes the repo. Routes: `GET /api/export/doc`,
+  `GET /api/export/diagram`, `GET|PUT /api/items/:id/claude-artifact`, `POST /api/items/:id/import`.
+- **Generic webhook harness transport** (PANT-967). `CONSUS_HARNESS=webhook` +
+  `CONSUS_HARNESS_WEBHOOK_URL` POSTs each proposal as `{ "method": "proposeChange", "params": … }`,
+  the same JSON the stdio transport writes, to any receiver; results come back through
+  `POST /api/proposals/:id/result`. A failed delivery is recorded on the proposal
+  (`delivery_error`) and retried by hand with `POST /api/proposals/:id/redeliver` or the
+  **Retry delivery** button in the history panel. One attempt per dispatch, no retry loop. The
+  payload contract is in `docs/api-reference.md`.
+- **Editable decision context** (PANT-937). `PATCH /api/decisions/:id/context` replaces
+  `research`, `doc` and/or `context` on an unanswered decision (409 once answered, 422 for a bad
+  shape, audited before/after). `DELETE /api/items/:id/artifact-links/:linkId` removes a dead link
+  with an audit row. `POST /api/items/:id/close` closes a decision, or every open member of a
+  survey, for any survey, not only Pantheon-linked ones. It is audited, never deletes, and is
+  idempotent.
+- **Push-in REST seam for Pantheon question tickets** — `POST /api/questions/import` imports a
+  question ticket as a survey (201 create, 200 on repeat, 422 when nothing maps), sharing one
+  import path with the feed puller; `POST /api/questions/:ticket/close` closes a ticket's
+  still-open items (audited, never deleted, idempotent) so a ticket cancelled or answered
+  elsewhere no longer leaves its survey open forever. Closed items leave the pending queue and
+  refuse verdicts with 409.
+- **Pantheon poll switches** (PANT-943). `CONSUS_PANTHEON_POLL` (default `0`) controls the
+  question puller only: it starts when this is `1`. Otherwise question tickets arrive only through
+  Pantheon's push into `POST /api/questions/import` / `POST /api/questions/:ticket/close`.
+  `CONSUS_PANTHEON_RESULT_POLL` (default `1`) controls the change result puller. It stays on
+  because Pantheon doesn't push change results yet; set `0` once it does, and results then arrive
+  only through `POST /api/proposals/:id/result`.
+
+### Removed
+
+- **The Pantheon transport and pullers** (PANT-969, PANT-813 Q1=B). `CONSUS_HARNESS=pantheon`,
+  `PantheonHarnessTransport`, the change result puller, the question puller and their switches
+  (`CONSUS_PANTHEON_POLL`, `CONSUS_PANTHEON_RESULT_POLL`) are gone, so Consus no longer polls
+  anything. Pantheon now uses the generic seams: proposals go out on the webhook transport
+  (`CONSUS_HARNESS_WEBHOOK_URL=<core-api>/api/feed/changes/webhook?origin=consus`), and results and
+  question tickets come in on `POST /api/proposals/:id/result` and `POST /api/questions/import`.
+  `CONSUS_HARNESS=pantheon` now fails at startup instead of silently falling back. The question
+  import moved to `server/questions/import.ts`; `POST /api/questions/:ticket/close` without an
+  `actor` now records `upstream` instead of `pantheon`. The outbound Pantheon pushes
+  (answers, verdict bridge, `decision:needs-context`) stay behind `PANTHEON_API_URL`, and `/health`'s
+  `degraded` and `GET /api/metrics`'s `pantheon` block are now reported whenever it is set (they
+  were keyed to the removed transport). The `question_pull` / `result_pull` directions are gone
+  from `GET /api/metrics`.
+
+### Fixed
+
+- **Native crash loop on startup under Node 24** (#193, PANT-922). better-sqlite3 11.x wraps
+  statements in `node::ObjectWrap`, whose Node 24 destructor aborts with
+  `RemoveEnvironmentCleanupHook … Assertion failed: (env) != nullptr` when V8 finalizes a dropped
+  prepared statement from an idle GC task. That is why the service died shortly after listening
+  and crash-looped on each deploy. Upgraded to better-sqlite3 13 (Node-API, no
+  `node::ObjectWrap`; ships prebuilt binaries incl. linux-musl). Added `npm run smoke:startup`
+  and a `Startup smoke` CI workflow (Node 22 + 24). It boots the built server cold and again onto
+  the same DB in Pantheon mode, and it runs a GC-finalizer probe. It fails on any native
+  assertion or abort.
+- **Question answers sent to Pantheon could be lost without any error** (PANT-807). The
+  `/partial` and `/submit` POSTs never checked the response, so a 4xx/5xx or network error dropped
+  the operator's answer. Answers now go through a `question_deliveries` outbox, written in the
+  same transaction as the verdict. Failed rows record `attempts` and `last_error`, log a warning,
+  and are retried at startup and by the new `POST /api/questions/redeliver`. No retry timer is
+  added. `/submit` is sent at most once per ticket and only after that ticket's partials are
+  delivered. An `accepted` verdict on a free-text or feature-selection question now gets a 400
+  instead of sending the literal string `"accepted"`.
+
 ## [0.17.2] - 2026-09-11
 
 ### Changed

@@ -1,25 +1,79 @@
 # Consus API Reference
 
-Every route Consus's server registers, kept current through `consus-phase21-codex-cli-support`
-(v0.11.0). A harness author should be able to use Consus from this doc alone, without reading
+Every route Consus's server registers, kept current through v0.17.2. `server/routes/api-reference.drift.test.ts`
+fails CI if a route registered in `server/routes/*.ts` has no heading here. A harness author should be able to use Consus from this doc alone, without reading
 source. All routes are relative to the server's base URL (default `http://localhost:8722`,
 override via `PORT`/`HOST`).
 
-Consus is fully standalone — the server has zero live network coupling to any other system. It
-reads and writes only local SQLite (`server/db/`) and the local filesystem (doc scanner, epic/story
-YAML). The one integration seam is `HarnessTransport` (`server/harness/transport.ts`), used by the
-Proposals routes below: a generic `invoke(method, params)` call to whatever local command is
-configured, with no knowledge of what's on the other end.
+By default Consus is standalone: it reads and writes only local SQLite (`server/db/`) and the
+local filesystem (doc scanner, epic/story YAML), and makes no outbound network calls. The
+integration seam is `HarnessTransport` (`server/harness/transport.ts`), used by the Proposals
+routes below. Outbound HTTP happens only when you opt in: a harness transport that calls out
+(`CONSUS_HARNESS=webhook`, see [Harness transports](#harness-transports)), the thread webhook,
+or `PANTHEON_API_URL` for the verdict bridge under `POST /api/decisions/:id/verdict`.
 
 ## Health
 
 ### `GET /health`
-Confirms the server and SQLite connection are up.
+Confirms the server and SQLite connection are up. Always 200 while the process is serving;
+`status` and `sqlite` are stable, so existing healthchecks (Tauri sidecar, Pantheon compose) can
+keep matching on them.
 
 **Response 200:**
 ```json
-{ "status": "ok", "sqlite": "connected" }
+{ "status": "ok", "sqlite": "connected", "transport": "webhook", "degraded": false }
 ```
+
+- `transport`: the active harness transport: `webhook`, `file`, `stdio`, `noop` (none configured)
+  or `custom` (an injected transport).
+- `degraded`: `true` only when `PANTHEON_API_URL` is set and any push direction's last failure is
+  newer than its last success (see `pantheon.directions` under `GET /api/metrics`). Always `false` otherwise.
+
+### `GET /api/metrics`
+Operational snapshot for dashboards (Janus, Pantheon). Computed from SQLite on each request, with
+no background work or caching.
+
+**Response 200:**
+```json
+{
+  "generated_at": "2026-09-27T12:00:00.000Z",
+  "decisions": { "open": 2, "oldest_open_age_seconds": 7200 },
+  "proposals": { "pending": 2, "oldest_pending_age_seconds": 3600, "failed_24h": 1, "applied_24h": 2 },
+  "events": { "pending": 3, "in_review": 1 },
+  "projects": [{ "name": "consus", "last_ingest_at": "2026-09-27T11:55:00.000Z", "doc_count": 2 }],
+  "harness": { "transport": "webhook" },
+  "pantheon": {
+    "degraded": true,
+    "last_error": "pantheon down",
+    "last_error_at": "2026-09-27T11:59:00.000Z",
+    "last_error_direction": "question_push",
+    "directions": {
+      "question_push": { "last_success_at": null, "last_failure_at": "2026-09-27T11:59:00.000Z", "last_error": "pantheon down", "failing": true },
+      "decision_push": { "last_success_at": null, "last_failure_at": null, "last_error": null, "failing": false },
+      "needs_context_push": { "last_success_at": null, "last_failure_at": null, "last_error": null, "failing": false }
+    },
+    "undelivered_answers": { "pending": 0, "failed": 1, "oldest_age_seconds": 300 }
+  }
+}
+```
+
+- `decisions.open`: items with a `decision_payload` and no `decided_at` (the same queue
+  `GET /api/decisions` returns). Ages are whole seconds, or `null` when nothing is queued.
+- `proposals.failed_24h` / `applied_24h`: count by `resolved_at` within the last 24 hours.
+- `events.pending` / `in_review`: events with status `new` / `in_progress`.
+- `projects[]`: every registered project, plus any repo with indexed docs. `last_ingest_at` is
+  when the project was last scanned (ingest or registration), whether or not any doc changed.
+  It is `null` if the project has never been scanned since this field was added.
+- `pantheon` is present only when `PANTHEON_API_URL` is set. Directions: `question_push` (question
+  partial/submit), `decision_push` (`POST /api/events/decisions`), and `needs_context_push`
+  (`POST /api/events/decisions/needs-context`, see `POST /api/decisions`). They're kept in the
+  `sync_status` table, so they survive restarts. A non-2xx response counts as a failure, with
+  the HTTP status in `last_error`. `question_push` is recorded per delivery attempt from the
+  question-answer outbox (`question_deliveries`). The pull directions (`question_pull`,
+  `result_pull`) went with the Pantheon pullers (PANT-969); leftover rows for them are ignored.
+- `pantheon.undelivered_answers`: outbox rows with status `pending` / `failed`, and the age of the
+  oldest one not yet delivered (`null` when the outbox is drained). Retry them with
+  `POST /api/questions/redeliver`.
 
 ## Projects
 
@@ -27,12 +81,30 @@ Confirms the server and SQLite connection are up.
 Lists the configured project names (from `CONSUS_PROJECTS_CONFIG`, default
 `.pHive/consus-projects.json`; defaults to `{ consus: <cwd> }` when no config file exists).
 
-**Response 200:** `{ "projects": string[], "paths": Record<string, string> }` — `paths` maps every
-registered project name to its absolute repo path on disk (same map `CONSUS_PROJECTS_CONFIG`
-loads into), e.g.:
+**Response 200:** `{ "projects": string[], "paths": Record<string, string>, "clients": Record<string, string | null> }`
+— `paths` maps every registered project name to its absolute repo path on disk (same map
+`CONSUS_PROJECTS_CONFIG` loads into); `clients` maps every project to its client (group), or `null`
+when it is ungrouped, e.g.:
 ```json
-{ "projects": ["consus"], "paths": { "consus": "/Users/example/repos/consus" } }
+{ "projects": ["consus"], "paths": { "consus": "/Users/example/repos/consus" }, "clients": { "consus": null } }
 ```
+
+### `PATCH /api/projects/:project`
+Sets or clears a project's client (group). Clients are how the web UI's header switcher scopes the
+docs, decisions, diagrams and events views to several repos at once. Stored in the Consus database
+(`project_clients`), not in `CONSUS_PROJECTS_CONFIG`, so that file keeps its `name -> path` shape.
+
+**Body:** `{ "client": string | null }` — the name is trimmed (max 80 characters); `null` or `""`
+makes the project ungrouped again.
+
+**Response 200:** `{ "project": string, "client": string | null }`. **400** when `client` is missing
+or not a string/null. **404** for an unregistered project.
+
+### `GET /api/clients`
+Registered projects grouped by client, for the header client switcher.
+
+**Response 200:** `{ "clients": [{ "name": string, "projects": string[] }], "ungrouped": string[] }`
+— clients and their projects sorted by name; `ungrouped` lists projects with no client.
 
 ### `GET /api/projects/discover`
 > **Loopback-only.** Built directly on `GET /api/fs/list`'s exposure category (see its callout
@@ -58,12 +130,13 @@ Registers a new project: names it, points it at a repo path on disk, persists th
 `CONSUS_PROJECTS_CONFIG` so it survives a restart, and immediately runs the same scan
 `POST /api/projects/:project/ingest` does.
 
-**Body:** `{ "name": string, "path": string }` — `name` may only contain letters, numbers, `-` and
-`_` (it doubles as a URL segment and part of internal item ids); `path` is resolved to an absolute
-path and must exist on disk.
+**Body:** `{ "name": string, "path": string, "client"?: string | null }` — `name` may only contain
+letters, numbers, `-` and `_` (it doubles as a URL segment and part of internal item ids); `path` is
+resolved to an absolute path and must exist on disk; `client` optionally puts the project in a
+client group (see `PATCH /api/projects/:project`).
 
-**Response 201:** `{ "project": string, "path": string, "docsScanned": number, "eventsCreated": number }`.
-**400** for a missing/invalid `name` or `path` that doesn't exist. **409** if `name` is already
+**Response 201:** `{ "project": string, "path": string, "client": string | null, "docsScanned": number, "eventsCreated": number }`.
+**400** for a missing/invalid `name`, a `path` that doesn't exist, or an invalid `client`. **409** if `name` is already
 registered, or if the resolved `path` is already registered under a *different* name (found live:
 registering the same repo under two names silently produced duplicate decisions, one per name,
 since decision ids are `decision:<project-name>:<file-path>` — this is a real path-identity check,
@@ -89,6 +162,14 @@ last scan, or an unresolved decision-request block, becomes a reviewable event. 
 poll — nothing scans automatically; this is the only way `doc_index` gets populated or refreshed.
 
 **Response 200:** `{ "project": string, "docsScanned": number, "eventsCreated": number }`.
+**404** if `:project` isn't a configured repo.
+
+### `GET /api/projects/:project/branches`
+Lists a registered project's local and remote-tracking branches (`git for-each-ref refs/heads
+refs/remotes`, `*/HEAD` symrefs excluded, sorted). Backs the web UI's branch picker. A repo with
+no other branches (or where git fails) returns an empty list rather than an error.
+
+**Response 200:** `{ "branches": string[] }`, e.g. `{ "branches": ["dev", "main", "origin/dev"] }`.
 **404** if `:project` isn't a configured repo.
 
 ### `GET /api/fs/list?path=<dir>`
@@ -142,9 +223,17 @@ mechanism — there is no background or on-read sync from any external system.
     "recommended": "A"
   },
   "decision_type": "cba",
-  "triage_bucket": "open_question"
+  "triage_bucket": "open_question",
+  "survey_id": null,
+  "supporting_material_count": 0,
+  "needs_context_requested_at": "2026-10-08T05:00:00.000Z"
 }
 ```
+`supporting_material_count` is live attachments + artifact links + research sections that cite at
+least one source + a `doc` pointer (1). The web shell shows a "No context attached" warning when
+it is `0`. `needs_context_requested_at` is when Consus sent `decision:needs-context` for the item
+(see `POST /api/decisions`), or `null` if it never did; the warning then reads "Research requested
+<time>", and disappears once material arrives.
 `decision_type`/`triage_bucket` are populated by a heuristic classifier
 (`server/decision-contract/classifier.ts`), wired into `GET /api/decisions` and
 `POST /api/decisions`: rows that predate classification are classified on read
@@ -195,6 +284,49 @@ matching an option).
 **Response 409:** `{ "error": "item already exists: <id>" }` — no row is modified. A duplicate
 `id` is never silently upserted; the caller owns its own idempotency/dedup scheme.
 
+**Missing context is warn-only (PANT-938).** A decision with no supporting material (the
+`supporting_material_count` rule above) is always created and listed — never blocked or hidden.
+When `PANTHEON_API_URL` is set, Consus also sends a fire-and-forget
+`POST {PANTHEON_API_URL}/api/events/decisions/needs-context` with
+`{ "decision_id", "survey_id", "title", "source_repo", "missing": ["research", "attachments", "doc"] }`
+and stamps the item's `needs_context_requested_at`. It is sent at most once per item, with no
+retry loop or timer; a failed delivery is recorded as `needs_context_push` in
+`GET /api/metrics`' sync status and is not resent. Standalone mode (no `PANTHEON_API_URL`) sends
+nothing. The 201 response carries `supporting_material_count` and `needs_context_requested_at`.
+
+### `PATCH /api/decisions/:id/context`
+Fixes or fills a decision's context after it was created (PANT-937). Replaces whichever of
+`research`, `doc` and `context` the body carries in `decision_payload`; omitted fields are left
+as they are, and `doc: null` removes the pointer. Only while the decision is unanswered: once a
+verdict has decided it (`decided_at` set), the context it was answered against is frozen.
+
+**Request body:** `{ "research"?: ResearchSection[], "doc"?: { repo, path, ref? } | null, "context"?: string, "actor": string }`
+where `ResearchSection` is `{ "title": string, "body": string, "sources"?: string[] }`. A research
+section that cites at least one source counts toward `supporting_material_count`, as does a `doc`
+pointer, so filling them in clears the "No context attached" warning.
+
+Writes one `audit_log` row (`field: "decision_context"`, `old_value`/`new_value` the edited
+fields as JSON before and after).
+
+**Response 200:** the updated decision, same shape as `GET /api/decisions` returns for it.
+**400** without `actor` or with none of `research`/`doc`/`context`. **404** for an unknown
+decision. **409** if the decision is already answered. **422** for an invalid `research`, `doc`
+or `context` shape (nothing is written).
+
+### `POST /api/items/:id/close`
+The generic close (PANT-937): `:id` is a decision id, which closes that decision, or a survey id,
+which closes every open member of the survey. Like `POST /api/questions/:ticket/close`, nothing is
+deleted: each closed item gets `status: "closed"`, an `audit_log` row (`field: "status"`,
+`old_value` the prior status, `new_value: "closed"`), and a comment `Closed: <reason>`.
+Already-decided and already-closed items are left alone. Closed items drop out of the pending
+`GET /api/decisions` queue (still listed under `?all=1`), and a verdict on one returns **409**.
+
+**Body:** `{ "reason": string, "actor": string }`
+
+**Response 200:** `{ id, kind: "item" | "survey", closed_item_ids }`. A repeat call is a no-op
+that returns 200 with `closed_item_ids: []`. **400** without `reason` or `actor`. **404** if `:id`
+is neither an item nor a survey.
+
 ### `POST /api/items/:id/decide`
 Submits a verdict on any item (not just decisions — any item with a `decision_payload`, or
 without one). Writes an append-only `audit_log` entry and marks the item decided.
@@ -224,7 +356,35 @@ summarizing the verdict.
 ```
 
 **Response 200:** `{ "ok": true, "status": "done"|"in_progress", "decided_at": string|null }`.
-**400** if `verdict`/`verdict.kind` is missing. **404** if the item doesn't exist.
+**400** if `verdict`/`verdict.kind` is missing, or if the item is question-linked and the verdict
+has no meaningful answer for it (`accepted` on anything other than a decision-request with a
+`recommended` option, e.g. a feature-selection or free-text question). **404** if the item doesn't
+exist.
+
+**Verdict bridge (only when `PANTHEON_API_URL` is set).** After a verdict that decides the item
+(anything except `rejected_iteration_requested`), Consus calls the Pantheon host without delaying
+the response. The verdict is always recorded locally first and never changes the response.
+- **Question-linked item** (imported through `POST /api/questions/import`): `POST {PANTHEON_API_URL}/api/feed/questions/:ticket/partial`
+  with `{ "qid", "answer", "actor" }`. The first time every decision item in that ticket's survey
+  is decided, a second call `POST {PANTHEON_API_URL}/api/feed/questions/:ticket/submit` with
+  `{ "actor" }` closes the ticket. Submit is sent at most once per ticket (a later reopen and
+  re-decide posts only a partial), and never while that ticket still has an undelivered partial.
+  Both calls go through the `question_deliveries` outbox, written in the same transaction as the
+  verdict: a non-2xx response or network error marks the row `failed` with `attempts` and
+  `last_error`, and logs a warning with the ticket and qid. Failed rows are retried at server
+  startup and by [`POST /api/questions/redeliver`](#post-apiquestionsredeliver).
+- **Any other item**: `POST {PANTHEON_API_URL}/api/events/decisions` with
+  `{ "decisionId", "title", "summary"?, "createdAt" }`. Question-linked items never take this path.
+
+### `POST /api/questions/redeliver`
+Retries every `pending` or `failed` row in the question-answer delivery outbox (see the verdict
+bridge above), oldest first. Also runs once at server startup when `PANTHEON_API_URL` is set.
+There is no background retry timer; call this to retry after the Pantheon host recovers.
+
+**Response 200:** `{ "delivered": number, "failed": number, "skipped": number, "remaining": number }`
+— `skipped` counts rows held back this pass (already in flight, or a submit waiting on an
+undelivered partial); `remaining` is every row still not delivered afterwards.
+**409** if `PANTHEON_API_URL` is not configured.
 
 ## Comments
 
@@ -238,7 +398,112 @@ Appends a comment to an item's thread.
 
 **Request body:** `{ "author"?: string, "body": string }` (`author` defaults to `"Mathew"`)
 
-**Response 201:** `{ id, author, body, createdAt }`. **400** if `body` is empty/missing.
+**Response 201:** `{ id, author, body, createdAt }`. **400** if `body` is empty/missing. Posting also
+marks the thread seen for the inbox (below), so your own comment is never a "new reply".
+
+## Inbox (one queue across every client)
+
+### `GET /api/inbox?client=<name>`
+Everything waiting on the operator, across all clients, newest first:
+
+- `question` — a decision item with no verdict that isn't closed
+- `proposal` — a proposal still `pending` its harness result
+- `reply` — an item whose newest comment arrived after it was last marked seen (or never seen), or
+  an agent thread (`/api/threads`) whose last message is an agent reply newer than that mark
+  (`key` is `reply:thread:<threadId>`; once the operator answers in the thread it drops out).
+  Recording a verdict or posting a comment marks the item seen. When this feature first migrates
+  an existing database, every existing thread is marked seen, so only later replies show up.
+
+`client` (optional) keeps only entries whose repo belongs to that client.
+
+**Response 200:** `{ "items": [{ "kind": "question" | "proposal" | "reply", "key": string,
+"itemId": string, "itemType": string, "isDecision": boolean, "title": string, "repo": string | null,
+"client": string | null, "at": string, "detail": string | null, "proposalId"?: string }] }` —
+`client` is `null` when the repo is ungrouped, unregistered, or unknown (e.g. Pantheon-imported
+questions).
+
+### `POST /api/inbox/seen`
+Marks an item's comments and agent threads seen now, clearing its `reply` entries until something
+newer arrives. `itemId` may also be the item id of an agent thread with no item row. The web
+UI calls this when an inbox entry is opened.
+
+**Body:** `{ "itemId": string }`
+
+**Response 200:** `{ "itemId": string, "seen": true }`. **400** without `itemId`. **404** when no
+item or thread has that id.
+
+## Agent threads (comment threads an outside agent answers)
+
+Threads attach to any item by `itemType` + `itemId` (doc, section, diagram, decision, proposal, …)
+plus an optional `anchor` object. Each operator message is sent out once as a
+`consus.thread.message` event; the agent answers with `POST /api/threads/:id/replies`. The full
+wire contract (event payload, delivery, reply rules, standalone CLI) is in
+[`agent-integration/threads.md`](agent-integration/threads.md).
+
+Every route below returns a **thread**:
+
+```json
+{
+  "id": "<uuid>",
+  "itemType": "doc",
+  "itemId": "doc:consus:docs/index.md",
+  "anchor": { "section": "Install", "line": 4 } | null,
+  "state": "awaiting_agent" | "delivery_failed" | "answered",
+  "createdAt": "<iso>",
+  "updatedAt": "<iso>",
+  "messages": [
+    {
+      "id": 1, "threadId": "<uuid>", "role": "operator" | "agent", "author": "Mathew", "body": "…",
+      "proposalId": null, "proposalUrl": null, "proposal": null,
+      "delivery": { "status": "pending" | "delivered" | "failed", "error": null, "target": "webhook", "attemptedAt": "<iso>" } | null,
+      "createdAt": "<iso>"
+    }
+  ]
+}
+```
+
+### `GET /api/threads?itemType=<type>&itemId=<id>`
+Threads for an item, oldest first, each with its messages. Both filters are optional.
+
+### `GET /api/threads/stream?itemType=<type>&itemId=<id>`
+Server-sent events. Each change to a matching thread (new thread, operator message, delivery
+outcome, agent reply) is pushed as `event: thread` with the full thread JSON as `data`. Push only,
+nothing polls; the UI keeps one stream open per item it shows.
+
+### `GET /api/threads/:id`
+One thread. **404** for an unknown id.
+
+### `POST /api/threads`
+Starts a thread and sends its first message out.
+
+**Request body:** `{ "itemType": string, "itemId": string, "body": string, "anchor"?: object, "author"?: string }`.
+`itemType` is lowercase letters, digits, `-` or `_` (max 32). `anchor` is a JSON object of at most
+2 KB. `author` defaults to `Mathew`.
+
+**Response 201:** the thread after the delivery attempt. **400** on a missing/invalid field.
+
+### `POST /api/threads/:id/messages`
+The operator's next message in a thread; sent out the same way.
+
+**Request body:** `{ "body": string, "author"?: string }`. **Response 201:** the thread. **404** for an
+unknown thread, **400** for an empty body.
+
+### `POST /api/threads/:id/replies`
+The inbound side: an agent appends its reply. The `replyUrl` in every outbound event points here.
+
+**Request body:** `{ "author": string, "body": string, "proposalId"?: string, "proposalUrl"?: string }`.
+`proposalId` links a proposal the agent opened; when it names a proposal in this Consus, the
+message's `proposal` field carries `{ id, status, description, targetType }` and the UI shows the
+diff inline. `proposalUrl` (absolute URL) is shown as an external link.
+
+**Response 201:** the thread (`state: "answered"`). **404** for an unknown thread, **400** when
+`author` or `body` is missing, `proposalId` is empty, or `proposalUrl` is not absolute.
+
+### `POST /api/threads/:id/redeliver`
+Manual retry when the thread's latest operator message failed to deliver. One attempt, no timer.
+
+**Response 200:** the thread after the attempt. **404** for an unknown thread, **409** when there is
+nothing to redeliver.
 
 ## Docs (generated briefs/PRDs/architecture/specs)
 
@@ -266,8 +531,59 @@ Optional `ref` reads the doc's content at that git ref instead of the working tr
 ref:path`, via `execFileSync`'s argument-array form — no shell, immune to metacharacter
 injection). **400** if `ref` doesn't resolve (bad ref, path not present at that ref).
 
-**Response 200:** `{ "repo": string, "path": string, "format": "md"|"html", "content": string, "itemId": string, "ref"?: string }`
-(`ref` present only when the request included one). **404** if `repo` isn't configured.
+**Response 200:** `{ "repo": string, "path": string, "format": "md"|"html"|"mmd", "content": string, "itemId": string, "phase": string|null, "ref"?: string }`
+(`ref` present only when the request included one). `phase` is the doc's current `doc_index`
+tag (`planning`, `overview`, `brand`, `diagram`, …), or `null` if the working-tree file isn't indexed.
+`format` is `mmd` for a standalone Mermaid diagram file (`.mmd`).
+**404** if `repo` isn't configured or the file doesn't exist; **400** if `path` escapes the repo.
+
+### `GET /api/docs/features?project=<name>`
+The same `doc_index` rows as `GET /api/docs`, regrouped for the feature-review UI: one bucket per
+epic, plus separate `overview`, `brand` (`.pHive/brand/**`) and `diagrams` (every `.mmd` file)
+buckets. Omit `project` for every configured project. Never scans disk.
+
+**Response 200:**
+```json
+{
+  "features": [{ "epic": "consus-phase24", "docCount": 2, "docs": [{ "file_path": "...", "content_hash": "...", "last_scanned_at": "..." }] }],
+  "overview": [{ "file_path": "...", "content_hash": "...", "last_scanned_at": "..." }],
+  "brand": [],
+  "diagrams": [{ "file_path": "docs/architecture/system.mmd", "content_hash": "...", "last_scanned_at": "..." }]
+}
+```
+
+### `GET /api/docs/templates`
+The starter templates for a new doc or diagram: `blank`, `adr`, `architecture-overview` (all
+`.md`), and `mmd-flowchart`, `mmd-sequence` (`.mmd`).
+
+**Response 200:** `{ "templates": [{ "id": string, "label": string, "kind": "doc"|"diagram", "extension": ".md"|".mmd", "content": string }] }`
+
+### `POST /api/docs/new`
+Proposes a new doc or diagram file. Consus does not create the file: it fires a change proposal
+through the active harness transport, like any other edit, and the harness creates the file.
+
+**Body:** `{ "repo": string, "path": string, "template"?: string, "content"?: string, "description"?: string, "requestedBy"?: string }`
+— `path` is repo-relative and must end in `.md` or `.mmd`. `content` (when given) replaces the
+template's starter text. `description` defaults to `Create <path>`.
+
+The proposal targets item `doc:<repo>:<path>` with `targetType: "doc"`. Its diff marks a new
+file: a `--- /dev/null` / `+++ b/<path>` header, then every line prefixed `+ `.
+
+**Response 201:** `{ "repo": string, "path": string, "itemId": string, "proposal": <proposal row> }`.
+**400** if `repo`/`path` is missing, `path` escapes the repo or has another extension, the
+template is unknown or doesn't match the extension, or neither `template` nor `content` is given.
+**404** if `repo` isn't configured. **409** if the file already exists or a proposal for that
+path is still pending.
+
+### `GET /api/docs/diff?repo=<name>&path=<file_path>&ref=<git-ref>&base=<git-ref>`
+What changed in one doc on `ref` relative to `base` (`git diff <base>...<ref> -- <path>`).
+`base` defaults to the repo's default branch, read from the local `refs/remotes/origin/HEAD`
+symref; it is never assumed to be `main`.
+
+**Response 200:** `{ "diff": string|null }` — `null` when the doc is identical on both refs.
+**400** if `path` or `ref` is missing, a ref doesn't resolve, or `base` was omitted and the
+default branch can't be determined. **404** if `repo` isn't configured or the doc doesn't exist
+on one of the refs.
 
 ### `GET /api/docs/resolve?text=<free-form text>`
 Given free-form text (e.g. a doc's prose), extracts path-shaped substrings and resolves each
@@ -301,6 +617,10 @@ are served separately, see `GET /api/design-assets` below. A design topic whose 
 real feature's epic folds into that feature's existing doc group in
 `GET /api/docs/features` (below), rather than appearing as a separate bucket. A repo with no
 `.pHive/design/` directory is entirely unaffected — this scan root is purely additive.
+
+Every `.mmd` file anywhere in the repo is indexed as a diagram (`phase: "diagram"`, `epic: null`),
+skipping `.git`, `node_modules`, and build/vendor directories (`dist`, `dist-server`, `build`,
+`coverage`, `target`, `vendor`, `.venv`, `venv`).
 
 ### Brand manifest decision synthesis (`.pHive/brand/logo-concepts.yaml`)
 As of `consus-phase29-brand-decision-review` (s4), every scan (`POST /api/projects`,
@@ -445,6 +765,42 @@ Returns one survey and its current member decisions.
 **Response 200:** `{ id, title, description, created_at, members: [...] }` (same member shape as
 above). **404** if the survey doesn't exist.
 
+## Questions (push-in seam for question tickets)
+
+An external system (Pantheon, or anything else) pushes a question ticket in, or tells Consus the
+ticket was cancelled or answered elsewhere, over plain REST. Consus never polls for questions
+(`importQuestionTicket` in `server/questions/import.ts`). Answers to an imported ticket go back
+through the question-answer outbox when `PANTHEON_API_URL` is set — see
+`POST /api/decisions/:id/verdict` and `POST /api/questions/redeliver`.
+
+### `POST /api/questions/import`
+Imports one question ticket as a survey with one decision item per question that maps to an answer
+shape (`single-select` with ≥2 options → `dostal:decision-request/v1`, `multi` with ≥1 option →
+`dostal:feature-selection/v1`, `free-text` → `dostal:free-text/v1`; anything else is skipped).
+
+**Body:** `{ "ticket_id": string, "identifier"?: string, "questions": [{ "qid": string, "text": string, "kind": string, "options"?: string[] }] }`
+— Pantheon pushes this shape from its question tickets.
+
+**Response 201:** `{ ticket_id, survey_id, item_ids }` on first import. **200**
+`{ ticket_id, survey_id }` if the ticket is already imported — nothing is
+written. **422** if no question maps to a decision shape. **400** for a missing `ticket_id` or
+malformed `questions`.
+
+### `POST /api/questions/:ticket/close`
+Closes every still-open item linked to the ticket, for a ticket cancelled or answered outside
+Consus. Nothing is deleted: each closed item gets `status: "closed"`, an `audit_log` row
+(`field: "status"`, `old_value` the prior status, `new_value: "closed"`), and a comment
+`Closed upstream: <reason>`. Already-decided items are left alone. Closed items drop out of the
+pending `GET /api/decisions` queue (still listed under `?all=1`), and a verdict on one returns
+**409**.
+
+**Body:** `{ "reason": string, "actor"?: string }` — `actor` defaults to `"upstream"` (Pantheon
+sends `"pantheon"`).
+
+**Response 200:** `{ ticket_id, survey_id, closed_item_ids }`. A repeat call is a no-op that
+returns 200 with `closed_item_ids: []`. **404** if no survey is linked to the ticket. **400**
+without a `reason`.
+
 ## Proposals (propose a change, fire it to a harness)
 
 Consus never writes `.pHive`/repo content directly. Editing a diagram or a doc means composing a
@@ -454,24 +810,64 @@ what's on the other end. A harness applies the real change and reports back via
 `POST /api/proposals/:id/result`. One route family shared by decisions, diagrams, and docs —
 `targetType` is a label, never branched on server-side.
 
+**Transport selection** (env, mutually exclusive, first match wins — full detail under
+[Harness transports](#harness-transports)):
+- `CONSUS_HARNESS=webhook` (requires `CONSUS_HARNESS_WEBHOOK_URL`) — **webhook transport**. POSTs
+  each proposal to the URL; the receiver reports results via `POST /api/proposals/:id/result`.
+- `CONSUS_HARNESS_FILE_DIR` — **file transport** (standalone, no Pantheon). Writes each proposal as
+  `<dir>/<proposalId>.json`. A harness reads those files and posts results via `node bin/handoff.mjs`.
+- `CONSUS_HARNESS_COMMAND` — **stdio transport**. Spawns the given command; `CONSUS_HARNESS_ARGS`
+  (comma-separated) adds CLI arguments.
+- _(none set)_ — NOOP transport. Proposals fail immediately with `NO_ADAPTER`.
+
 ### `POST /api/proposals`
 Fires a new change proposal.
 
 **Request body:** `{ "itemId": string, "targetType": string, "diff": string, "description": string, "requestedBy": string }`
 
 **Response 201:** the created proposal row, `status: "pending"` — or already `"failed"` with a
-`failure_reason` if dispatch to the harness itself failed (e.g. no harness configured).
+`failure_reason` and `delivery_error` if dispatch to the harness itself failed (e.g. no harness
+configured, or the webhook answered non-2xx). Such a proposal can be retried with
+`POST /api/proposals/:id/redeliver`.
 **404** if `itemId` doesn't reference an existing item.
 
 ### `POST /api/proposals/:id/result`
 Called by the harness once it's actually applied (or failed to apply) the proposed change.
 
-**Request body:** `{ "status": "applied"|"failed", "appliedDiff"?: string, "reason"?: string }`
+**Request body:** `{ "status": "applied"|"failed", "appliedDiff"?: string, "reason"?: string, "prUrl"?: string }`
 
 On `"applied"`, writes an `audit_log` entry (`field: "proposal:<targetType>"`, `new_value` the
 applied diff). On `"failed"`, no audit_log entry.
 
-**Response 200:** the updated proposal row. **404** for an unknown proposal id.
+`prUrl` (also accepted as `pr_url`) is the pull request the harness opened for the change. It is
+stored on the proposal as `pr_url` and shown as a link on the item; it must be an `http(s)` URL
+(**400** otherwise) and is ignored on `"failed"`. Without it, `pr_url` stays `null`.
+
+Only a `pending` proposal changes. The endpoint is safe to retry: reporting the same status again
+for a proposal that is already resolved does nothing (no second `audit_log` row, `resolved_at` and
+the diff/reason are left as they are) and returns the current row with 200. The one exception: a
+repeated `"applied"` that carries a PR link fills in `pr_url` if the proposal has none yet; an
+existing `pr_url` is never replaced.
+
+**Response 200:** the updated proposal row, or the unchanged row for a repeated identical result.
+**404** for an unknown proposal id. **409** if the proposal is already resolved with the other
+status (`applied` then `failed`, or `failed` then `applied`). The row stays unchanged and the body is
+`{ "error": "proposal <id> is already <status>; cannot report <status>" }`. A proposal whose
+dispatch failed is already `failed`, so a later `applied` for it also gets 409.
+
+### `POST /api/proposals/:id/redeliver`
+Manual retry for a proposal whose dispatch never reached the harness (`status: "failed"` with
+`delivery_error` set). Resets it to `pending` and dispatches the original payload once more
+through the active transport. One attempt per call: Consus never retries on its own.
+
+**Request body:** none.
+
+**Response 200:** the proposal row after the attempt: `pending` with `delivery_error: null` when
+delivery succeeded, or `failed` again with the new `delivery_error`. **404** for an unknown
+proposal id. **409** when there is no delivery failure to retry (the proposal is pending, applied,
+or failed by the harness's own report).
+
+The audit-trail panel shows a **Retry delivery** button on such proposals that calls this route.
 
 ### `GET /api/proposals?itemId=<id>`
 Lists every proposal for an item, most recent first — pending, applied, and failed all included
@@ -479,11 +875,13 @@ Lists every proposal for an item, most recent first — pending, applied, and fa
 
 **Response 200:** array of proposal rows. **400** if `itemId` is omitted.
 
-**Harness transport config (env vars, server startup only):** `CONSUS_HARNESS_COMMAND` — if unset,
-the server uses `NOOP_HARNESS_TRANSPORT` and every proposal resolves to `"failed"` immediately
-with a clear reason (no startup error). If set, Consus spawns that command per proposal
-(`StdioHarnessTransport`) and speaks one JSON object per line over stdin/stdout.
-`CONSUS_HARNESS_ARGS` — comma-separated args for that command.
+### `GET /api/proposals/:id`
+One proposal row by id. A thread reply's **View change** link opens this.
+
+**Response 200:** the proposal row. **404** for an unknown id.
+
+With no transport configured the server uses `NOOP_HARNESS_TRANSPORT` and every proposal
+resolves to `"failed"` immediately with a clear reason (no startup error).
 
 ## Diagrams (epic/story cascade + architecture)
 
@@ -533,6 +931,77 @@ Mermaid `graph TD` source string, one shallow (top-level dirs only) and one rich
 design-doc mentions). **404** with `{ "error": "unknown repo: <repo>" }` for an unconfigured repo
 — the same shape the cascade endpoint above uses.
 
+## Send out (export, Open in Claude, import back)
+
+PANT-964. Every doc and diagram can leave Consus as a file, go to an interactive Claude session,
+and come back as a proposal. Consus still never writes a repo: import-back only ever creates a
+proposal through the configured harness transport, exactly like `POST /api/proposals`.
+
+Diagram `kind` is one of `cascade` (the epic/story org-tree), `architecture` (top-level dirs) or
+`architecture-full` (depth-2 plus design-doc mentions). All three are Mermaid flowcharts; SVG and
+HTML are rendered server-side by a built-in flowchart renderer, so exported files need no
+mermaid.js, CDN or network to display.
+
+### `GET /api/export/doc?repo=<name>&path=<file_path>&format=<md|html|claude-prompt>`
+Exports one doc. `format` defaults to `md`.
+
+- `md`: the raw source, byte for byte, as an attachment named after the file (an `.html` doc's
+  raw source is its HTML).
+- `html`: a self-contained page (inline CSS, no scripts, no external URLs). Markdown is rendered;
+  each ` ```mermaid ` block becomes an inline SVG with its source in a `<details>` beside it (a
+  non-flowchart Mermaid block is kept as visible source). The page carries the item id in
+  `<meta name="consus-item-id">` and its footer. An `.html` doc that is already a full page ships
+  unchanged.
+- `claude-prompt`: the "Open in Claude" prompt as inline `text/plain` (no download header): the
+  content, its Consus item id, and the `PUT …/claude-artifact` and `POST …/import` calls a Claude
+  Code session uses to record the published artifact and send the final back as a proposal.
+
+Upserts the doc's item (`doc:<repo>:<path>`). **400** for a missing `repo`/`path`, an unknown
+`format` or a path escaping the repo; **404** for an unknown repo or missing file.
+
+### `GET /api/export/diagram?repo=<name>&kind=<kind>&format=<mmd|svg|md|html|claude-prompt>`
+Exports one diagram. `kind` defaults to `cascade`, `format` to `mmd`. `mmd` is the Mermaid
+source (for the cascade, identical to the UI's source panel); `svg` a standalone SVG; `md` a
+markdown file with the source in a ` ```mermaid ` fence; `html` a self-contained page with the
+SVG and the source; `claude-prompt` as above, with `kind` included in the import call.
+Downloads are named `<repo>-<kind>.<ext>`. Upserts `diagram:<repo>`. **400** for a missing repo,
+unknown kind or format; **404** for an unknown repo.
+
+### `GET /api/items/:id/claude-artifact`
+The claude.ai artifact URL this item was published as from an "Open in Claude" session
+(`items.claude_artifact_url`). **Response 200:** `{ "itemId": string, "url": string | null }`.
+**404** for an unknown item.
+
+### `PUT /api/items/:id/claude-artifact`
+Sets the URL, or clears it with `url: null` / `""`. Writes an `audit_log` row
+(`field: "claude_artifact_url"`, old and new value).
+
+**Request body:** `{ "url": "https://…" | null, "actor": string }`
+
+**Response 200:** `{ "itemId": string, "url": string | null }`. **400** for a missing `actor` or a
+URL that isn't `https://`; **404** for an unknown item.
+
+### `POST /api/items/:id/import`
+Import back: the edited content (pasted or uploaded) becomes a proposal against a `doc` or
+`diagram` item. The diff is a line diff (the same format the in-app editor sends) between the
+item's current content and the import. Before diffing, the import is normalized: CRLF → LF; for
+a doc, a whole-document ` ```markdown ` fence is stripped; for a diagram, the first
+` ```mermaid ` block is used when the import is markdown; the trailing newline follows the
+original's.
+
+**Request body:**
+```json
+{ "content": "string", "filename": "arch.md", "description": "what changed", "requestedBy": "mathew", "kind": "cascade" }
+```
+`filename` and `description` are optional and only shape the proposal description
+(`Imported from outside Consus (<filename | pasted content>): <description>`). `kind` applies to
+diagram items only (default `cascade`).
+
+**Response 201:** the new proposal row, as `POST /api/proposals` returns it (`target_type` is the
+item's type). **400** for missing `content`/`requestedBy`, an unknown diagram `kind`, or an item
+that is neither a doc nor a diagram; **404** for an unknown item, repo or file; **422** when the
+import is identical to the current content (nothing to propose).
+
 ## Audit Trail (the shared history panel's data source)
 
 ### `GET /api/items/:id/audit-trail`
@@ -546,7 +1015,7 @@ at from shape alone.
 ```json
 [
   { "kind": "audit", "id": 1, "actor": "mathew", "field": "status", "old_value": "open", "new_value": "approved", "timestamp": "..." },
-  { "kind": "proposal", "id": "uuid", "target_type": "diagram", "description": "...", "status": "applied", "requested_by": "mathew", "timestamp": "...", "applied_diff": "...", "failure_reason": null }
+  { "kind": "proposal", "id": "uuid", "target_type": "diagram", "description": "...", "status": "applied", "requested_by": "mathew", "timestamp": "...", "applied_diff": "...", "failure_reason": null, "pr_url": "https://github.com/..." }
 ]
 ```
 
@@ -609,3 +1078,138 @@ Artifact's content.
 Lists an item's linked Artifacts.
 
 **Response 200:** array of `{ id, url, label }`
+
+### `DELETE /api/items/:id/artifact-links/:linkId`
+Removes one link (PANT-937), where `:linkId` is the numeric `id` from the list above. The link
+row is deleted; an `audit_log` row (`field: "artifact_link"`, `old_value` the removed
+`{ id, url, label }` as JSON, `new_value: null`) keeps the history.
+
+**Request:** `actor` in the JSON body (`{ "actor": string }`) or as `?actor=<name>`.
+
+**Response 204** (no body). **400** without `actor`. **404** if the link doesn't exist on this item.
+
+## Attachments
+
+Files attached to an item (decision, doc, …). Stored under `CONSUS_ATTACHMENTS_DIR` (default
+`.pHive/attachments`).
+
+### `POST /api/items/:id/attachments`
+Uploads one file as `multipart/form-data`: a file part plus a required `actor` form field.
+Allowed extensions: `.png .jpg .jpeg .gif .pdf .txt .md .csv .json .zip`, max 10 MB. The stored
+`mime_type` is derived from the extension, never from the client.
+
+**Response 201:** `{ "id", "item_id", "file_name", "mime_type", "size", "created_at" }`.
+**400** if no file, the extension isn't allowed, or `actor` is missing. **404** if the item
+doesn't exist. **413** if the file is too large.
+
+### `GET /api/items/:id/attachments`
+Lists an item's non-deleted attachments, oldest first.
+
+**Response 200:** array of `{ id, item_id, file_name, mime_type, size, actor, created_at }`.
+
+### `GET /api/attachments/:id`
+Downloads an attachment's bytes with its stored `Content-Type` and `X-Content-Type-Options:
+nosniff`. PNG/JPEG/GIF/PDF are served `inline`; everything else as `attachment`.
+
+**404** if the attachment is unknown, deleted, or missing from storage.
+
+### `DELETE /api/attachments/:id`
+Deletes the stored file and tombstones the row (`deleted_at` set; it no longer appears in list or
+download). Idempotent for an already-deleted attachment.
+
+**Response 204** (no body). **404** if the attachment id was never known.
+
+## Harness transports
+
+Selected once at server startup from env (`selectHarnessTransport` in `server/index.ts`).
+Mutually exclusive; the first match wins.
+
+| Priority | Env | Transport | Behaviour |
+|---|---|---|---|
+| 1 | `CONSUS_HARNESS=webhook` + `CONSUS_HARNESS_WEBHOOK_URL` | Webhook | `POST {CONSUS_HARNESS_WEBHOOK_URL}` per proposal, one attempt. Startup fails if the URL is missing or invalid. |
+| 2 | `CONSUS_HARNESS_FILE_DIR=<dir>` | File | Writes `<dir>/<proposalId>.json`; a harness reads it with the handoff CLI below. |
+| 3 | `CONSUS_HARNESS_COMMAND=<cmd>` (+ `CONSUS_HARNESS_ARGS`, comma-separated) | Stdio | Spawns the command per proposal, one JSON object per line over stdin/stdout. |
+| 4 | _(none)_ | NOOP | Proposals fail immediately with `NO_ADAPTER`. |
+
+### Proposal payload contract
+
+The webhook, stdio, and file transports all carry the same `proposeChange` call. Webhook and stdio
+send it as one envelope (webhook: the request body; stdio: one line on the child's stdin):
+
+```json
+{
+  "method": "proposeChange",
+  "params": {
+    "proposalId": "3f6c0f1e-…",
+    "itemId": "diagram:consus",
+    "targetType": "diagram",
+    "diff": "- old line\n+ new line",
+    "description": "removed the load balancer node",
+    "sourceRepo": "consus"
+  }
+}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `method` | `"proposeChange"` | The only method Consus sends today. |
+| `params.proposalId` | string (UUID) | Proposal id. Use it to report back: `POST /api/proposals/:proposalId/result`. |
+| `params.itemId` | string | The Consus item the change is for. |
+| `params.targetType` | string | A label (`decision`, `diagram`, `doc`, …). Consus never branches on it. |
+| `params.diff` | string | The proposed change. A new file (`POST /api/docs/new`) starts with a `--- /dev/null` / `+++ b/<path>` header. |
+| `params.description` | string | Human-readable summary of the change. |
+| `params.sourceRepo` | string \| null | The item's source repo, or `null` when it has none. |
+
+The file transport writes `params` alone (pretty-printed) to `<dir>/<proposalId>.json`.
+
+### Webhook transport (`CONSUS_HARNESS=webhook`)
+
+For any receiver (Pantheon or anything else) that should get proposals pushed over HTTP:
+
+- **Request.** `POST {CONSUS_HARNESS_WEBHOOK_URL}` with `Content-Type: application/json` and the
+  envelope above as the body. 30-second timeout.
+- **Accepted.** Any 2xx. The body is optional; if it is JSON with a `ticket_id` string, Consus
+  stores it as the proposal's `harness_ticket_id`. The proposal stays `pending`.
+- **Delivery failure.** A non-2xx, a timeout, or a network error. The proposal is set to `failed`
+  with `failure_reason` and `delivery_error` both holding the cause, for example
+  `INTERNAL_ERROR: HTTP 502: bad gateway`, `AUTH_FAILURE: HTTP 401`, `RATE_LIMIT: HTTP 429`,
+  or `TIMEOUT: webhook did not respond: <url>`. There is one attempt and no retry loop: retry by
+  hand with `POST /api/proposals/:id/redeliver` (the **Retry delivery** button in the history panel).
+- **Results.** The receiver reports the outcome through `POST /api/proposals/:id/result`
+  (`applied` / `failed`). Nothing is polled.
+
+`CONSUS_HARNESS=pantheon` (the Pantheon board-feed transport and its 60-second result and question
+pullers) was removed (PANT-969): setting it now fails at startup. Point the webhook transport at
+Pantheon core-api instead (`CONSUS_HARNESS_WEBHOOK_URL=<core-api>/api/feed/changes/webhook?origin=consus`);
+Pantheon pushes results to `POST /api/proposals/:id/result` and question tickets to
+`POST /api/questions/import`.
+
+### `PANTHEON_API_URL`
+
+Not a transport. When set, it enables three outbound pushes to Pantheon core-api
+(`server/pantheon/`), each reported under `pantheon` in `GET /api/metrics`:
+
+- `decision_push`: the verdict bridge for unlinked decisions (see `POST /api/decisions/:id/verdict`),
+- `question_push`: answers to imported question tickets, through the `question_deliveries` outbox
+  (same section; retry with `POST /api/questions/redeliver`),
+- `needs_context_push`: `decision:needs-context` for a decision created without supporting material
+  (see `POST /api/decisions`),
+
+and a check in `POST /api/projects/:project/ingest` where a path shaped like
+`<REPOS_BASE_DIR>/<tenant>/<repo>` (`REPOS_BASE_DIR` defaults to `/repos`) is first validated
+against `GET {PANTHEON_API_URL}/api/repos/tenants/:tenant/repos/:repo/path`. None of these poll.
+
+### Handoff CLI (file transport)
+
+`bin/handoff.mjs` (also `npm run handoff`, or the `consus-handoff` bin) is the harness side of the
+file transport:
+
+```bash
+node bin/handoff.mjs list                                # pending handoffs, with diffs
+node bin/handoff.mjs result <proposalId> applied         # POST /api/proposals/:id/result, then delete the file
+node bin/handoff.mjs result <proposalId> failed "reason"
+```
+
+Env: `CONSUS_HANDOFF_DIR` (default `.pHive/handoffs`; set it to the same dir as
+`CONSUS_HARNESS_FILE_DIR`), `CONSUS_URL` (default `http://localhost:${PORT}`), `PORT` (default
+`8722`).

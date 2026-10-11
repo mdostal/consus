@@ -7,12 +7,12 @@
  * for the full explanation). None of this file's other tests depend on
  * jsdom-specific globals, so forcing node for the whole file is safe.
  */
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, afterEach, vi } from "vitest";
 import { existsSync, unlinkSync, mkdtempSync, writeFileSync, mkdirSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
-import { buildServer } from "./index.js";
+import { buildServer, selectHarnessTransport } from "./index.js";
 
 describe("GET /health", () => {
   const dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");

@@ -203,6 +203,9 @@ export function runMigration(db: Database.Database): void {
   addColumnIfMissing(db, "items", "decision_payload", "TEXT");
   addColumnIfMissing(db, "items", "decision_type", "TEXT");
   addColumnIfMissing(db, "items", "triage_bucket", "TEXT");
+  // PANT-964: the claude.ai artifact a doc/diagram was published as from an
+  // "Open in Claude" session, shown as a link on the item. NULL = none yet.
+  addColumnIfMissing(db, "items", "claude_artifact_url", "TEXT");
   addColumnIfMissing(db, "kb_entries", "source_repo", "TEXT");
   addColumnIfMissing(db, "audit_log", "chat_summary", "TEXT");
   // REQ (kb-01): collection grouping for KB entries. Ported from
@@ -229,4 +232,164 @@ export function runMigration(db: Database.Database): void {
   // s5-survey-grouping: nullable FK linking a decision item to a survey.
   // NULL means "not part of any survey" — existing rows are untouched.
   addColumnIfMissing(db, "items", "survey_id", "TEXT REFERENCES surveys(id)");
+
+  // PANT-938: when Consus sent `decision:needs-context` to Pantheon for an
+  // item created without supporting material. Set at most once per item; NULL
+  // means never requested (has material, standalone mode, or predates this).
+  addColumnIfMissing(db, "items", "needs_context_requested_at", "TEXT");
+
+  // s2-consus-pantheon-change-adapter: the ticket id the harness returned
+  // from a successful dispatch (a `ticket_id` field in the webhook response),
+  // so proposals can be cross-referenced against the harness's ticket.
+  addColumnIfMissing(db, "proposals", "harness_ticket_id", "TEXT");
+
+  // d9-consus-generic-webhook-transport: why the last dispatch never reached
+  // the harness (non-2xx, timeout, network error), so a delivery failure is
+  // distinguishable from a harness-reported failure and can be redelivered
+  // via POST /api/proposals/:id/redeliver. NULL once delivery succeeds.
+  addColumnIfMissing(db, "proposals", "delivery_error", "TEXT");
+
+  // consus#203: the pull request the harness opened for an applied change
+  // (Pantheon's result.pr_url), so the item can link to it next to the
+  // applied diff. NULL when the harness reported none.
+  addColumnIfMissing(db, "proposals", "pr_url", "TEXT");
+
+  // s6-consus-pantheon-question-adapter: tracks the mapping between a
+  // Consus decision item and a Pantheon question ticket/qid pair. One row
+  // per question — (ticket_id, qid) is unique so idempotent re-pulls never
+  // duplicate an item.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS question_links (
+      item_id  TEXT PRIMARY KEY REFERENCES items(id),
+      ticket_id TEXT NOT NULL,
+      qid       TEXT NOT NULL,
+      survey_id TEXT NOT NULL REFERENCES surveys(id),
+      UNIQUE(ticket_id, qid)
+    );
+    CREATE INDEX IF NOT EXISTS idx_question_links_ticket_id ON question_links(ticket_id);
+    CREATE INDEX IF NOT EXISTS idx_question_links_survey_id ON question_links(survey_id);
+  `);
+
+  // PANT-806: durable poll cursors for the harness pullers (keyed by puller
+  // name). Unused since the Pantheon pullers were removed (PANT-969); kept so
+  // existing databases migrate without dropping anything.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS harness_cursors (
+      name       TEXT PRIMARY KEY,
+      cursor     TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+
+  // PANT-807: delivery outbox for question answers sent to Pantheon. A row is
+  // written in the same transaction as the verdict, then delivered; a non-2xx
+  // or thrown fetch leaves it 'failed' with last_error so it can be redelivered
+  // (at startup or via POST /api/questions/redeliver) instead of being lost.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS question_deliveries (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id    TEXT NOT NULL,
+      ticket_id  TEXT NOT NULL,
+      qid        TEXT,
+      kind       TEXT NOT NULL CHECK(kind IN ('partial', 'submit')),
+      body       TEXT NOT NULL,
+      status     TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'delivered', 'failed')),
+      attempts   INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_question_deliveries_status ON question_deliveries(status);
+    CREATE INDEX IF NOT EXISTS idx_question_deliveries_ticket_id ON question_deliveries(ticket_id);
+  `);
+
+  // d4-consus-threads-generic (PANT-962): agent-answerable comment threads.
+  // Deliberately keyed by a generic (item_type, item_id) pair with no FK to
+  // items — a thread can sit on a doc, a section/line anchor within it, a
+  // diagram, a decision or a proposal. Operator messages carry their own
+  // outbound delivery state (server/threads/notifier.ts); agent replies come
+  // back through POST /api/threads/:id/replies and may link a proposal.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS threads (
+      id         TEXT PRIMARY KEY,
+      item_type  TEXT NOT NULL,
+      item_id    TEXT NOT NULL,
+      anchor     TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_threads_item ON threads(item_type, item_id);
+
+    CREATE TABLE IF NOT EXISTS thread_messages (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      thread_id           TEXT NOT NULL REFERENCES threads(id),
+      role                TEXT NOT NULL CHECK(role IN ('operator', 'agent')),
+      author              TEXT NOT NULL,
+      body                TEXT NOT NULL,
+      proposal_id         TEXT,
+      proposal_url        TEXT,
+      delivery_status     TEXT CHECK(delivery_status IN ('pending', 'delivered', 'failed')),
+      delivery_error      TEXT,
+      delivery_target     TEXT,
+      delivery_attempted_at TEXT,
+      created_at          TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_thread_messages_thread_id ON thread_messages(thread_id);
+  `);
+
+  // PANT-809: last success / failure per Pantheon push direction
+  // (server/pantheon/sync-status.ts), read by GET /api/metrics and /health.
+  // Rows for the removed pull directions are left in place and ignored.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sync_status (
+      direction       TEXT PRIMARY KEY,
+      last_success_at TEXT,
+      last_failure_at TEXT,
+      last_error      TEXT
+    );
+
+    -- PANT-809: when each project was last scanned (server/adapters/
+    -- doc-scanner scanRepo), independent of whether any doc changed.
+    CREATE TABLE IF NOT EXISTS project_ingests (
+      repo           TEXT PRIMARY KEY,
+      last_ingest_at TEXT NOT NULL
+    );
+  `);
+
+  // PANT-960: the optional client (group) each project belongs to, so the
+  // web UI can switch by client. Kept here rather than in the project
+  // registry file so that file's name -> path shape stays unchanged. No row =
+  // ungrouped.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_clients (
+      project    TEXT PRIMARY KEY,
+      client     TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_project_clients_client ON project_clients(client);
+  `);
+
+  // PANT-960: when the operator last opened each item's thread, so the
+  // cross-client inbox can list threads with a newer reply. On first
+  // creation every existing thread is marked seen, so the inbox starts from
+  // replies that arrive after this feature ships rather than all history.
+  const hadInboxSeen = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'inbox_seen'")
+    .get();
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS inbox_seen (
+      item_id TEXT PRIMARY KEY,
+      seen_at TEXT NOT NULL
+    );
+  `);
+  if (!hadInboxSeen) {
+    db.exec(`
+      INSERT INTO inbox_seen (item_id, seen_at)
+      SELECT item_id, MAX(at) FROM (
+        SELECT item_id, created_at AS at FROM comments
+        UNION ALL
+        SELECT t.item_id, m.created_at AS at FROM thread_messages m JOIN threads t ON t.id = m.thread_id
+      ) GROUP BY item_id
+    `);
+  }
 }

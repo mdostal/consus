@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { marked } from "marked";
 import { AnswerControl } from "./features/decisions/answer-shapes/AnswerControl";
 import { CommentsPanel } from "./features/comments/CommentsPanel";
+import { AgentThreadsSection } from "./features/threads/ThreadsPanel";
+import { docSectionAnchors, diagramNodeAnchors } from "./features/threads/anchors";
 import { GlobalView, type KbEntrySummary } from "./features/projects/GlobalView";
 import { ProjectView } from "./features/projects/ProjectView";
 import { BranchPicker } from "./features/projects/BranchPicker";
@@ -17,6 +19,9 @@ import { FeatureDetailView } from "./features/docs/FeatureDetailView";
 import { DocSearch, type DocSearchResult } from "./features/docs/DocSearch";
 import { DocRenderer } from "./features/docs/DocRenderer";
 import { FullPageDocViewer } from "./features/docs/FullPageDocViewer";
+import { useDocProposal } from "./features/docs/useDocProposal";
+import { MmdDiagramView } from "./features/diagrams/MmdDiagramView";
+import { NewDocForm, type NewDocCreated, type NewDocKind } from "./features/diagrams/NewDocForm";
 import { EventsList, type EventRow, type EventStatus } from "./features/events/EventsList";
 import { EventProposeComposer } from "./features/events/EventProposeComposer";
 import type { AnyDecisionPayload, DecisionPayload, Verdict } from "./features/decisions/answer-shapes/types";
@@ -25,6 +30,8 @@ import { DecisionListPane, type DecisionListItem, type SurveyListItem } from "./
 import { SurveyView } from "./features/decisions/SurveyView";
 import { AttachmentsPanel } from "./features/decisions/attachments/AttachmentsPanel";
 import { ArtifactLinksPanel } from "./features/artifact-links/ArtifactLinksPanel";
+import { SendOutPanel } from "./features/send-out/SendOutPanel";
+import { NoContextWarning } from "./features/decisions/NoContextWarning";
 import { useSkinPreference } from "./theme/useSkinPreference";
 import { ThemeSkinPicker } from "./theme/ThemeSkinPicker";
 import { SkinBackdrop } from "./theme/skins/SkinBackdrop";
@@ -32,6 +39,10 @@ import { HarnessWindowDots } from "./theme/skins/HarnessWindowDots";
 import { MastheadMark } from "./theme/BrandMark";
 import { CommandPalette } from "./features/command-palette/CommandPalette";
 import { HarnessConnectBanner } from "./features/harness-connect/HarnessConnectBanner";
+import { ClientScopeProvider, useClientScope } from "./features/clients/ClientScope";
+import { ClientSwitcher } from "./features/clients/ClientSwitcher";
+import { ProjectClientField } from "./features/clients/ProjectClientField";
+import { InboxSection, type InboxEntry } from "./features/clients/InboxSection";
 import "./theme/tokens.css";
 import "./app.css";
 import "./features/decisions/decisions-two-pane.css";
@@ -65,8 +76,27 @@ function docsAreEmpty(grouped: GroupedDocs): boolean {
  * s3 (consus-phase29-brand-decision-review): `brand` is optional here so a
  * caller that hasn't loaded it yet (or a server response predating the
  * brand bucket) doesn't blow this up — treated as empty when absent. */
-function featureDataIsEmpty(data: { features: Feature[]; overview: FeatureDoc[]; brand?: FeatureDoc[] }): boolean {
-  return data.features.length === 0 && data.overview.length === 0 && (data.brand?.length ?? 0) === 0;
+function featureDataIsEmpty(data: {
+  features: Feature[];
+  overview: FeatureDoc[];
+  brand?: FeatureDoc[];
+  diagrams?: FeatureDoc[];
+}): boolean {
+  return (
+    data.features.length === 0 &&
+    data.overview.length === 0 &&
+    (data.brand?.length ?? 0) === 0 &&
+    (data.diagrams?.length ?? 0) === 0
+  );
+}
+
+/** The doc-browser payload both docs views hold, after `repo` is attached
+ *  to every doc client-side. */
+interface FeatureData {
+  features: Feature[];
+  overview: FeatureDoc[];
+  brand: FeatureDoc[];
+  diagrams: FeatureDoc[];
 }
 
 /** phase='brand' (s1's scan tagging, s3's reliable signal) is the one and
@@ -91,6 +121,10 @@ interface DecisionItem {
   triage_bucket?: string | null;
   decided_at: string | null;
   decision_payload: (AnyDecisionPayload & { previews?: Record<string, string> }) | null;
+  /** Live attachments + artifact links (PANT-919); absent on older servers. */
+  supporting_material_count?: number;
+  /** When Consus sent `decision:needs-context` to Pantheon (PANT-938); null if never. */
+  needs_context_requested_at?: string | null;
 }
 
 function verdictLabel(v: Verdict): string {
@@ -179,6 +213,8 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
         <h2>{item.title}</h2>
       </header>
 
+      <NoContextWarning count={item.supporting_material_count} requestedAt={item.needs_context_requested_at} />
+
       {payload ? (
         <div className="dv__context" dangerouslySetInnerHTML={{ __html: contextHtml }} />
       ) : item.source_body ? (
@@ -266,6 +302,8 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
         <CommentsPanel itemId={item.id} />
       </section>
 
+      <AgentThreadsSection itemType="decision" itemId={item.id} />
+
       <section>
         <h3 className="dv__section-title">Attachments</h3>
         <AttachmentsPanel itemId={item.id} />
@@ -289,7 +327,7 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
 /* ---------------------------------------------------------------- */
 
 function DecisionsSection({
-  decisions,
+  decisions: allDecisions,
   reload,
 }: {
   decisions: DecisionItem[] | null;
@@ -300,6 +338,11 @@ function DecisionsSection({
   const [selectedId, select] = useSelectedDecisionId();
   const [surveys, setSurveys] = useState<SurveyListItem[] | null>(null);
   const [selectedSurveyId, setSelectedSurveyId] = useState<string | null>(null);
+  // The survey just created via the "New survey" form, whose view should take
+  // keyboard focus when it mounts (PANT-812). Cleared by any other selection.
+  const [justCreatedSurveyId, setJustCreatedSurveyId] = useState<string | null>(null);
+  // PANT-960: only the selected client's repos (all of them under "All clients").
+  const { inScope } = useClientScope();
 
   const loadSurveys = useCallback(() => {
     fetch("/api/surveys")
@@ -316,8 +359,9 @@ function DecisionsSection({
     loadSurveys();
   }, [loadSurveys]);
 
-  if (!decisions) return <p className="state">Loading decisions…</p>;
+  if (!allDecisions) return <p className="state">Loading decisions…</p>;
 
+  const decisions = allDecisions.filter((d) => inScope(d.source_repo));
   const open = decisions.filter((d) => !d.decided_at);
   const decided = decisions.filter((d) => d.decided_at);
 
@@ -333,6 +377,7 @@ function DecisionsSection({
   const selected = effectiveId !== null ? (decisions.find((d) => d.id === effectiveId) ?? null) : null;
 
   function handleSelectSurvey(id: string) {
+    setJustCreatedSurveyId(null);
     setSelectedSurveyId(id);
     // Clear decision selection when a survey is chosen so the right pane
     // shows SurveyView and not a stale DecisionView.
@@ -340,6 +385,7 @@ function DecisionsSection({
   }
 
   function handleSelectDecision(id: string) {
+    setJustCreatedSurveyId(null);
     setSelectedSurveyId(null);
     select(id);
   }
@@ -347,6 +393,7 @@ function DecisionsSection({
   function handleSurveyCreated(survey: { id: string; title: string }) {
     loadSurveys();
     handleSelectSurvey(survey.id);
+    setJustCreatedSurveyId(survey.id);
   }
 
   const selectedSurvey = selectedSurveyId !== null
@@ -380,6 +427,7 @@ function DecisionsSection({
               key={selectedSurveyId}
               surveyId={selectedSurveyId}
               surveyTitle={selectedSurvey.title}
+              focusHeadingOnMount={selectedSurveyId === justCreatedSurveyId}
               onVerdictRecorded={() => {
                 reload();
                 loadSurveys();
@@ -483,9 +531,11 @@ function ProjectBranchDecisions({ repo, branch }: { repo: string; branch: string
 /* Section: Projects (cross-project + per-project KB views)         */
 /* ---------------------------------------------------------------- */
 
-function ProjectsSection() {
+function ProjectsSection({ initialProject = null }: { initialProject?: string | null }) {
   const [entries, setEntries] = useState<KbEntrySummary[] | null>(null);
-  const [projects, setProjects] = useState<string[] | null>(null);
+  const [allProjects, setProjects] = useState<string[] | null>(null);
+  // PANT-960: the header client switcher scopes which projects are listed.
+  const { inScope, projectClients, reload: reloadClients } = useClientScope();
   // s1 (consus-phase25-project-registration-ux): GET /api/projects's new
   // `paths` map — name -> absolute repo path. Defaults to {} rather than
   // null so a lookup before the first load resolves (never renders a
@@ -493,7 +543,8 @@ function ProjectsSection() {
   // undefined for a project this map hasn't heard of yet.
   const [paths, setPaths] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [project, setProject] = useState<string | null>(null);
+  // PANT-960: an inbox entry opens straight onto its project.
+  const [project, setProject] = useState<string | null>(initialProject);
   const [refreshToken, setRefreshToken] = useState(0);
   const [ingesting, setIngesting] = useState(false);
   const [ingestError, setIngestError] = useState<string | null>(null);
@@ -541,6 +592,17 @@ function ProjectsSection() {
     loadProjects();
   }, [loadProjects]);
 
+  const projects = useMemo(() => allProjects?.filter((p) => inScope(p)) ?? null, [allProjects, inScope]);
+
+  // Switching to a client that doesn't own the open project drops back to
+  // that client's overview instead of showing a project outside the scope.
+  useEffect(() => {
+    if (project !== null && projects !== null && !projects.includes(project)) {
+      setProject(null);
+      setBranch(null);
+    }
+  }, [project, projects]);
+
   async function registerProject(name: string, path: string) {
     setAddingProject(true);
     setAddProjectError(null);
@@ -555,6 +617,7 @@ function ProjectsSection() {
         throw new Error(body.error ?? `HTTP ${res.status}`);
       }
       await loadProjects();
+      reloadClients();
       loadEntries();
       setProject(name);
       setBranch(null);
@@ -604,7 +667,7 @@ function ProjectsSection() {
         </div>
       ) : (
         <>
-          <div className="consus__nav" style={{ marginBottom: 18, marginLeft: 0 }}>
+          <div className="consus__nav" data-testid="project-nav" style={{ marginBottom: 18, marginLeft: 0 }}>
             <button
               className={`consus__nav-btn ${project === null ? "consus__nav-btn--active" : ""}`}
               onClick={() => {
@@ -635,12 +698,17 @@ function ProjectsSection() {
                 project above to see its docs and diagrams even before anything's been approved.
               </div>
             ) : (
-              <GlobalView entries={entries} onSelect={() => {}} />
+              <GlobalView entries={entries.filter((e) => inScope(e.source_repo))} onSelect={() => {}} />
             )
           ) : (
             <>
               <div className="project-actions">
                 {paths[project] ? <ProjectPathField path={paths[project]} /> : null}
+                <ProjectClientField
+                  project={project}
+                  client={projectClients[project] ?? null}
+                  onSaved={() => reloadClients()}
+                />
                 <button type="button" onClick={() => ingestRepo(project)} disabled={ingesting}>
                   {ingesting ? "Ingesting…" : "Ingest repo"}
                 </button>
@@ -782,14 +850,21 @@ function ProjectDiagram({
   if (!data) return <p className="state">Loading diagram…</p>;
 
   return (
-    <DiagramView
-      repo={repo}
-      epics={data.epics}
-      pendingProposal={pendingProposalId !== null}
-      onProposeChange={proposeChange}
-      auditEntries={auditEntries}
-      onPendingChangesChange={onPendingChangesChange}
-    />
+    <>
+      <SendOutPanel
+        target={{ type: "diagram", repo, kinds: ["cascade"] }}
+        onProposalCreated={() => loadAuditTrail(data.itemId)}
+      />
+      <DiagramView
+        repo={repo}
+        epics={data.epics}
+        pendingProposal={pendingProposalId !== null}
+        onProposeChange={proposeChange}
+        auditEntries={auditEntries}
+        onPendingChangesChange={onPendingChangesChange}
+      />
+      <AgentThreadsSection itemType="diagram" itemId={data.itemId} anchors={diagramNodeAnchors(data.epics)} />
+    </>
   );
 }
 
@@ -851,7 +926,9 @@ function ProjectArchitectureDiagram({
   if (!data) return <p className="state">Loading architecture diagram…</p>;
 
   return (
-    <ArchitectureDiagramView
+    <>
+      <SendOutPanel target={{ type: "diagram", repo, kinds: ["architecture", "architecture-full"] }} />
+      <ArchitectureDiagramView
       repo={repo}
       topLevel={data.topLevel}
       fullComponent={data.fullComponent}
@@ -859,6 +936,7 @@ function ProjectArchitectureDiagram({
       pendingProposal={pendingProposalId !== null}
       onPendingChangesChange={onPendingChangesChange}
     />
+    </>
   );
 }
 
@@ -874,6 +952,11 @@ function ProjectArchitectureDiagram({
  * to every doc client-side (the endpoint's response is repo-agnostic per
  * doc; see FeatureBrowser.tsx). Clicking a feature opens FeatureDetailView,
  * which stays read-only same as before — no onProposeChange wired in.
+ *
+ * PANT-965: an opened doc is now editable here too (useDocProposal — the
+ * same POST /api/proposals flow as the global Docs tab), `.mmd` diagrams
+ * open in MmdDiagramView, and "New doc" / "New diagram" open NewDocForm,
+ * which fires a new-file proposal for this repo.
  */
 function ProjectDocs({
   repo,
@@ -888,19 +971,22 @@ function ProjectDocs({
    *  component's behavior byte-identical to before this story. */
   branch?: string | null;
 }) {
-  const [featureData, setFeatureData] = useState<{ features: Feature[]; overview: FeatureDoc[]; brand: FeatureDoc[] } | null>(
-    null,
-  );
+  const [featureData, setFeatureData] = useState<FeatureData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
   const [openDoc, setOpenDoc] = useState<
-    { format: "md" | "html"; content: string; path: string; phase: string | null } | null
+    { format: "md" | "html" | "mmd"; content: string; path: string; phase: string | null; itemId: string } | null
   >(null);
+  const [newDocKind, setNewDocKind] = useState<NewDocKind | null>(null);
+  const [created, setCreated] = useState<NewDocCreated | null>(null);
+  const docProposal = useDocProposal(openDoc?.itemId ?? null);
 
   useEffect(() => {
     setFeatureData(null);
     setSelectedFeature(null);
     setOpenDoc(null);
+    setNewDocKind(null);
+    setCreated(null);
     fetch(`/api/docs/features?project=${encodeURIComponent(repo)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(
@@ -908,11 +994,13 @@ function ProjectDocs({
           features: Array<Omit<Feature, "docs"> & { docs: Omit<FeatureDoc, "repo">[] }>;
           overview: Omit<FeatureDoc, "repo">[];
           brand?: Omit<FeatureDoc, "repo">[];
+          diagrams?: Omit<FeatureDoc, "repo">[];
         }) => {
           setFeatureData({
             features: body.features.map((f) => ({ ...f, docs: f.docs.map((d) => ({ ...d, repo })) })),
             overview: body.overview.map((d) => ({ ...d, repo })),
             brand: (body.brand ?? []).map((d) => ({ ...d, repo })),
+            diagrams: (body.diagrams ?? []).map((d) => ({ ...d, repo })),
           });
         },
       )
@@ -925,7 +1013,13 @@ function ProjectDocs({
     );
     if (res.ok) {
       const data = await res.json();
-      setOpenDoc({ format: data.format, content: data.content, path: filePath, phase: data.phase ?? null });
+      setOpenDoc({
+        format: data.format,
+        content: data.content,
+        path: filePath,
+        phase: data.phase ?? null,
+        itemId: data.itemId,
+      });
     }
   }
 
@@ -944,6 +1038,7 @@ function ProjectDocs({
           <button className="doc-back" onClick={() => setOpenDoc(null)}>
             ← Back to docs
           </button>
+          <SendOutPanel target={{ type: "doc", repo, path: openDoc.path }} />
           <FullPageDocViewer content={openDoc.content} title={openDoc.path} />
         </div>
       );
@@ -953,9 +1048,42 @@ function ProjectDocs({
         <button className="doc-back" onClick={() => setOpenDoc(null)}>
           ← Back to docs
         </button>
+        <SendOutPanel target={{ type: "doc", repo, path: openDoc.path }} />
         {branch ? <DocDiffCheck repo={repo} path={openDoc.path} branch={branch} /> : null}
-        <DocRenderer format={openDoc.format} content={openDoc.content} />
+        {openDoc.format === "mmd" ? (
+          <MmdDiagramView
+            path={openDoc.path}
+            content={openDoc.content}
+            onProposeChange={docProposal.proposeChange}
+            pendingProposal={docProposal.pendingProposal}
+            proposalFailureReason={docProposal.proposalFailureReason}
+            auditEntries={docProposal.auditEntries}
+          />
+        ) : (
+          <DocRenderer
+            format={openDoc.format}
+            content={openDoc.content}
+            onProposeChange={docProposal.proposeChange}
+            pendingProposal={docProposal.pendingProposal}
+            proposalFailureReason={docProposal.proposalFailureReason}
+            auditEntries={docProposal.auditEntries}
+          />
+        )}
       </div>
+    );
+  }
+
+  if (newDocKind) {
+    return (
+      <NewDocForm
+        repo={repo}
+        kind={newDocKind}
+        onCancel={() => setNewDocKind(null)}
+        onCreated={(result) => {
+          setCreated(result);
+          setNewDocKind(null);
+        }}
+      />
     );
   }
 
@@ -973,6 +1101,21 @@ function ProjectDocs({
   return (
     <div>
       <h3 className="dv__section-title">Docs</h3>
+      <div className="new-doc-actions">
+        <button type="button" onClick={() => setNewDocKind("doc")}>
+          New doc
+        </button>
+        <button type="button" onClick={() => setNewDocKind("diagram")}>
+          New diagram
+        </button>
+      </div>
+      {created ? (
+        <p className="state" role="status" data-testid="new-doc-created">
+          {created.proposal.status === "pending"
+            ? `Proposed new file ${created.path} — waiting for the harness to create it.`
+            : `Proposal for ${created.path} failed: ${created.proposal.failure_reason ?? "unknown error"}`}
+        </p>
+      ) : null}
       {empty ? (
         <div className="empty">
           <strong>No docs indexed yet</strong>
@@ -983,6 +1126,7 @@ function ProjectDocs({
           features={featureData.features}
           overview={featureData.overview}
           brand={featureData.brand}
+          diagrams={featureData.diagrams}
           onSelectFeature={setSelectedFeature}
           onOpenDoc={open}
         />
@@ -1055,14 +1199,15 @@ function DocsSection() {
   // merging the results client-side while attaching `repo` to every doc —
   // never a single unscoped /api/docs/features call, which would lose
   // repo association entirely and make content-fetching ambiguous.
-  const [projects, setProjects] = useState<string[] | null>(null);
-  const [featureData, setFeatureData] = useState<{ features: Feature[]; overview: FeatureDoc[]; brand: FeatureDoc[] } | null>(
-    null,
-  );
+  const [allProjects, setProjects] = useState<string[] | null>(null);
+  // PANT-960: only the selected client's repos.
+  const { inScope } = useClientScope();
+  const projects = useMemo(() => allProjects?.filter((p) => inScope(p)) ?? null, [allProjects, inScope]);
+  const [featureData, setFeatureData] = useState<FeatureData | null>(null);
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openDoc, setOpenDoc] = useState<
-    { format: "md" | "html"; content: string; path: string; repo: string; itemId: string; phase: string | null } | null
+    { format: "md" | "html" | "mmd"; content: string; path: string; repo: string; itemId: string; phase: string | null } | null
   >(null);
   const [pendingProposalId, setPendingProposalId] = useState<string | null>(null);
   const [proposalFailureReason, setProposalFailureReason] = useState<string | null>(null);
@@ -1085,7 +1230,7 @@ function DocsSection() {
   useEffect(() => {
     if (!projects) return;
     if (projects.length === 0) {
-      setFeatureData({ features: [], overview: [], brand: [] });
+      setFeatureData({ features: [], overview: [], brand: [], diagrams: [] });
       return;
     }
 
@@ -1093,6 +1238,7 @@ function DocsSection() {
       features: Array<{ epic: string; docCount: number; docs: Omit<FeatureDoc, "repo">[] }>;
       overview: Omit<FeatureDoc, "repo">[];
       brand?: Omit<FeatureDoc, "repo">[];
+      diagrams?: Omit<FeatureDoc, "repo">[];
     };
 
     Promise.all(
@@ -1106,6 +1252,7 @@ function DocsSection() {
         const byEpic = new Map<string, Feature>();
         const overview: FeatureDoc[] = [];
         const brand: FeatureDoc[] = [];
+        const diagrams: FeatureDoc[] = [];
         for (const { project, body } of results) {
           for (const f of body.features) {
             const docs = f.docs.map((d) => ({ ...d, repo: project }));
@@ -1119,9 +1266,10 @@ function DocsSection() {
           }
           overview.push(...body.overview.map((d) => ({ ...d, repo: project })));
           brand.push(...(body.brand ?? []).map((d) => ({ ...d, repo: project })));
+          diagrams.push(...(body.diagrams ?? []).map((d) => ({ ...d, repo: project })));
         }
         const features = Array.from(byEpic.values()).sort((a, b) => a.epic.localeCompare(b.epic));
-        setFeatureData({ features, overview, brand });
+        setFeatureData({ features, overview, brand, diagrams });
       })
       .catch((e) => setError(e.message));
   }, [projects]);
@@ -1215,7 +1363,12 @@ function DocsSection() {
               ← Back to docs
             </button>
           </div>
+          <SendOutPanel
+            target={{ type: "doc", repo: openDoc.repo, path: openDoc.path }}
+            onProposalCreated={() => loadAuditTrail(openDoc.itemId)}
+          />
           <FullPageDocViewer content={openDoc.content} title={openDoc.path} />
+          <AgentThreadsSection itemType="doc" itemId={openDoc.itemId} />
         </div>
       );
     }
@@ -1226,13 +1379,33 @@ function DocsSection() {
             ← Back to docs
           </button>
         </div>
-        <DocRenderer
-          format={openDoc.format}
-          content={openDoc.content}
-          onProposeChange={proposeChange}
-          pendingProposal={pendingProposalId !== null}
-          proposalFailureReason={proposalFailureReason}
-          auditEntries={auditEntries}
+        <SendOutPanel
+          target={{ type: "doc", repo: openDoc.repo, path: openDoc.path }}
+          onProposalCreated={() => loadAuditTrail(openDoc.itemId)}
+        />
+        {openDoc.format === "mmd" ? (
+          <MmdDiagramView
+            path={openDoc.path}
+            content={openDoc.content}
+            onProposeChange={proposeChange}
+            pendingProposal={pendingProposalId !== null}
+            proposalFailureReason={proposalFailureReason}
+            auditEntries={auditEntries}
+          />
+        ) : (
+          <DocRenderer
+            format={openDoc.format}
+            content={openDoc.content}
+            onProposeChange={proposeChange}
+            pendingProposal={pendingProposalId !== null}
+            proposalFailureReason={proposalFailureReason}
+            auditEntries={auditEntries}
+          />
+        )}
+        <AgentThreadsSection
+          itemType="doc"
+          itemId={openDoc.itemId}
+          anchors={openDoc.format === "md" ? docSectionAnchors(openDoc.content) : []}
         />
       </div>
     );
@@ -1248,7 +1421,12 @@ function DocsSection() {
         <h1>Docs</h1>
         <p>Generated briefs, PRDs, architecture, and plans — browsed by feature, rendered in-app.</p>
       </div>
-      <DocSearch onSearch={handleSearch} results={searchResults} onOpen={open} error={searchError} />
+      <DocSearch
+        onSearch={handleSearch}
+        results={searchResults?.filter((r) => inScope(r.repo)) ?? null}
+        onOpen={open}
+        error={searchError}
+      />
       {searchResults === null ? (
         empty ? (
           <div className="empty">
@@ -1261,6 +1439,7 @@ function DocsSection() {
             features={featureData.features}
             overview={featureData.overview}
             brand={featureData.brand}
+            diagrams={featureData.diagrams}
             onSelectFeature={setSelectedFeature}
             onOpenDoc={open}
           />
@@ -1291,15 +1470,23 @@ const EVENT_STATUSES: EventStatus[] = ["new", "in_progress", "done", "dismissed"
  * joins the querystring once the operator has actually picked it.
  */
 function EventsSection() {
-  const [events, setEvents] = useState<EventRow[] | null>(null);
+  const [allEvents, setEvents] = useState<EventRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [projects, setProjects] = useState<string[] | null>(null);
+  const [allProjects, setProjects] = useState<string[] | null>(null);
+  // PANT-960: only the selected client's repos, in the filter and the list.
+  const { inScope } = useClientScope();
+  const projects = useMemo(() => allProjects?.filter((p) => inScope(p)) ?? null, [allProjects, inScope]);
+  const events = useMemo(() => allEvents?.filter((ev) => inScope(ev.project)) ?? null, [allEvents, inScope]);
 
   const [project, setProject] = useState<string | null>(null);
   const [status, setStatus] = useState<EventStatus | null>(null);
   const [sort, setSort] = useState<EventSort | null>(null);
   const [order, setOrder] = useState<EventOrder | null>(null);
   const [viewMode, setViewMode] = useState<EventViewMode>("active");
+  // A project filter left over from another client would hide every event.
+  useEffect(() => {
+    if (project !== null && projects !== null && !projects.includes(project)) setProject(null);
+  }, [project, projects]);
 
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -1685,9 +1872,10 @@ function OnboardingScreen({
 /* App shell                                                        */
 /* ---------------------------------------------------------------- */
 
-type Tab = "decisions" | "projects" | "kb" | "docs" | "events";
+type Tab = "inbox" | "decisions" | "projects" | "kb" | "docs" | "events";
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: "inbox", label: "Inbox" },
   { id: "decisions", label: "Decisions" },
   { id: "projects", label: "Projects" },
   { id: "kb", label: "KB" },
@@ -1695,8 +1883,29 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "events", label: "Events" },
 ];
 
+/** PANT-960: the client scope (header switcher) wraps the whole app so every
+ *  section reads the same selected client. */
 export function App() {
+  return (
+    <ClientScopeProvider>
+      <AppContent />
+    </ClientScopeProvider>
+  );
+}
+
+/** Points `?selected=` at a decision before the Decisions tab mounts, which
+ *  is where useSelectedDecisionId reads it. */
+function selectDecisionInUrl(id: string): void {
+  const params = new URLSearchParams(window.location.search);
+  params.set("selected", id);
+  window.history.replaceState(window.history.state, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+}
+
+function AppContent() {
   const [tab, setTab] = useState<Tab>("decisions");
+  // PANT-960: the project an inbox entry jumped to, opened by ProjectsSection.
+  const [projectFocus, setProjectFocus] = useState<string | null>(null);
+  const { inScope, setClient } = useClientScope();
   const [decisions, setDecisions] = useState<DecisionItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [onboardingCheck, setOnboardingCheck] = useState<{ docsEmpty: boolean; kbEmpty: boolean } | null>(null);
@@ -1742,7 +1951,25 @@ export function App() {
     checkOnboarding();
   }, [reload, checkOnboarding]);
 
-  const openCount = decisions?.filter((d) => !d.decided_at).length ?? 0;
+  const openCount = decisions?.filter((d) => !d.decided_at && inScope(d.source_repo)).length ?? 0;
+
+  function selectTab(next: Tab) {
+    setProjectFocus(null);
+    setTab(next);
+  }
+
+  // Opening an inbox entry switches to its client (or "All clients" when it
+  // has none, which is the only scope that shows it), then to the item.
+  function openInboxEntry(entry: InboxEntry) {
+    setClient(entry.client);
+    if (entry.isDecision) {
+      selectDecisionInUrl(entry.itemId);
+      selectTab("decisions");
+    } else if (entry.repo) {
+      setTab("projects");
+      setProjectFocus(entry.repo);
+    }
+  }
 
   const isFirstRun =
     onboardingCheck !== null &&
@@ -1792,13 +2019,14 @@ export function App() {
             <button
               key={t.id}
               className={`consus__nav-btn ${tab === t.id ? "consus__nav-btn--active" : ""}`}
-              onClick={() => setTab(t.id)}
+              onClick={() => selectTab(t.id)}
             >
               {t.label}
               {t.id === "decisions" && openCount > 0 ? <span className="consus__nav-count">{openCount}</span> : null}
             </button>
           ))}
         </nav>
+        <ClientSwitcher />
         <ThemeSkinPicker />
         {/* s4 (consus-phase18): universal across all 3 skins, not decoration
             exclusive to Harness — mounted once, here, so ⌘K/Ctrl+K works
@@ -1813,7 +2041,8 @@ export function App() {
       <main className="consus__main">
         {error ? <p className="state state--err">Could not load decisions: {error}</p> : null}
         {tab === "decisions" ? <DecisionsSection decisions={decisions} reload={reload} /> : null}
-        {tab === "projects" ? <ProjectsSection /> : null}
+        {tab === "inbox" ? <InboxSection onOpen={openInboxEntry} /> : null}
+        {tab === "projects" ? <ProjectsSection key={projectFocus ?? ""} initialProject={projectFocus} /> : null}
         {tab === "kb" ? <KbSection /> : null}
         {tab === "docs" ? <DocsSection /> : null}
         {tab === "events" ? <EventsSection /> : null}

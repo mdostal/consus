@@ -10,13 +10,15 @@ The core loop: **index → open → interact → propose a change → shared-tru
 
 1. **Index** — an operator-triggered, on-demand scan (`POST /api/projects/:project/ingest`, or `POST /api/projects/scan-all` across every configured repo) walks a repo's `.pHive/planning/` and `.pHive/epics/**` and populates the doc index. Deliberately not a background poll.
 2. **Open** — the per-project view shows a project's diagram cascade, its architecture diagram, its docs, and its KB entries together.
-3. **Interact** — read a rendered doc or edit a section in place; drag, relabel, connect, and delete nodes directly on either diagram (a real editable canvas, not a static render) with a live changeset of what's pending.
-4. **Propose a change** — one "Fire to harness" action (from a doc edit or a diagram edit) sends a `{diff, description}` through whatever local harness is configured (`HarnessTransport`); the harness applies it and reports back.
+3. **Interact** — read a rendered doc or edit a section in place; drag, relabel, connect, and delete nodes directly on either diagram (a real editable canvas, not a static render) with a live changeset of what's pending. ```` ```mermaid ```` fences in a doc render as diagrams, and both those and a repo's standalone `.mmd` files open in a split source/preview editor that re-renders as you type. "New doc" / "New diagram" start a new file from a template (blank, ADR, architecture overview, `.mmd` flowchart or sequence).
+4. **Propose a change** — one "Fire to harness" action (from a doc edit or a diagram edit) sends a `{diff, description}` through whatever local harness is configured (`HarnessTransport`); the harness applies it and reports back. Saving a Mermaid edit and creating a new doc or diagram go out the same way: Consus never writes the repo itself.
 5. **Shared-truth KB** — an approved decision or doc becomes a durable, versioned `kb_entries` row, grouped by collection (`marketing` / `boundary-decisions` / `plans` / `artifacts` / `general`).
 
-Pick a visual skin (Drafting Table, Case Board, or Harness) and a light/dark/system theme from the masthead — three genuinely different looks over the same interactions, not just a recolor. A `⌘K` command palette covers the keyboard-shortcut floor for everything above.
+Working across several clients? Give each project an optional **client** (set it on the project's page, or `PATCH /api/projects/:project`) and pick one in the masthead's client switcher: the Projects, Docs, Decisions, Events and KB views then show only that client's repos, and the choice is remembered per browser. The **Inbox** tab is the one view that spans every client: open questions, proposals waiting for a result, and threads with a new reply, each labeled with its client and repo and one click from the item.
 
-Consus is fully standalone: **zero live coupling to any other system.** It reads and writes only local SQLite and the local filesystem. It binds to `127.0.0.1` by default — no network exposure unless you explicitly opt in via `HOST` (e.g. for a containerized deploy).
+Pick a visual skin (Granary — the default — Drafting Table, Case Board, or Harness) and a light/dark/system theme from the masthead — four genuinely different looks over the same interactions, not just a recolor. A `⌘K` command palette covers the keyboard-shortcut floor for everything above.
+
+Consus is standalone by default: out of the box it reads and writes only local SQLite and the local filesystem, and makes no outbound network calls. Outbound calls happen only when you configure them: a harness transport that calls out (`CONSUS_HARNESS=webhook`, see **Harness transports** below), the agent-thread webhook, or `PANTHEON_API_URL` for answers and verdicts going back to Pantheon. It binds to `127.0.0.1` by default — no network exposure unless you explicitly opt in via `HOST` (e.g. for a containerized deploy).
 
 ## Brand
 
@@ -31,11 +33,11 @@ in-app brand decision.
 flowchart TB
   subgraph Consus["Consus (this repo)"]
     direction TB
-    Web["Web SPA — Vite + React<br/>Decisions · DocRenderer · editable Diagrams (React Flow)<br/>KB Browser · ProjectView · 3 skins × light/dark"]
+    Web["Web SPA — Vite + React<br/>Decisions · DocRenderer · editable Diagrams (React Flow)<br/>KB Browser · ProjectView · 4 skins × light/dark"]
     API["Fastify server :8722<br/>(127.0.0.1 by default, HOST-configurable)"]
     DB[("SQLite<br/>better-sqlite3<br/>items · audit_log · doc_index · kb_entries · proposals")]
     Scanner["Doc Scanner<br/>(server/adapters/doc-scanner)"]
-    Harness["HarnessTransport<br/>generic invoke(method, params)<br/>no-op unless a local command is configured"]
+    Harness["HarnessTransport<br/>generic invoke(method, params)<br/>no-op unless a transport is configured"]
     Web -->|/api proxy| API
     API --> DB
     API --> Scanner
@@ -44,12 +46,13 @@ flowchart TB
 
   Scanner -.on-demand ingest.-> Repo[("This repo's own .pHive/<br/>planning/ + epics/ (.md/.html/.yaml)")]
   Harness -.optional, opt-in.-> LocalCmd["A locally configured CLI command<br/>(CONSUS_HARNESS_COMMAND)"]
+  Harness -.optional, opt-in.-> Webhook["Any webhook receiver, e.g. Pantheon core-api<br/>(CONSUS_HARNESS=webhook)"]
 
   Human["Human / agent harness"] -->|reads docs · decides · proposes changes| Web
   Human -->|GET/POST| API
 ```
 
-Internally: a **Fastify** HTTP server (`server/index.ts`) bound to `127.0.0.1:8722` by default, serving both the JSON API and the built web SPA (`dist-web/`, via `@fastify/static`); an idempotent **SQLite** schema (`server/db/migrate.ts`); a **doc scanner** (`server/adapters/doc-scanner` — the only adapter in the codebase) that indexes a repo's own generated docs; a `dostal:decision-request/v1` contract parser; a **KB store** with append-only audit log, draft/publish separation, and versioning; and the generic **`HarnessTransport`** seam (`server/harness/transport.ts`) for the propose-a-change mechanism — it defaults to a no-op and has no knowledge of what, if anything, is configured on the other end. The web layer is a Vite + React SPA (`web/src/App.tsx`) whose feature components render docs via `marked`, diagrams via an editable **React Flow** canvas, and present theme-aware decision cards across four switchable visual skins.
+Internally: a **Fastify** HTTP server (`server/index.ts`) bound to `127.0.0.1:8722` by default, serving both the JSON API and the built web SPA (`dist-web/`, via `@fastify/static`); an idempotent **SQLite** schema (`server/db/migrate.ts`); a **doc scanner** (`server/adapters/doc-scanner`) that indexes a repo's own generated docs, plus a **gitdocs** adapter (`server/adapters/gitdocs`) that resolves doc references across repos and reads docs at a git ref; a `dostal:decision-request/v1` contract parser; a **KB store** with append-only audit log, draft/publish separation, and versioning; the generic **`HarnessTransport`** seam (`server/harness/transport.ts`) for the propose-a-change mechanism, which defaults to a no-op; the generic push-in seams (`POST /api/questions/import`, `POST /api/proposals/:id/result`, `POST /api/threads/:id/replies`) that any outside system can call; and the outbound Pantheon pushes for answers, verdicts and needs-context events (`server/pantheon/`), which are inert unless `PANTHEON_API_URL` is set. Consus never polls another system. The web layer is a Vite + React SPA (`web/src/App.tsx`) whose feature components render docs via `marked`, diagrams via an editable **React Flow** canvas, and present theme-aware decision cards across four switchable visual skins.
 
 ## Connect an agent harness
 
@@ -64,9 +67,13 @@ time. The running app itself surfaces this same command in a banner at the top o
 targets Claude Code only; see [`skills/consus/SKILL.md`](skills/consus/SKILL.md) for the full
 agent-facing contract.
 
+**Standalone (no Pantheon) — file transport:** Set `CONSUS_HARNESS_FILE_DIR=.pHive/handoffs` when
+starting Consus. Proposals are written as JSON files; a harness reads and acts on them via
+`node bin/handoff.mjs` (or `npm run handoff`). No live integration required.
+
 ## How it fits
 
-Consus is a standalone tool today — it does not reach out to any other system's API or client library (see `package.json`'s dependency list). Any agent harness that understands `skills/consus/SKILL.md` can drive it over plain HTTP: read the decision queue, push a decision or CBA, propose a doc/diagram change. Cross-system integration (e.g. a future Pantheon L2 adapter layer) is explicitly out of Consus's own codebase — if it ever exists, it talks to Consus over these same generic HTTP routes, the same as any other harness would.
+Consus is a standalone tool — any harness that understands `skills/consus/SKILL.md` can drive it over plain HTTP. By default it keeps proposals local (`NOOP_HARNESS_TRANSPORT`); set `CONSUS_HARNESS=webhook` to POST each proposal to any receiver, which reports results back through `POST /api/proposals/:id/result`. Proposals always go through the `HarnessTransport` seam (`server/harness/transport.ts`). Pantheon uses exactly these generic seams: it receives proposals on the webhook, pushes results and question tickets in, and (with `PANTHEON_API_URL` set) gets answers and verdicts back.
 
 ## Quickstart
 
@@ -83,12 +90,41 @@ npm run dev:web      # Vite dev server, proxies /api to :8722
 # tests (Vitest — TDD backend / BDD UI)
 npm test
 
+# browser checks (Playwright; builds first, runs against a fixture repo)
+npx playwright install chromium   # once
+npm run test:e2e
+
 # production build + start
 npm run build        # → dist-web/ + dist-server/
 npm start            # node dist-server/index.js on :8722  (or scripts/start.sh)
 ```
 
-Config via env: `PORT` (default `8722`), `HOST` (default `127.0.0.1` — set `0.0.0.0` for a containerized deploy, since `127.0.0.1` inside a container is unreachable from outside it), `CONSUS_DB_PATH` (default `.pHive/consus.sqlite`), `CONSUS_PROJECTS_CONFIG` (repos to scan for docs, default `.pHive/consus-projects.json`).
+Config via env: `PORT` (default `8722`), `HOST` (default `127.0.0.1` — set `0.0.0.0` for a containerized deploy, since `127.0.0.1` inside a container is unreachable from outside it), `CONSUS_DB_PATH` (default `.pHive/consus.sqlite`), `CONSUS_PROJECTS_CONFIG` (repos to scan for docs, default `.pHive/consus-projects.json`). Harness: see **Harness transports** below. Questions: an outside system pushes question tickets in (`POST /api/questions/import`, `POST /api/questions/:ticket/close`) and Consus creates one survey per ticket, with one decision item per question mapped to the appropriate answer shape. With `PANTHEON_API_URL=<core-api>` set, answering a question-linked item posts a partial answer back to Pantheon (`POST /api/feed/questions/:ticket/partial`); once every question in the ticket is answered, it posts a final submit (`POST /api/feed/questions/:ticket/submit`). Question-linked items do **not** go through the `/api/events/decisions` seed path — that path is for unlinked decisions only. `CONSUS_HARNESS_COMMAND=<cmd>` (optional `CONSUS_HARNESS_ARGS`) enables a custom stdio transport. Every env var is listed in [`docs/configuration.md`](docs/configuration.md); see also `.env.example`.
+
+**Harness transports** (opt-in, mutually exclusive — only one is active at a time):
+
+Selected at startup by `selectHarnessTransport` (`server/index.ts`); the first match in this order wins.
+
+| Env var | Transport | Notes |
+|---|---|---|
+| `CONSUS_HARNESS=webhook` + `CONSUS_HARNESS_WEBHOOK_URL` | Webhook | POSTs each proposal as `{ "method": "proposeChange", "params": {...} }` to the URL, one attempt (retry by hand). The receiver reports results through `POST /api/proposals/:id/result`. For Pantheon: `<core-api>/api/feed/changes/webhook?origin=consus`. Startup fails if the URL is missing or invalid. |
+| `CONSUS_HARNESS_FILE_DIR` | File (standalone) | Writes each proposal as a JSON file under the given dir (default suggestion: `.pHive/handoffs`). A harness reads those files via `consus handoff` (see below). |
+| `CONSUS_HARNESS_COMMAND` | Stdio | Spawns the configured command and speaks one JSON object per line over stdin/stdout. `CONSUS_HARNESS_ARGS` (comma-separated) passes additional arguments. |
+| _(none set)_ | NOOP | Proposals are recorded as `failed` immediately — the default for a fresh install. |
+
+**`consus handoff` — standalone harness interface for the file transport:**
+
+```bash
+# List pending handoffs (with diffs)
+node bin/handoff.mjs list
+# or: npm run handoff list
+
+# Report a result back to Consus (removes the handoff file on success)
+node bin/handoff.mjs result <proposalId> applied
+node bin/handoff.mjs result <proposalId> failed "reason text"
+```
+
+`CONSUS_HANDOFF_DIR` overrides the directory (default: `.pHive/handoffs`). `CONSUS_URL` overrides the Consus server URL (default: `http://localhost:${PORT}`).
 
 Verify it's up:
 
@@ -98,6 +134,48 @@ curl localhost:8722/api/decisions   # open, undecided decision-request items
 ```
 
 The full HTTP contract lives in [`docs/api-reference.md`](docs/api-reference.md) — a harness author can use Consus from that doc alone.
+
+## Run with Docker
+
+The repo's `Dockerfile` builds Consus from a clean clone, with no other checkout needed:
+
+```bash
+docker build -t consus .
+docker run --rm -p 8722:8722 -v consus-data:/data consus
+curl localhost:8722/health          # { "status": "ok", "sqlite": "connected", ... }
+curl localhost:8722/api/projects    # { "projects": ["consus"], "paths": { "consus": "/app" } }
+```
+
+The UI is served from the same port at `http://localhost:8722/`.
+
+| | Value |
+|---|---|
+| Port | `8722` (`EXPOSE`d; change with `-e PORT=...`) |
+| Volume | `/data`: SQLite DB, attachments and the projects config. Mount it to keep state across containers. |
+| Repos | Mount the repos Consus should read (read-only is enough, Consus never writes them), e.g. `-v /srv/repos:/repos:ro`, then register them in `/data/consus-projects.json` or through `POST /api/projects`. |
+| Healthcheck | `GET /health`, built into the image |
+| User | runs as `node` (uid 1000), not root |
+
+Environment defaults in the image (outside Docker, the three paths default to `.pHive/` under the working directory):
+
+| Env var | Image default |
+|---|---|
+| `HOST` | `0.0.0.0` |
+| `PORT` | `8722` |
+| `CONSUS_DB_PATH` | `/data/consus.sqlite` |
+| `CONSUS_ATTACHMENTS_DIR` | `/data/attachments` |
+| `CONSUS_PROJECTS_CONFIG` | `/data/consus-projects.json` |
+
+Every other variable (`CONSUS_HARNESS`, `PANTHEON_API_URL`, `REPOS_BASE_DIR`, `CONSUS_DISCOVERY_ROOTS`, ...) is unset and keeps the defaults in [`docs/configuration.md`](docs/configuration.md). Connecting to Pantheon, for example:
+
+```bash
+docker run --rm -p 8722:8722 -v consus-data:/data \
+  -e CONSUS_HARNESS=webhook \
+  -e CONSUS_HARNESS_WEBHOOK_URL='http://core-api:3012/api/feed/changes/webhook?origin=consus' \
+  -e PANTHEON_API_URL=http://core-api:3012 consus
+```
+
+With no projects config, Consus registers one project, `consus`, at the working directory (`/app`). The image ships this repo's `.pHive/planning` and `.pHive/epics` there, so a fresh container has docs to show.
 
 ## Desktop app
 
@@ -117,9 +195,9 @@ For iterative development, `cargo tauri dev` / `cargo tauri build --debug` fall 
 
 ## Status
 
-**v0.17.0.** The server (serving its own built dashboard, not just the JSON API), SQLite store, on-demand doc scanner + multi-repo scan-all, decision contract + classifier, KB store (draft/submit separation and versioning), the generic proposal/harness mechanism, an editable diagram canvas (React Flow) for both the epic/story cascade and the architecture diagram, a real light/dark/system theme control, four switchable visual skins, a `⌘K` command palette, and agent-harness support for both Claude Code and Codex CLI (`npm run agent:init`) were all live as of v0.11.0. Since then: eight decision/survey answer shapes total (feature-selection, edit-proposal, CBA, free-text, rating, ranking, concept-selection, on top of the original decision-request), file attachments with inline image previews, branch-level decision/doc surfacing (git-local, no GitHub API), a native macOS desktop shell (`Consus.app`, Tauri v2, see **Desktop app** below), feature-grouped + overview + design-wireframe doc browsing with propose/approve/deny actions, rendered visual diffs (shared component across doc and diagram proposals), design/brand artifacts (`.pHive/brand/`) synthesizing into a real, in-app decidable decision, and — closing that loop all the way — the decided brand is now a real 4th skin ("Granary"), the default for fresh installs, with a real brand mark and app icon replacing the placeholders. See `CHANGELOG.md` for the full release history and [`branding/`](./branding/) for the brand guide that made it in.
+**v0.17.2.** The server (serving its own built dashboard, not just the JSON API), SQLite store, on-demand doc scanner + multi-repo scan-all, decision contract + classifier, KB store (draft/submit separation and versioning), the generic proposal/harness mechanism, an editable diagram canvas (React Flow) for both the epic/story cascade and the architecture diagram, a real light/dark/system theme control, three switchable visual skins, a `⌘K` command palette, and agent-harness support for both Claude Code and Codex CLI (`npm run agent:init`) were all live as of v0.11.0. Since then: eight decision/survey answer shapes total (feature-selection, edit-proposal, CBA, free-text, rating, ranking, concept-selection, on top of the original decision-request), file attachments with inline image previews, branch-level decision/doc surfacing (git-local, no GitHub API), a native macOS desktop shell (`Consus.app`, Tauri v2, see **Desktop app** below), feature-grouped + overview + design-wireframe doc browsing with propose/approve/deny actions, rendered visual diffs (shared component across doc and diagram proposals), design/brand artifacts (`.pHive/brand/`) synthesizing into a real, in-app decidable decision, and — closing that loop all the way — the decided brand is now a real 4th skin ("Granary"), the default for fresh installs, with a real brand mark and app icon replacing the placeholders. Every doc and diagram can now be sent out (PANT-964): download as `.md`, a self-contained HTML page (Mermaid diagrams rendered inline, no network needed), `.mmd` or SVG, copy as markdown, or "Open in Claude" to copy a ready-to-paste prompt for an interactive Claude Code session; the edited result comes back through "Import back" as a proposal, never a direct write. See `CHANGELOG.md` for the full release history and [`branding/`](./branding/) for the brand guide that made it in.
 
-Consus went through a real architectural correction along the way: it briefly grew live integrations with several other systems, and that coupling was fully stripped back out (see `CHANGELOG.md`'s `[0.6.0]` entry) — the codebase today has no adapter for, client for, or dependency on any external system beyond what's listed in `package.json`. See [VISION.md](VISION.md) for the current state and where things go next.
+Consus went through a real architectural correction along the way: it briefly grew live integrations with several other systems, and that coupling was fully stripped back out (see `CHANGELOG.md`'s `[0.6.0]` entry). The one external client left is the opt-in set of Pantheon pushes enabled by `PANTHEON_API_URL` (`server/pantheon/`); with it unset, Consus depends on nothing beyond what's listed in `package.json`. See [VISION.md](VISION.md) for the current state and where things go next.
 
 <!-- shared:support -->
 ## Support this project

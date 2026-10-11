@@ -15,7 +15,7 @@ a fixed boundary, not an open question (see below).
 
 ---
 
-## ① Current — where it is now (v0.17.0)
+## ① Current — where it is now (v0.17.2)
 
 Consus runs as a **Fastify server on `:8722`**, bound to `127.0.0.1` by default, backed by a local
 **SQLite** file (`.pHive/consus.sqlite`), started with `npm run dev` (server + Vite web) or
@@ -42,9 +42,9 @@ Consus runs as a **Fastify server on `:8722`**, bound to `127.0.0.1` by default,
 - **Decision contract** — a `dostal:decision-request/v1` parser (options A–Z, tradeoffs, required
   `recommended`), tiered extraction (structured block vs. heuristic-from-prose, tagged via
   `extractionTier`), and a classifier that's actually wired into the write paths that populate it.
-- **Doc scanner** — the only adapter in the codebase (`server/adapters/doc-scanner`); indexes a
-  repo's own `.pHive/planning/` and `.pHive/epics/**`, resolving doc references across *every*
-  configured repo, not just the one currently open.
+- **Doc adapters** — `server/adapters/doc-scanner` indexes a repo's own `.pHive/planning/` and
+  `.pHive/epics/**`; `server/adapters/gitdocs` resolves doc references across *every* configured
+  repo, not just the one currently open, and reads a doc at a given git ref.
 - **Editable diagrams** — both the epic/story cascade and the architecture diagram are a real,
   direct-manipulation React Flow canvas: drag nodes, edit labels, add/remove nodes, connect or
   delete edges, with a structured changeset and a "Fire to harness" action reusing the same
@@ -81,9 +81,14 @@ Consus runs as a **Fastify server on `:8722`**, bound to `127.0.0.1` by default,
   one is ever actually built.
 - Interaction polish / accessibility passes are done for the surfaces that existed when each pass
   ran (`consus-phase20-diagram-editor-a11y` audited the diagram editor + command palette;
-  `consus-phase28-interaction-completeness` added attachment previews and rendered visual diffs) —
-  not a standing guarantee that every *future* surface ships accessible by default; audit newer
-  surfaces as they mature, same as those two passes did.
+  `consus-phase28-interaction-completeness` added attachment previews and rendered visual diffs;
+  PANT-812 audited the New Survey form, `SurveyView` member cards with their Comments /
+  Attachments / Artifact-links panels, `ArtifactLinksPanel` in `DecisionView`, and all eight
+  answer-shape controls — each now has a zero-violation `vitest-axe` test in jsdom, plus
+  keyboard-only tests for ranking and the survey stepper) — not a standing guarantee that every
+  *future* surface ships accessible by default; audit newer surfaces as they mature, same as those
+  passes did. The axe tests don't check colour contrast (jsdom has no layout), so contrast is still
+  a manual/browser check.
 
 ---
 
@@ -119,11 +124,19 @@ repo's own architecture legible and editable without digging through files by ha
 
 These are settled, not open questions:
 
-- **Standalone-only.** Zero live coupling to any specific external system — `server/adapters/`
-  contains only `doc-scanner/`.
+- **Standalone-only.** No client for any specific external system — `server/adapters/` contains
+  only the local `doc-scanner/` and `gitdocs/`. Other systems reach Consus through its generic REST
+  seams (`POST /api/questions/import`, `POST /api/proposals/:id/result`,
+  `POST /api/threads/:id/replies`) and the generic webhook transport. **One known exception
+  remains:** with `PANTHEON_API_URL` set, `server/pantheon/` pushes answers to imported question
+  tickets, decided verdicts and `decision:needs-context` to Pantheon core-api, and
+  `POST /api/projects/:project/ingest` checks tenant repo paths against it. The Pantheon transport
+  and both Pantheon pullers were removed (PANT-969, PANT-813 Q1=B); these pushes go next, once
+  Pantheon takes them on a generic seam.
 - **Harness interaction only through the generic seam.** `HarnessTransport` is the sole
   integration point for "propose a change and let something apply it," with no knowledge of what's
   configured on the other end.
+- **No polling.** Consus never polls another system; everything arrives through a push.
 - **Local-only by default.** `127.0.0.1` binding on both the Vite dev server and the Fastify
   server unless explicitly overridden. The production server reads `HOST` (default `127.0.0.1`)
   so a containerized deploy can bind `0.0.0.0` — nothing changes for anyone who doesn't set it.

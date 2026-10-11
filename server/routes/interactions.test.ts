@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import Database from "better-sqlite3";
 import { runMigration } from "../db/migrate.js";
 import { registerInteractionRoutes } from "./interactions.js";
+import { importQuestionTicket } from "../questions/import.js";
 
 function insertDecision(db: Database.Database, id: string, title: string, sourceBody: string | null = null) {
   const now = new Date().toISOString();
@@ -288,6 +289,85 @@ describe("POST /api/decisions/:id/verdict", () => {
     });
   });
 
+  describe("s6-consus-pantheon-question-adapter: question-linked items route to partial/submit, not seed", () => {
+    it("does NOT fire the seed bridge for a question-linked item verdict", async () => {
+      // Seed a question-linked item via POST /api/questions/import's import path
+      importQuestionTicket(db, {
+        ticket_id: "pant-ticket-1",
+        identifier: "PANT-1",
+        questions: [
+          { qid: "q1", text: "Pick one", kind: "single-select", options: ["Yes", "No"] },
+        ],
+      });
+
+      const item = db.prepare("SELECT id FROM items WHERE decision_payload IS NOT NULL").get() as { id: string };
+
+      bridgeCalls.length = 0;
+
+      const res = await app.inject({
+        method: "POST",
+        url: `/api/decisions/${item.id}/verdict`,
+        payload: { verdict: { kind: "option_chosen", optionId: "A" } },
+      });
+      expect(res.statusCode).toBe(200);
+
+      await new Promise((r) => setTimeout(r, 0));
+
+      // Must NOT have called the seed endpoint
+      const seedCalls = bridgeCalls.filter((c) => c.url.includes("/api/events/decisions"));
+      expect(seedCalls).toHaveLength(0);
+
+      // Must have called the partial endpoint
+      const partialCalls = bridgeCalls.filter((c) => c.url.includes("/partial"));
+      expect(partialCalls).toHaveLength(1);
+      expect(partialCalls[0].url).toBe("http://core-api:3012/api/feed/questions/pant-ticket-1/partial");
+
+      const body = JSON.parse(partialCalls[0].init.body as string);
+      expect(body.qid).toBe("q1");
+      expect(body.answer).toBe("A");
+    });
+
+    it("fires submit when the only question-linked item is decided", async () => {
+      importQuestionTicket(db, {
+        ticket_id: "pant-ticket-2",
+        identifier: "PANT-2",
+        questions: [
+          { qid: "qa", text: "Single question", kind: "free-text" },
+        ],
+      });
+
+      const item = db.prepare("SELECT id FROM items WHERE survey_id IN (SELECT id FROM surveys WHERE title LIKE '%PANT-2%')").get() as { id: string };
+      bridgeCalls.length = 0;
+
+      await app.inject({
+        method: "POST",
+        url: `/api/decisions/${item.id}/verdict`,
+        payload: { verdict: { kind: "text_response", text: "It depends" } },
+      });
+
+      await new Promise((r) => setTimeout(r, 0));
+
+      const submitCalls = bridgeCalls.filter((c) => c.url.includes("/submit"));
+      expect(submitCalls).toHaveLength(1);
+    });
+
+    it("unlinked decisions still fire the seed bridge", async () => {
+      insertDecision(db, "unlinked-dec", "Regular decision");
+      bridgeCalls.length = 0;
+
+      await app.inject({
+        method: "POST",
+        url: "/api/decisions/unlinked-dec/verdict",
+        payload: { verdict: { kind: "accepted" } },
+      });
+
+      await new Promise((r) => setTimeout(r, 0));
+
+      const seedCalls = bridgeCalls.filter((c) => c.url.includes("/api/events/decisions"));
+      expect(seedCalls).toHaveLength(1);
+    });
+  });
+
   describe("s5-freetext-rating-ranking-answer-shapes: new verdict kinds round-trip the same way", () => {
     it("records a text_response verdict on a free-text/v1 item and marks it done", async () => {
       insertDecisionWithPayload(db, "ft-verdict-1", "Anything else?", {
@@ -400,5 +480,94 @@ describe("POST /api/decisions/:id/verdict", () => {
         .get("cs-verdict-1") as { new_value: string };
       expect(JSON.parse(auditRow.new_value)).toEqual({ kind: "concept_selected", conceptId: "script" });
     });
+  });
+});
+
+describe("PANT-807: question delivery outbox via the routes", () => {
+  let db: Database.Database;
+  let app: FastifyInstance;
+  let calls: CapturedCall[];
+  let nextStatus: number;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    runMigration(db);
+    calls = [];
+    nextStatus = 200;
+    app = Fastify();
+    registerInteractionRoutes(app, {
+      db,
+      pantheonApiUrl: "http://core-api:3012",
+      fetch: (url, init) => {
+        calls.push({ url: String(url), init: init ?? {} });
+        return Promise.resolve(new Response("{}", { status: nextStatus }));
+      },
+    });
+    await app.ready();
+    importQuestionTicket(db, {
+      ticket_id: "pt-1",
+      identifier: "PANT-1",
+      questions: [{ qid: "q1", text: "Say something", kind: "free-text" }],
+    });
+  });
+
+  afterEach(async () => {
+    await app.close();
+    db.close();
+  });
+
+  const itemId = () => (db.prepare("SELECT item_id FROM question_links WHERE qid = 'q1'").get() as { item_id: string }).item_id;
+
+  it("records the outbox row with the verdict, and POST /api/questions/redeliver delivers it after a 500", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    nextStatus = 500;
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/decisions/${itemId()}/verdict`,
+      payload: { verdict: { kind: "text_response", text: "hello" } },
+    });
+    expect(res.statusCode).toBe(200);
+    await new Promise((r) => setTimeout(r, 0));
+
+    const failed = db.prepare("SELECT kind, status, attempts FROM question_deliveries ORDER BY id").all();
+    // Partial failed; the submit is held back behind it, still pending.
+    expect(failed).toEqual([
+      { kind: "partial", status: "failed", attempts: 1 },
+      { kind: "submit", status: "pending", attempts: 0 },
+    ]);
+
+    nextStatus = 200;
+    calls.length = 0;
+    const redeliver = await app.inject({ method: "POST", url: "/api/questions/redeliver" });
+    expect(redeliver.statusCode).toBe(200);
+    expect(redeliver.json()).toEqual({ delivered: 2, failed: 0, skipped: 0, remaining: 0 });
+    expect(calls.map((c) => c.url)).toEqual([
+      "http://core-api:3012/api/feed/questions/pt-1/partial",
+      "http://core-api:3012/api/feed/questions/pt-1/submit",
+    ]);
+    warn.mockRestore();
+  });
+
+  it("refuses an accepted verdict on a free-text question without recording it", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/decisions/${itemId()}/verdict`,
+      payload: { verdict: { kind: "accepted" } },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(db.prepare("SELECT decided_at FROM items WHERE id = ?").get(itemId())).toEqual({ decided_at: null });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM question_deliveries").get()).toEqual({ n: 0 });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("409s the redeliver endpoint when no Pantheon URL is configured", async () => {
+    const bare = Fastify();
+    const saved = process.env.PANTHEON_API_URL;
+    delete process.env.PANTHEON_API_URL;
+    registerInteractionRoutes(bare, { db });
+    const res = await bare.inject({ method: "POST", url: "/api/questions/redeliver" });
+    expect(res.statusCode).toBe(409);
+    if (saved !== undefined) process.env.PANTHEON_API_URL = saved;
+    await bare.close();
   });
 });
