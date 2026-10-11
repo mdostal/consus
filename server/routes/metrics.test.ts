@@ -9,11 +9,9 @@ import type { FastifyInstance } from "fastify";
 import { buildServer } from "../index.js";
 import { openDb } from "../db/connection.js";
 import { runMigration } from "../db/migrate.js";
-import { PantheonHarnessTransport, FileHarnessTransport } from "../harness/transport.js";
-import { PantheonQuestionPuller } from "../pantheon/question-puller.js";
-import { PantheonResultPuller } from "../harness/pantheon-result-puller.js";
-import { recordSyncSuccess } from "../pantheon/sync-status.js";
-import { deliverQuestionDeliveries } from "../pantheon/question-adapter.js";
+import { FileHarnessTransport } from "../harness/transport.js";
+import { recordSyncFailure, recordSyncSuccess } from "../pantheon/sync-status.js";
+import { deliverQuestionDeliveries } from "../pantheon/answer-delivery.js";
 
 const NOW = new Date("2026-09-27T12:00:00.000Z");
 const ago = (seconds: number) => new Date(NOW.getTime() - seconds * 1000).toISOString();
@@ -113,7 +111,7 @@ describe("GET /api/metrics", () => {
     });
   });
 
-  it("reports the active transport name and omits pantheon outside pantheon mode", async () => {
+  it("reports the active transport name and omits pantheon when PANTHEON_API_URL is unset", async () => {
     setup();
     app = buildServer({ dbPath, transport: new FileHarnessTransport(join(dir, "handoffs")) });
 
@@ -126,67 +124,54 @@ describe("GET /api/metrics", () => {
   });
 });
 
-describe("pantheon mode sync status", () => {
-  it("a throwing fetch sets degraded on /health and fills pantheon.last_error; a later success clears it", async () => {
+describe("pantheon push sync status (PANTHEON_API_URL set)", () => {
+  const PANTHEON_URL = "https://pantheon.example.com";
+
+  it("a failed push sets degraded on /health and fills pantheon.last_error; a later success clears it", async () => {
     setup();
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    app = buildServer({ dbPath, transport: new PantheonHarnessTransport("https://pantheon.example.com") });
+    app = buildServer({ dbPath, transport: new FileHarnessTransport(join(dir, "handoffs")), pantheonApiUrl: PANTHEON_URL });
 
     const before = (await app.inject({ method: "GET", url: "/health" })).json();
-    expect(before).toEqual({ status: "ok", sqlite: "connected", transport: "pantheon", degraded: false });
+    expect(before).toEqual({ status: "ok", sqlite: "connected", transport: "file", degraded: false });
 
-    // Pullers run on their own handle, as startPantheonSync wires them.
-    const pullerDb = openDb(dbPath);
-    const throwing = vi.fn().mockRejectedValue(new Error("pantheon down"));
-    await new PantheonQuestionPuller("https://pantheon.example.com", pullerDb, throwing).poll();
+    const db = openDb(dbPath);
+    recordSyncFailure(db, "decision_push", new Error("pantheon down"));
 
     const health = await app.inject({ method: "GET", url: "/health" });
     expect(health.statusCode).toBe(200);
-    expect(health.json()).toEqual({ status: "ok", sqlite: "connected", transport: "pantheon", degraded: true });
+    expect(health.json()).toEqual({ status: "ok", sqlite: "connected", transport: "file", degraded: true });
 
     const { pantheon } = (await app.inject({ method: "GET", url: "/api/metrics" })).json();
     expect(pantheon.degraded).toBe(true);
     expect(pantheon.last_error).toBe("pantheon down");
-    expect(pantheon.last_error_direction).toBe("question_pull");
-    expect(pantheon.directions.question_pull).toMatchObject({ last_error: "pantheon down", failing: true, last_success_at: null });
-    expect(pantheon.directions.result_pull).toEqual({
-      last_success_at: null,
-      last_failure_at: null,
-      last_error: null,
-      failing: false,
-    });
+    expect(pantheon.last_error_direction).toBe("decision_push");
+    expect(Object.keys(pantheon.directions).sort()).toEqual(["decision_push", "needs_context_push", "question_push"]);
 
-    // A later successful poll of the same direction clears degraded; the error stays visible.
-    recordSyncSuccess(pullerDb, "question_pull", new Date(Date.now() + 1000));
-    const recovered = (await app.inject({ method: "GET", url: "/health" })).json();
-    expect(recovered.degraded).toBe(false);
+    // A later success of the same direction clears degraded; the error stays visible.
+    recordSyncSuccess(db, "decision_push", new Date(Date.now() + 1000));
+    expect((await app.inject({ method: "GET", url: "/health" })).json().degraded).toBe(false);
     const after = (await app.inject({ method: "GET", url: "/api/metrics" })).json();
     expect(after.pantheon.last_error).toBe("pantheon down");
-    pullerDb.close();
+    db.close();
   });
 
-  it("records result_pull failures on non-2xx and success on a good poll", async () => {
+  it("ignores a failing row left behind by the removed pullers (PANT-969)", async () => {
     setup();
-    app = buildServer({ dbPath, transport: new PantheonHarnessTransport("https://pantheon.example.com") });
-    const pullerDb = openDb(dbPath);
+    app = buildServer({ dbPath, pantheonApiUrl: PANTHEON_URL });
+    const db = openDb(dbPath);
+    recordSyncFailure(db, "result_pull" as never, "Pantheon changes fetch failed: 503");
 
-    const bad = vi.fn().mockResolvedValue(new Response("nope", { status: 503 }));
-    await new PantheonResultPuller("https://pantheon.example.com", pullerDb, bad).poll();
-    let { pantheon } = (await app.inject({ method: "GET", url: "/api/metrics" })).json();
-    expect(pantheon.directions.result_pull).toMatchObject({ last_error: "Pantheon changes fetch failed: 503", failing: true });
-
-    const good = vi.fn().mockResolvedValue(new Response(JSON.stringify({ changes: [] }), { status: 200 }));
-    await new PantheonResultPuller("https://pantheon.example.com", pullerDb, good).poll();
-    ({ pantheon } = (await app.inject({ method: "GET", url: "/api/metrics" })).json());
-    expect(pantheon.directions.result_pull.failing).toBe(false);
+    expect((await app.inject({ method: "GET", url: "/health" })).json().degraded).toBe(false);
+    const { pantheon } = (await app.inject({ method: "GET", url: "/api/metrics" })).json();
     expect(pantheon.degraded).toBe(false);
-    pullerDb.close();
+    expect(pantheon.last_error).toBeNull();
+    db.close();
   });
 
   it("counts undelivered question answers and records question_push from the delivery outbox", async () => {
     setup();
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    app = buildServer({ dbPath, transport: new PantheonHarnessTransport("https://pantheon.example.com"), now: () => NOW });
+    app = buildServer({ dbPath, pantheonApiUrl: PANTHEON_URL, now: () => NOW });
     const db = openDb(dbPath);
     const row = db.prepare(
       `INSERT INTO question_deliveries (item_id, ticket_id, qid, kind, body, status, attempts, created_at, updated_at)

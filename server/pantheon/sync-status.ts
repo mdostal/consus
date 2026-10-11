@@ -1,20 +1,17 @@
 import type Database from "better-sqlite3";
 
 /**
- * PANT-809: last success / last failure per Pantheon sync direction, kept in
+ * PANT-809: last success / last failure per Pantheon push direction, kept in
  * the `sync_status` table (server/db/migrate.ts) so `GET /api/metrics` and
- * `/health`'s `degraded` flag survive a restart. Before this, a Pantheon-mode
- * failure only ever surfaced as a `console.error`.
+ * `/health`'s `degraded` flag survive a restart. Reported only when
+ * PANTHEON_API_URL is set. The two pull directions went with the pullers
+ * (PANT-969); getSyncStatus ignores their leftover rows.
  *
- *  - question_pull: PantheonQuestionPuller — GET /api/feed/questions
- *  - result_pull:   PantheonResultPuller   — GET /api/feed/changes
  *  - question_push: question delivery outbox — POST /api/feed/questions/:ticket/{partial,submit}
  *  - decision_push: verdict bridge         — POST /api/events/decisions
  *  - needs_context_push: PANT-938 warn-only readiness — POST /api/events/decisions/needs-context
  */
 export const SYNC_DIRECTIONS = [
-  "question_pull",
-  "result_pull",
   "question_push",
   "decision_push",
   "needs_context_push",
@@ -58,9 +55,11 @@ export function safeRecord(fn: () => void): void {
 }
 
 export function getSyncStatus(db: Database.Database): SyncStatusRow[] {
-  return db
-    .prepare("SELECT direction, last_success_at, last_failure_at, last_error FROM sync_status ORDER BY direction")
-    .all() as SyncStatusRow[];
+  return (
+    db
+      .prepare("SELECT direction, last_success_at, last_failure_at, last_error FROM sync_status ORDER BY direction")
+      .all() as SyncStatusRow[]
+  ).filter((r) => (SYNC_DIRECTIONS as readonly string[]).includes(r.direction));
 }
 
 /** A direction is failing when its last failure is newer than its last success. */

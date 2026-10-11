@@ -16,7 +16,7 @@ import {
   validateItemType,
 } from "./store.js";
 import { HarnessThreadNotifier, WebhookThreadNotifier, selectThreadNotifier, type ThreadNotifier } from "./notifier.js";
-import { NOOP_HARNESS_TRANSPORT, PantheonHarnessTransport, type HarnessTransport } from "../harness/transport.js";
+import { NOOP_HARNESS_TRANSPORT, type HarnessTransport } from "../harness/transport.js";
 import { ThreadBus } from "./bus.js";
 
 describe("thread store", () => {
@@ -167,8 +167,13 @@ describe("thread notifiers", () => {
 
     const noop = await new HarnessThreadNotifier(NOOP_HARNESS_TRANSPORT, "noop").notify(event);
     expect(noop).toMatchObject({ ok: false, error: expect.stringMatching(/no agent configured/) });
-    const pantheon = await new HarnessThreadNotifier(new PantheonHarnessTransport("http://p"), "pantheon").notify(event);
-    expect(pantheon).toMatchObject({ ok: false, error: expect.stringMatching(/CONSUS_THREAD_WEBHOOK_URL/) });
+    const proposalsOnly: HarnessTransport = {
+      async invoke() {
+        return { ok: false, recoverable: false, code: "UNKNOWN_METHOD" };
+      },
+    };
+    const unsupported = await new HarnessThreadNotifier(proposalsOnly, "custom").notify(event);
+    expect(unsupported).toMatchObject({ ok: false, error: expect.stringMatching(/CONSUS_THREAD_WEBHOOK_URL/) });
   });
 
   it("selectThreadNotifier prefers CONSUS_THREAD_WEBHOOK_URL and rejects a bad URL", () => {

@@ -4,7 +4,8 @@ import Database from "better-sqlite3";
 import { runMigration } from "../db/migrate.js";
 import { registerDecisionRoutes } from "./decisions.js";
 import { getSyncStatus } from "../pantheon/sync-status.js";
-import { nativeContextCount, requestNeedsContext } from "../pantheon/needs-context.js";
+import { nativeContextCount } from "../decision-contract/supporting-material.js";
+import { requestNeedsContext } from "../pantheon/needs-context.js";
 
 type CapturedCall = { url: string; init: RequestInit };
 

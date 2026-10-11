@@ -74,6 +74,22 @@
   because Pantheon doesn't push change results yet; set `0` once it does, and results then arrive
   only through `POST /api/proposals/:id/result`.
 
+### Removed
+
+- **The Pantheon transport and pullers** (PANT-969, PANT-813 Q1=B). `CONSUS_HARNESS=pantheon`,
+  `PantheonHarnessTransport`, the change result puller, the question puller and their switches
+  (`CONSUS_PANTHEON_POLL`, `CONSUS_PANTHEON_RESULT_POLL`) are gone, so Consus no longer polls
+  anything. Pantheon now uses the generic seams: proposals go out on the webhook transport
+  (`CONSUS_HARNESS_WEBHOOK_URL=<core-api>/api/feed/changes/webhook?origin=consus`), and results and
+  question tickets come in on `POST /api/proposals/:id/result` and `POST /api/questions/import`.
+  `CONSUS_HARNESS=pantheon` now fails at startup instead of silently falling back. The question
+  import moved to `server/questions/import.ts`; `POST /api/questions/:ticket/close` without an
+  `actor` now records `upstream` instead of `pantheon`. The outbound Pantheon pushes
+  (answers, verdict bridge, `decision:needs-context`) stay behind `PANTHEON_API_URL`, and `/health`'s
+  `degraded` and `GET /api/metrics`'s `pantheon` block are now reported whenever it is set (they
+  were keyed to the removed transport). The `question_pull` / `result_pull` directions are gone
+  from `GET /api/metrics`.
+
 ### Fixed
 
 - **Native crash loop on startup under Node 24** (#193, PANT-922). better-sqlite3 11.x wraps

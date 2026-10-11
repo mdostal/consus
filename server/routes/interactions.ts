@@ -8,7 +8,7 @@ import {
   getQuestionLink,
   questionAnswerFor,
   redeliverQuestionDeliveries,
-} from "../pantheon/question-adapter.js";
+} from "../pantheon/answer-delivery.js";
 import { recordSyncFailure, recordSyncSuccess, safeRecord } from "../pantheon/sync-status.js";
 import { markInboxSeen } from "../inbox/query.js";
 

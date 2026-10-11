@@ -3,7 +3,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import Database from "better-sqlite3";
 import { runMigration } from "../db/migrate.js";
 import { registerInteractionRoutes } from "./interactions.js";
-import { pullQuestions } from "../pantheon/question-adapter.js";
+import { importQuestionTicket } from "../questions/import.js";
 
 function insertDecision(db: Database.Database, id: string, title: string, sourceBody: string | null = null) {
   const now = new Date().toISOString();
@@ -291,29 +291,17 @@ describe("POST /api/decisions/:id/verdict", () => {
 
   describe("s6-consus-pantheon-question-adapter: question-linked items route to partial/submit, not seed", () => {
     it("does NOT fire the seed bridge for a question-linked item verdict", async () => {
-      // Seed a question-linked item via pullQuestions
-      const feedBody = {
-        questions: [{
-          ticket_id: "pant-ticket-1",
-          identifier: "PANT-1",
-          status: "todo",
-          questions: [
-            { qid: "q1", text: "Pick one", kind: "single-select", options: ["Yes", "No"] },
-          ],
-        }],
-      };
-      let fetchCallCount = 0;
-      const allCalls: CapturedCall[] = [];
-      const seededFetch = (url: string | URL | Request, init?: RequestInit) => {
-        allCalls.push({ url: String(url), init: init ?? {} });
-        fetchCallCount++;
-        return Promise.resolve(new Response(JSON.stringify(feedBody), { status: 200 }));
-      };
-      await pullQuestions(db, { pantheonApiUrl: "http://core-api:3012", fetch: seededFetch });
+      // Seed a question-linked item via POST /api/questions/import's import path
+      importQuestionTicket(db, {
+        ticket_id: "pant-ticket-1",
+        identifier: "PANT-1",
+        questions: [
+          { qid: "q1", text: "Pick one", kind: "single-select", options: ["Yes", "No"] },
+        ],
+      });
 
       const item = db.prepare("SELECT id FROM items WHERE decision_payload IS NOT NULL").get() as { id: string };
 
-      allCalls.length = 0; // clear seed call
       bridgeCalls.length = 0;
 
       const res = await app.inject({
@@ -340,19 +328,12 @@ describe("POST /api/decisions/:id/verdict", () => {
     });
 
     it("fires submit when the only question-linked item is decided", async () => {
-      const feedBody = {
-        questions: [{
-          ticket_id: "pant-ticket-2",
-          identifier: "PANT-2",
-          status: "todo",
-          questions: [
-            { qid: "qa", text: "Single question", kind: "free-text" },
-          ],
-        }],
-      };
-      await pullQuestions(db, {
-        pantheonApiUrl: "http://core-api:3012",
-        fetch: () => Promise.resolve(new Response(JSON.stringify(feedBody), { status: 200 })),
+      importQuestionTicket(db, {
+        ticket_id: "pant-ticket-2",
+        identifier: "PANT-2",
+        questions: [
+          { qid: "qa", text: "Single question", kind: "free-text" },
+        ],
       });
 
       const item = db.prepare("SELECT id FROM items WHERE survey_id IN (SELECT id FROM surveys WHERE title LIKE '%PANT-2%')").get() as { id: string };
@@ -523,22 +504,10 @@ describe("PANT-807: question delivery outbox via the routes", () => {
       },
     });
     await app.ready();
-    await pullQuestions(db, {
-      pantheonApiUrl: "http://core-api:3012",
-      fetch: () =>
-        Promise.resolve(
-          new Response(
-            JSON.stringify({
-              questions: [{
-                ticket_id: "pt-1",
-                identifier: "PANT-1",
-                status: "todo",
-                questions: [{ qid: "q1", text: "Say something", kind: "free-text" }],
-              }],
-            }),
-            { status: 200 },
-          ),
-        ),
+    importQuestionTicket(db, {
+      ticket_id: "pt-1",
+      identifier: "PANT-1",
+      questions: [{ qid: "q1", text: "Say something", kind: "free-text" }],
     });
   });
 

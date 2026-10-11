@@ -4,7 +4,7 @@ import {
   closeQuestionTicket,
   importQuestionTicket,
   type QuestionItem,
-} from "../pantheon/question-adapter.js";
+} from "../questions/import.js";
 
 export interface QuestionRoutesOptions {
   db: Database.Database;
@@ -33,11 +33,9 @@ function isQuestionItem(q: unknown): q is QuestionItem {
 }
 
 /**
- * The push-in half of the Pantheon question seam (the pull half is
- * PantheonQuestionPuller). An external system pushes a question ticket in,
+ * The generic question seam. An external system pushes a question ticket in,
  * or tells Consus the ticket was cancelled/answered elsewhere, over plain
- * REST — no polling required. Import shares importQuestionTicket with the
- * puller, so both paths produce identical rows.
+ * REST. Consus never polls for questions.
  */
 export function registerQuestionRoutes(app: FastifyInstance, { db }: QuestionRoutesOptions): void {
   app.post<{ Body: ImportBody }>("/api/questions/import", async (request, reply) => {
