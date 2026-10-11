@@ -28,7 +28,8 @@ import { registerSendOutRoutes } from "./routes/send-out.js";
 import { registerInboxRoutes } from "./routes/inbox.js";
 import { loadProjectRegistry } from "./config/project-registry.js";
 import { StdioHarnessTransport, FileHarnessTransport, WebhookHarnessTransport, NOOP_HARNESS_TRANSPORT, transportName, type HarnessTransport } from "./harness/transport.js";
-import { isSyncDegraded } from "./pantheon/sync-status.js";
+import { isSyncDegraded } from "./webhooks/sync-status.js";
+import { eventsWebhookUrlFromEnv } from "./webhooks/events.js";
 import { createStorageAdapter } from "./storage/index.js";
 
 /** The built web SPA (`vite.config.ts`'s `build.outDir: "../dist-web"`)
@@ -124,11 +125,11 @@ export interface BuildServerOptions {
   /** Base URL for the replyUrl in outbound thread events
    *  (CONSUS_PUBLIC_URL). Unset: derived from each request's host. */
   publicUrl?: string;
-  /** Pantheon core-api base URL for the outbound answer, verdict and
-   *  needs-context pushes (server/pantheon/). Defaults to PANTHEON_API_URL;
-   *  only decides whether /health and GET /api/metrics report their sync
-   *  status — each route still resolves its own URL. */
-  pantheonApiUrl?: string;
+  /** Outbound event webhook for answers, verdicts and needs-context
+   *  (server/webhooks/). Defaults to CONSUS_EVENTS_WEBHOOK_URL; only decides
+   *  whether /health and GET /api/metrics report its sync status — each
+   *  route still resolves its own URL. */
+  eventsWebhookUrl?: string;
 }
 
 export function buildServer({
@@ -142,7 +143,7 @@ export function buildServer({
   now,
   threadNotifier,
   publicUrl,
-  pantheonApiUrl = process.env.PANTHEON_API_URL,
+  eventsWebhookUrl = process.env.CONSUS_EVENTS_WEBHOOK_URL?.trim() || undefined,
 }: BuildServerOptions): FastifyInstance {
   const app = Fastify({ logger: false });
   const db = openDb(dbPath);
@@ -174,8 +175,8 @@ export function buildServer({
     notifier: threadNotifier ?? new HarnessThreadNotifier(transport, activeTransport),
     publicUrl,
   });
-  const pantheonPush = Boolean(pantheonApiUrl);
-  registerMetricsRoutes(app, { db, repos, transport: activeTransport, pantheonPush, now });
+  const eventsWebhook = Boolean(eventsWebhookUrl);
+  registerMetricsRoutes(app, { db, repos, transport: activeTransport, eventsWebhook, now });
 
   // Serves the built web SPA (mdostal/consus#105 — previously GET / was a
   // bare 404, so none of the app's own UI was ever reachable through this
@@ -211,7 +212,7 @@ export function buildServer({
       // PANT-809: additive only — status/sqlite and the 200 stay unchanged
       // for the Tauri sidecar and Pantheon compose healthchecks.
       transport: activeTransport,
-      degraded: pantheonPush && isSyncDegraded(db),
+      degraded: eventsWebhook && isSyncDegraded(db),
     };
   });
 
@@ -244,6 +245,9 @@ if (isMain) {
   // Harness dispatch — see selectHarnessTransport() for priority order.
   const transport = selectHarnessTransport(process.env);
 
+  // Fail at startup on a malformed CONSUS_EVENTS_WEBHOOK_URL rather than on the first verdict.
+  eventsWebhookUrlFromEnv(process.env);
+
   // Agent threads (PANT-962): CONSUS_THREAD_WEBHOOK_URL, else the harness above.
   const threadNotifier = selectThreadNotifier(process.env, transport, transportName(transport));
   const publicUrl = process.env.CONSUS_PUBLIC_URL?.trim() || undefined;
@@ -264,7 +268,7 @@ if (isMain) {
     console.log(`Consus server listening on :${port} (db: ${dbPath})`);
     // PANT-807: one redelivery pass over the question-answer outbox at
     // startup (no timer — later retries go through the same endpoint).
-    if (process.env.PANTHEON_API_URL) {
+    if (eventsWebhookUrlFromEnv(process.env)) {
       void app
         .inject({ method: "POST", url: "/api/questions/redeliver" })
         .then((res) => console.log(`[startup] question redelivery: ${res.body}`))

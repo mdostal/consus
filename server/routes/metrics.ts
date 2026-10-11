@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
-import { getSyncStatus, isFailing, SYNC_DIRECTIONS, type SyncStatusRow } from "../pantheon/sync-status.js";
+import { getSyncStatus, isFailing, SYNC_DIRECTIONS, type SyncStatusRow } from "../webhooks/sync-status.js";
 
 export interface MetricsRoutesOptions {
   db: Database.Database;
@@ -8,8 +8,8 @@ export interface MetricsRoutesOptions {
   repos: Record<string, string>;
   /** Active harness transport name (see transportName() in server/harness/transport.ts). */
   transport: string;
-  /** True when the Pantheon pushes (server/pantheon/) are configured; adds the `pantheon` sync block. */
-  pantheonPush?: boolean;
+  /** True when CONSUS_EVENTS_WEBHOOK_URL (server/webhooks/) is configured; adds the `events_webhook` sync block. */
+  eventsWebhook?: boolean;
   /** Injectable clock so age fields are deterministic in tests. */
   now?: () => Date;
 }
@@ -29,8 +29,8 @@ function oldest(db: Database.Database, sql: string): string | null {
   return (db.prepare(sql).get() as { at: string | null }).at;
 }
 
-/** Pantheon sync block for GET /api/metrics — every known direction, even ones never attempted. */
-export function pantheonSyncMetrics(db: Database.Database, at: Date = new Date()) {
+/** Outbound event sync block for GET /api/metrics — every known direction, even ones never attempted. */
+export function eventsWebhookSyncMetrics(db: Database.Database, at: Date = new Date()) {
   const rows = new Map(getSyncStatus(db).map((r) => [r.direction, r]));
   const directions = Object.fromEntries(
     SYNC_DIRECTIONS.map((d) => {
@@ -57,7 +57,7 @@ export function pantheonSyncMetrics(db: Database.Database, at: Date = new Date()
     last_error_at: latestFailure?.last_failure_at ?? null,
     last_error_direction: latestFailure?.direction ?? null,
     directions,
-    // PANT-807 question-answer outbox: answers not yet accepted by Pantheon.
+    // PANT-807 question-answer outbox: answers not yet accepted by the receiver.
     undelivered_answers: {
       pending: count(db, "SELECT COUNT(*) AS n FROM question_deliveries WHERE status = 'pending'"),
       failed: count(db, "SELECT COUNT(*) AS n FROM question_deliveries WHERE status = 'failed'"),
@@ -73,7 +73,7 @@ export function pantheonSyncMetrics(db: Database.Database, at: Date = new Date()
  * PANT-809: operability snapshot for Janus / Pantheon dashboards. Computed
  * from SQLite on every request — no background work, no caching.
  */
-export function registerMetricsRoutes(app: FastifyInstance, { db, repos, transport, pantheonPush = false, now = () => new Date() }: MetricsRoutesOptions): void {
+export function registerMetricsRoutes(app: FastifyInstance, { db, repos, transport, eventsWebhook = false, now = () => new Date() }: MetricsRoutesOptions): void {
   app.get("/api/metrics", async () => {
     const at = now();
     const dayAgo = new Date(at.getTime() - DAY_MS).toISOString();
@@ -118,7 +118,7 @@ export function registerMetricsRoutes(app: FastifyInstance, { db, repos, transpo
         doc_count: docCounts.get(name) ?? 0,
       })),
       harness: { transport },
-      ...(pantheonPush ? { pantheon: pantheonSyncMetrics(db, at) } : {}),
+      ...(eventsWebhook ? { events_webhook: eventsWebhookSyncMetrics(db, at) } : {}),
     };
   });
 }

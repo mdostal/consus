@@ -7,7 +7,7 @@ import { closeOpenItems } from "../kb/store.js";
  * in over POST /api/questions/import (and closes it with
  * POST /api/questions/:ticket/close); each question becomes a decision item in
  * one survey, linked back through question_links. Nothing here knows who the
- * caller is. Answers go back through server/pantheon/answer-delivery.ts.
+ * caller is. Answers go back as events through server/webhooks/answer-delivery.ts.
  */
 
 export interface QuestionItem {

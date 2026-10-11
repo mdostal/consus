@@ -29,7 +29,7 @@ beforeEach(async () => {
   app = Fastify();
   registerQuestionRoutes(app, { db });
   registerDecisionRoutes(app, { db });
-  // PANTHEON_API_URL may be set in the env, which turns the verdict bridge on;
+  // CONSUS_EVENTS_WEBHOOK_URL may be set in the env, which turns the verdict events on;
   // a stub fetch keeps it off the network.
   registerInteractionRoutes(app, { db, fetch: async () => new Response("{}", { status: 200 }) });
   await app.ready();

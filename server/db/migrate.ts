@@ -233,7 +233,7 @@ export function runMigration(db: Database.Database): void {
   // NULL means "not part of any survey" — existing rows are untouched.
   addColumnIfMissing(db, "items", "survey_id", "TEXT REFERENCES surveys(id)");
 
-  // PANT-938: when Consus sent `decision:needs-context` to Pantheon for an
+  // PANT-938: when Consus sent its needs-context event for an
   // item created without supporting material. Set at most once per item; NULL
   // means never requested (has material, standalone mode, or predates this).
   addColumnIfMissing(db, "items", "needs_context_requested_at", "TEXT");
@@ -281,7 +281,8 @@ export function runMigration(db: Database.Database): void {
     );
   `);
 
-  // PANT-807: delivery outbox for question answers sent to Pantheon. A row is
+  // PANT-807: delivery outbox for question answers (consus.question.answered /
+  // consus.questions.submitted on CONSUS_EVENTS_WEBHOOK_URL). A row is
   // written in the same transaction as the verdict, then delivered; a non-2xx
   // or thrown fetch leaves it 'failed' with last_error so it can be redelivered
   // (at startup or via POST /api/questions/redeliver) instead of being lost.
@@ -337,8 +338,8 @@ export function runMigration(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_thread_messages_thread_id ON thread_messages(thread_id);
   `);
 
-  // PANT-809: last success / failure per Pantheon push direction
-  // (server/pantheon/sync-status.ts), read by GET /api/metrics and /health.
+  // PANT-809: last success / failure per outbound event direction
+  // (server/webhooks/sync-status.ts), read by GET /api/metrics and /health.
   // Rows for the removed pull directions are left in place and ignored.
   db.exec(`
     CREATE TABLE IF NOT EXISTS sync_status (

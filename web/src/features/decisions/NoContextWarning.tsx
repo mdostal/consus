@@ -8,7 +8,7 @@
  * than a false alarm.
  *
  * PANT-938: `requestedAt` (needs_context_requested_at) is when Consus asked
- * Pantheon to fill the context in via `decision:needs-context`. The warning
+ * for the context to be filled in via its `consus.decision.needs_context` event. The warning
  * still disappears as soon as material arrives (count > 0); it never blocks
  * answering.
  */

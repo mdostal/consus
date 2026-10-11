@@ -1,20 +1,17 @@
 import type Database from "better-sqlite3";
 import type { Verdict } from "../decision-contract/parser.js";
+import { postEvent, type ConsusEvent, type EventsWebhookOptions } from "./events.js";
 import { recordSyncFailure, recordSyncSuccess, safeRecord } from "./sync-status.js";
 
 /**
- * The answer half of the question seam, still addressed to Pantheon: a verdict
- * on an item imported through POST /api/questions/import (server/questions/
- * import.ts) is written to the question_deliveries outbox and POSTed to
- * `${PANTHEON_API_URL}/api/feed/questions/:ticket/{partial,submit}`.
- * PANT-969 removed the pullers and the Pantheon transport; this push stays
- * until Pantheon can take answers on a generic seam.
+ * The answer half of the question seam: a verdict on an item imported through
+ * POST /api/questions/import (server/questions/import.ts) is written to the
+ * question_deliveries outbox and sent as a `consus.question.answered` event
+ * (then, once the ticket is fully answered, `consus.questions.submitted`) to
+ * CONSUS_EVENTS_WEBHOOK_URL (server/webhooks/events.ts).
  */
 
-export interface AnswerDeliveryOptions {
-  pantheonApiUrl: string;
-  fetch?: typeof globalThis.fetch;
-}
+export type AnswerDeliveryOptions = EventsWebhookOptions;
 
 // --- Link lookup ---
 
@@ -35,7 +32,7 @@ export function getQuestionLink(db: Database.Database, itemId: string): Question
 // --- Verdict → answer string ---
 
 /**
- * Maps a verdict to the answer string Pantheon records for the question.
+ * Maps a verdict to the answer string sent for the question.
  * Returns null when the verdict has no meaning for the item's payload —
  * today that is `accepted` on anything but a decision-request with a
  * `recommended` option (feature-selection, free-text), which used to be sent
@@ -71,7 +68,7 @@ function verdictToAnswer(verdict: Verdict, decisionPayloadJson: string | null): 
 /**
  * The answer a verdict on a question-linked item would send, or null when the
  * verdict is meaningless for that item's payload (the verdict route refuses
- * it with a 400 rather than recording something Pantheon can't use).
+ * it with a 400 rather than recording something the receiver can't use).
  */
 export function questionAnswerFor(db: Database.Database, itemId: string, verdict: Verdict): string | null {
   const item = db
@@ -176,22 +173,19 @@ export function enqueueQuestionVerdict(
   return ids;
 }
 
-async function deliverRow(db: Database.Database, row: DeliveryRow, opts: AnswerDeliveryOptions): Promise<boolean> {
-  const doFetch = opts.fetch ?? globalThis.fetch;
-  const url = `${opts.pantheonApiUrl}/api/feed/questions/${row.ticket_id}/${row.kind}`;
-
-  let error: string | null = null;
-  try {
-    const res = await doFetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: row.body,
-    });
-    if (!res.ok) error = `HTTP ${res.status}`;
-  } catch (err) {
-    error = err instanceof Error ? err.message : String(err);
+/** The event an outbox row stands for. Built at send time, so rows written before PANT-998 send the same events. */
+function rowEvent(row: DeliveryRow): ConsusEvent {
+  if (row.kind === "submit") {
+    const { actor } = JSON.parse(row.body) as { actor: string };
+    return { type: "consus.questions.submitted", version: 1, ticketId: row.ticket_id, actor };
   }
+  const { qid, answer, actor } = JSON.parse(row.body) as { qid: string; answer: string; actor: string };
+  return { type: "consus.question.answered", version: 1, ticketId: row.ticket_id, qid, answer, actor };
+}
 
+async function deliverRow(db: Database.Database, row: DeliveryRow, opts: AnswerDeliveryOptions): Promise<boolean> {
+  const sent = await postEvent(rowEvent(row), opts);
+  const error = sent.ok ? null : sent.error;
   const now = new Date().toISOString();
   if (error === null) {
     // The body may have been overwritten by a newer verdict while this POST
@@ -209,9 +203,9 @@ async function deliverRow(db: Database.Database, row: DeliveryRow, opts: AnswerD
   db.prepare(
     "UPDATE question_deliveries SET status = 'failed', attempts = attempts + 1, last_error = ?, updated_at = ? WHERE id = ?",
   ).run(error, now, row.id);
-  // Also counted in GET /api/metrics's pantheon.undelivered_answers.
+  // Also counted in GET /api/metrics's events_webhook.undelivered_answers.
   safeRecord(() => recordSyncFailure(db, "question_push", `${row.kind} ${row.ticket_id}: ${error}`));
-  console.warn("[answer-delivery] Pantheon delivery failed", {
+  console.warn("[answer-delivery] delivery failed", {
     ticket: row.ticket_id,
     qid: row.qid,
     kind: row.kind,
@@ -224,8 +218,8 @@ async function deliverRow(db: Database.Database, row: DeliveryRow, opts: AnswerD
 /**
  * Attempts delivery of the given outbox rows, oldest first. Never throws:
  * failures are recorded on the row. A submit is held back while its ticket
- * still has an undelivered partial, so Pantheon never closes a ticket missing
- * an answer.
+ * still has an undelivered partial, so the receiver never closes a ticket
+ * missing an answer.
  */
 export async function deliverQuestionDeliveries(
   db: Database.Database,

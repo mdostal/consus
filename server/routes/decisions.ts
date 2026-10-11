@@ -14,13 +14,15 @@ import { validateDocPointer, validateResearchSections } from "../decision-contra
 import { closeOpenItems } from "../kb/store.js";
 import { classifyItem } from "../decision-contract/classifier.js";
 import { nativeContextCount } from "../decision-contract/supporting-material.js";
-import { requestNeedsContext } from "../pantheon/needs-context.js";
+import { envEventsWebhookUrl } from "../webhooks/events.js";
+import { requestNeedsContext } from "../webhooks/needs-context.js";
 
 export interface DecisionRoutesOptions {
   db: Database.Database;
-  /** Pantheon core-api base URL. When set (or PANTHEON_API_URL env var is set), creating a
-   *  decision with no supporting material fires a one-time `decision:needs-context` event. */
-  pantheonApiUrl?: string;
+  /** Outbound event webhook (server/webhooks/events.ts). When set (or CONSUS_EVENTS_WEBHOOK_URL
+   *  is), creating a decision with no supporting material fires a one-time
+   *  `consus.decision.needs_context` event. */
+  eventsWebhookUrl?: string;
   /** Override the fetch implementation — used in tests to capture event calls. */
   fetch?: typeof globalThis.fetch;
 }
@@ -207,7 +209,7 @@ function validateDecisionPayload(payload: unknown): string | null {
  * By default returns only the *open* queue — every item carrying a
  * decision_payload that hasn't been decided yet (decided_at IS NULL, the
  * same amnesia-fix rule REQ-08's decide flow enforces so decided items
- * never resurface). Items with status 'closed' (a Pantheon question ticket
+ * never resurface). Items with status 'closed' (an imported question ticket
  * closed upstream via POST /api/questions/:ticket/close) are excluded too.
  *
  * `?all=1` additionally returns already-decided items (decided_at NOT NULL) so
@@ -227,7 +229,7 @@ function validateDecisionPayload(payload: unknown): string | null {
  */
 export function registerDecisionRoutes(
   app: FastifyInstance,
-  { db, pantheonApiUrl, fetch: fetchImpl }: DecisionRoutesOptions,
+  { db, eventsWebhookUrl, fetch: fetchImpl }: DecisionRoutesOptions,
 ): void {
   app.get<{ Querystring: { all?: string; branch?: string; survey?: string } }>("/api/decisions", async (request) => {
     const includeDecided = request.query?.all === "1" || request.query?.all === "true";
@@ -286,8 +288,8 @@ export function registerDecisionRoutes(
    * twice, so a duplicate `id` is a 409, not a silent upsert.
    *
    * PANT-938: warn-only readiness. A decision with no supporting material is
-   * still created, never blocked or hidden; with PANTHEON_API_URL set it also fires a
-   * one-time `decision:needs-context` event (requestNeedsContext) that never
+   * still created, never blocked or hidden; with CONSUS_EVENTS_WEBHOOK_URL set it also
+   * fires a one-time `consus.decision.needs_context` event (requestNeedsContext) that never
    * delays or fails this response.
    */
   app.post<{ Body: CreateDecisionBody }>("/api/decisions", async (request, reply) => {
@@ -328,9 +330,9 @@ export function registerDecisionRoutes(
       .prepare(`SELECT ${SUPPORTING_MATERIAL_COUNT_SQL} FROM items WHERE id = ?`)
       .get(id) as { supporting_material_count: number };
     const materialCount = supportingMaterialCount(materialRow.supporting_material_count, decisionPayload);
-    const bridgeBase = pantheonApiUrl ?? process.env.PANTHEON_API_URL;
-    if (materialCount === 0 && bridgeBase) {
-      requestNeedsContext(db, id, { pantheonApiUrl: bridgeBase, fetch: fetchImpl ?? globalThis.fetch });
+    const webhookUrl = eventsWebhookUrl ?? envEventsWebhookUrl();
+    if (materialCount === 0 && webhookUrl) {
+      requestNeedsContext(db, id, { webhookUrl, fetch: fetchImpl ?? globalThis.fetch });
     }
 
     const row = db
@@ -428,7 +430,7 @@ export function registerDecisionRoutes(
 
   /**
    * PANT-937: the generic close — what POST /api/questions/:ticket/close does
-   * for Pantheon-linked surveys, for any decision or survey. `:id` is an item
+   * for imported question surveys, for any decision or survey. `:id` is an item
    * id (closes that one decision) or, failing that, a survey id (closes every
    * open member). Nothing is deleted; decided or already-closed items are left
    * alone, so a repeat call is a 200 no-op with `closed_item_ids: []`.

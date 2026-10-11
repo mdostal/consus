@@ -13,6 +13,13 @@ import {
 
 type CapturedCall = { url: string; init: RequestInit };
 
+const HOOK = "http://receiver:8800/hooks/consus";
+
+/** The event a captured POST carried. */
+function sent(call: CapturedCall) {
+  return JSON.parse(call.init.body as string) as { type: string; [k: string]: unknown };
+}
+
 function makeFakeFetch(
   responses: Array<{ status?: number; body?: unknown }>,
   captured: CapturedCall[],
@@ -81,7 +88,7 @@ describe("postQuestionVerdict", () => {
   it("posts a partial when the first item is decided", async () => {
     const calls: CapturedCall[] = [];
     const opts: AnswerDeliveryOptions = {
-      pantheonApiUrl: "http://pantheon:8800",
+      webhookUrl: HOOK,
       fetch: makeFakeFetch([{ status: 200, body: {} }, { status: 200, body: {} }], calls),
     };
 
@@ -93,17 +100,21 @@ describe("postQuestionVerdict", () => {
     await postQuestionVerdict(db, q1Item.id, { kind: "option_chosen", optionId: "A" }, "Mathew", opts);
 
     expect(calls).toHaveLength(1);
-    expect(calls[0].url).toBe("http://pantheon:8800/api/feed/questions/ticket-1/partial");
-    const body = JSON.parse(calls[0].init.body as string);
-    expect(body.qid).toBe("q1");
-    expect(body.answer).toBe("A");
-    expect(body.actor).toBe("Mathew");
+    expect(calls[0].url).toBe(HOOK);
+    expect(sent(calls[0])).toEqual({
+      type: "consus.question.answered",
+      version: 1,
+      ticketId: "ticket-1",
+      qid: "q1",
+      answer: "A",
+      actor: "Mathew",
+    });
   });
 
   it("posts partial AND submit when the last item is decided", async () => {
     const calls: CapturedCall[] = [];
     const opts: AnswerDeliveryOptions = {
-      pantheonApiUrl: "http://pantheon:8800",
+      webhookUrl: HOOK,
       fetch: makeFakeFetch([
         { status: 200, body: {} }, // partial for q2
         { status: 200, body: {} }, // submit
@@ -123,16 +134,15 @@ describe("postQuestionVerdict", () => {
     await postQuestionVerdict(db, q2Item.id, { kind: "text_response", text: "Because reasons" }, "Mathew", opts);
 
     expect(calls).toHaveLength(2);
-    expect(calls[0].url).toContain("/partial");
-    expect(calls[1].url).toBe("http://pantheon:8800/api/feed/questions/ticket-1/submit");
-    const submitBody = JSON.parse(calls[1].init.body as string);
-    expect(submitBody.actor).toBe("Mathew");
+    expect(sent(calls[0]).type).toBe("consus.question.answered");
+    expect(calls[1].url).toBe(HOOK);
+    expect(sent(calls[1])).toEqual({ type: "consus.questions.submitted", version: 1, ticketId: "ticket-1", actor: "Mathew" });
   });
 
   it("posts text_response as the answer string", async () => {
     const calls: CapturedCall[] = [];
     const opts: AnswerDeliveryOptions = {
-      pantheonApiUrl: "http://pantheon:8800",
+      webhookUrl: HOOK,
       fetch: makeFakeFetch([{ status: 200, body: {} }], calls),
     };
 
@@ -149,7 +159,7 @@ describe("postQuestionVerdict", () => {
   it("does nothing for an item with no question link", async () => {
     const calls: CapturedCall[] = [];
     const opts: AnswerDeliveryOptions = {
-      pantheonApiUrl: "http://pantheon:8800",
+      webhookUrl: HOOK,
       fetch: makeFakeFetch([], calls),
     };
 
@@ -160,7 +170,6 @@ describe("postQuestionVerdict", () => {
 
 describe("PANT-807: question delivery outbox", () => {
   let db: Database.Database;
-  const PANTHEON = "http://pantheon:8800";
 
   beforeEach(async () => {
     db = new Database(":memory:");
@@ -200,35 +209,35 @@ describe("PANT-807: question delivery outbox", () => {
     }>;
   }
 
-  it("a 500 on /partial leaves a failed row with attempts=1, and redeliver delivers it on the next success", async () => {
+  it("a 500 on an answer event leaves a failed row with attempts=1, and redeliver delivers it on the next success", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const calls: CapturedCall[] = [];
     decide("q1");
 
     const r1 = await postQuestionVerdict(db, itemFor("q1"), { kind: "option_chosen", optionId: "B" }, "Mathew", {
-      pantheonApiUrl: PANTHEON,
+      webhookUrl: HOOK,
       fetch: makeFakeFetch([{ status: 500 }], calls),
     });
 
     expect(r1).toEqual({ delivered: 0, failed: 1, skipped: 0 });
     expect(deliveries()).toEqual([
-      expect.objectContaining({ kind: "partial", qid: "q1", status: "failed", attempts: 1, last_error: "HTTP 500" }),
+      expect.objectContaining({ kind: "partial", qid: "q1", status: "failed", attempts: 1, last_error: "HTTP 500: {}" }),
     ]);
     expect(warn).toHaveBeenCalledWith(
-      "[answer-delivery] Pantheon delivery failed",
+      "[answer-delivery] delivery failed",
       expect.objectContaining({ ticket: "ticket-1", qid: "q1" }),
     );
 
     const retryCalls: CapturedCall[] = [];
     const r2 = await redeliverQuestionDeliveries(db, {
-      pantheonApiUrl: PANTHEON,
+      webhookUrl: HOOK,
       fetch: makeFakeFetch([{ status: 200 }], retryCalls),
     });
 
     expect(r2).toEqual({ delivered: 1, failed: 0, skipped: 0 });
     expect(retryCalls).toHaveLength(1);
-    expect(retryCalls[0].url).toBe(`${PANTHEON}/api/feed/questions/ticket-1/partial`);
-    expect(JSON.parse(retryCalls[0].init.body as string)).toEqual({ qid: "q1", answer: "B", actor: "Mathew" });
+    expect(retryCalls[0].url).toBe(HOOK);
+    expect(sent(retryCalls[0])).toMatchObject({ type: "consus.question.answered", ticketId: "ticket-1", qid: "q1", answer: "B" });
     expect(deliveries()[0]).toMatchObject({ status: "delivered", attempts: 2, last_error: null });
     warn.mockRestore();
   });
@@ -237,16 +246,16 @@ describe("PANT-807: question delivery outbox", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     decide("q1");
     await postQuestionVerdict(db, itemFor("q1"), { kind: "option_chosen", optionId: "A" }, "Mathew", {
-      pantheonApiUrl: PANTHEON,
+      webhookUrl: HOOK,
       fetch: () => Promise.reject(new Error("ECONNREFUSED")),
     });
     expect(deliveries()[0]).toMatchObject({ status: "failed", attempts: 1, last_error: "ECONNREFUSED" });
     warn.mockRestore();
   });
 
-  it("two verdicts after all members are answered produce one /submit call", async () => {
+  it("two verdicts after all members are answered produce one submitted event", async () => {
     const calls: CapturedCall[] = [];
-    const opts: AnswerDeliveryOptions = { pantheonApiUrl: PANTHEON, fetch: makeFakeFetch([], calls) };
+    const opts: AnswerDeliveryOptions = { webhookUrl: HOOK, fetch: makeFakeFetch([], calls) };
     decide("q1");
     decide("q2");
 
@@ -254,8 +263,8 @@ describe("PANT-807: question delivery outbox", () => {
     // Re-decide (e.g. after a reopen) — the survey is still fully answered.
     await postQuestionVerdict(db, itemFor("q2"), { kind: "text_response", text: "second" }, "Mathew", opts);
 
-    expect(calls.filter((c) => c.url.endsWith("/submit"))).toHaveLength(1);
-    expect(calls.filter((c) => c.url.endsWith("/partial"))).toHaveLength(2);
+    expect(calls.filter((c) => sent(c).type === "consus.questions.submitted")).toHaveLength(1);
+    expect(calls.filter((c) => sent(c).type === "consus.question.answered")).toHaveLength(2);
     expect(deliveries().filter((d) => d.kind === "submit")).toHaveLength(1);
   });
 
@@ -265,15 +274,15 @@ describe("PANT-807: question delivery outbox", () => {
     decide("q2");
     const calls: CapturedCall[] = [];
     const r1 = await postQuestionVerdict(db, itemFor("q2"), { kind: "text_response", text: "x" }, "Mathew", {
-      pantheonApiUrl: PANTHEON,
+      webhookUrl: HOOK,
       fetch: makeFakeFetch([{ status: 503 }], calls),
     });
     expect(r1).toEqual({ delivered: 0, failed: 1, skipped: 1 });
-    expect(calls.map((c) => c.url)).toEqual([`${PANTHEON}/api/feed/questions/ticket-1/partial`]);
+    expect(calls.map((c) => sent(c).type)).toEqual(["consus.question.answered"]);
 
     const retry: CapturedCall[] = [];
-    await redeliverQuestionDeliveries(db, { pantheonApiUrl: PANTHEON, fetch: makeFakeFetch([], retry) });
-    expect(retry.map((c) => c.url.split("/").pop())).toEqual(["partial", "submit"]);
+    await redeliverQuestionDeliveries(db, { webhookUrl: HOOK, fetch: makeFakeFetch([], retry) });
+    expect(retry.map((c) => sent(c).type)).toEqual(["consus.question.answered", "consus.questions.submitted"]);
     expect(deliveries().every((d) => d.status === "delivered")).toBe(true);
     warn.mockRestore();
   });
@@ -282,11 +291,11 @@ describe("PANT-807: question delivery outbox", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     decide("q1");
     await postQuestionVerdict(db, itemFor("q1"), { kind: "option_chosen", optionId: "A" }, "Mathew", {
-      pantheonApiUrl: PANTHEON,
+      webhookUrl: HOOK,
       fetch: makeFakeFetch([{ status: 500 }], []),
     });
     await postQuestionVerdict(db, itemFor("q1"), { kind: "option_chosen", optionId: "B" }, "Mathew", {
-      pantheonApiUrl: PANTHEON,
+      webhookUrl: HOOK,
       fetch: makeFakeFetch([{ status: 500 }], []),
     });
 
@@ -295,6 +304,23 @@ describe("PANT-807: question delivery outbox", () => {
     expect(JSON.parse(rows[0].body).answer).toBe("B");
     expect(rows[0].attempts).toBe(2);
     warn.mockRestore();
+  });
+
+  it("sends rows written before PANT-998 (bare partial/submit bodies) as the same events", async () => {
+    const now = new Date().toISOString();
+    const insert = db.prepare(
+      `INSERT INTO question_deliveries (item_id, ticket_id, qid, kind, body, status, attempts, created_at, updated_at)
+       VALUES (?, 'ticket-2', ?, ?, ?, 'failed', 1, ?, ?)`,
+    );
+    insert.run(itemFor("f1"), "f1", "partial", JSON.stringify({ qid: "f1", answer: "X", actor: "Mathew" }), now, now);
+    insert.run(itemFor("f1"), null, "submit", JSON.stringify({ actor: "Mathew" }), now, now);
+
+    const calls: CapturedCall[] = [];
+    await redeliverQuestionDeliveries(db, { webhookUrl: HOOK, fetch: makeFakeFetch([], calls) });
+    expect(calls.map(sent)).toEqual([
+      { type: "consus.question.answered", version: 1, ticketId: "ticket-2", qid: "f1", answer: "X", actor: "Mathew" },
+      { type: "consus.questions.submitted", version: 1, ticketId: "ticket-2", actor: "Mathew" },
+    ]);
   });
 
   it("does not enqueue anything for an item with no question link", () => {

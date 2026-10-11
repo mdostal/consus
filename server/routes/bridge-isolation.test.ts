@@ -13,15 +13,16 @@ import { runMigration } from "../db/migrate.js";
 import { registerInteractionRoutes } from "./interactions.js";
 
 // consus#198 regression: a test that posts a verdict without injecting
-// `pantheonApiUrl` / `fetch` must never reach the Pantheon decision bridge,
-// even when the parent environment exports PANTHEON_API_URL (the agent
-// runtime sets it to the live core-api). vitest.setup.ts clears it.
+// `eventsWebhookUrl` / `fetch` must never reach a live receiver, even when the
+// parent environment exports CONSUS_EVENTS_WEBHOOK_URL (or PANTHEON_API_URL,
+// which the agent runtime sets to the live core-api). vitest.setup.ts clears
+// both.
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const THIS_FILE = relative(ROOT, fileURLToPath(import.meta.url));
 const CHILD_FLAG = "CONSUS_BRIDGE_ISOLATION_CHILD";
 
-describe("consus#198: tests never reach the live Pantheon bridge", () => {
+describe("consus#198: tests never reach a live events webhook", () => {
   let db: Database.Database;
   let app: FastifyInstance;
 
@@ -29,7 +30,7 @@ describe("consus#198: tests never reach the live Pantheon bridge", () => {
     db = new Database(":memory:");
     runMigration(db);
     app = Fastify();
-    // Deliberately no pantheonApiUrl / fetch override — the unstubbed shape
+    // Deliberately no eventsWebhookUrl / fetch override — the unstubbed shape
     // that filed PANT-952/953.
     registerInteractionRoutes(app, { db });
     await app.ready();
@@ -41,7 +42,8 @@ describe("consus#198: tests never reach the live Pantheon bridge", () => {
     vi.restoreAllMocks();
   });
 
-  it("clears PANTHEON_API_URL before any test runs", () => {
+  it("clears CONSUS_EVENTS_WEBHOOK_URL and PANTHEON_API_URL before any test runs", () => {
+    expect(process.env.CONSUS_EVENTS_WEBHOOK_URL).toBe("");
     expect(process.env.PANTHEON_API_URL).toBe("");
   });
 
@@ -64,10 +66,10 @@ describe("consus#198: tests never reach the live Pantheon bridge", () => {
   });
 
   // Re-runs this file in a child vitest whose parent env points
-  // PANTHEON_API_URL at a local recorder, proving the setup file (not this
+  // CONSUS_EVENTS_WEBHOOK_URL at a local recorder, proving the setup file (not this
   // process's own env) keeps the verdict POST off the network.
   it.skipIf(process.env[CHILD_FLAG])(
-    "makes no network call even when the parent env sets PANTHEON_API_URL",
+    "makes no network call even when the parent env sets CONSUS_EVENTS_WEBHOOK_URL",
     async () => {
       const hits: string[] = [];
       const recorder: Server = createServer((req, res) => {
@@ -83,7 +85,12 @@ describe("consus#198: tests never reach the live Pantheon bridge", () => {
           [join(ROOT, "node_modules/vitest/vitest.mjs"), "run", THIS_FILE],
           {
             cwd: ROOT,
-            env: { ...process.env, PANTHEON_API_URL: `http://127.0.0.1:${port}`, [CHILD_FLAG]: "1" },
+            env: {
+              ...process.env,
+              CONSUS_EVENTS_WEBHOOK_URL: `http://127.0.0.1:${port}/hooks/consus`,
+              PANTHEON_API_URL: `http://127.0.0.1:${port}`,
+              [CHILD_FLAG]: "1",
+            },
           },
         );
         let out = "";

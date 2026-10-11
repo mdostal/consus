@@ -127,12 +127,12 @@ These are settled, not open questions:
 - **Standalone-only.** No client for any specific external system — `server/adapters/` contains
   only the local `doc-scanner/` and `gitdocs/`. Other systems reach Consus through its generic REST
   seams (`POST /api/questions/import`, `POST /api/proposals/:id/result`,
-  `POST /api/threads/:id/replies`) and the generic webhook transport. **One known exception
-  remains:** with `PANTHEON_API_URL` set, `server/pantheon/` pushes answers to imported question
-  tickets, decided verdicts and `decision:needs-context` to Pantheon core-api, and
-  `POST /api/projects/:project/ingest` checks tenant repo paths against it. The Pantheon transport
-  and both Pantheon pullers were removed (PANT-969, PANT-813 Q1=B); these pushes go next, once
-  Pantheon takes them on a generic seam.
+  `POST /api/threads/:id/replies`) and the generic outbound webhooks: proposals on the harness
+  webhook transport, and answers, verdicts and needs-context requests as `consus.*` events on
+  `CONSUS_EVENTS_WEBHOOK_URL` (PANT-998). The Pantheon transport, both Pantheon pullers (PANT-969,
+  PANT-813 Q1=B) and the Pantheon-addressed pushes (PANT-998) are gone. **One known exception
+  remains:** with `PANTHEON_API_URL` set, `POST /api/projects/:project/ingest` checks tenant repo
+  paths against Pantheon core-api's repo-access facade.
 - **Harness interaction only through the generic seam.** `HarnessTransport` is the sole
   integration point for "propose a change and let something apply it," with no knowledge of what's
   configured on the other end.

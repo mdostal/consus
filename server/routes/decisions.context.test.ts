@@ -25,7 +25,7 @@ describe("PANT-937: editable decision context and generic close", () => {
 
   beforeEach(async () => {
     // Standalone mode: no needs-context event leaves the test process.
-    vi.stubEnv("PANTHEON_API_URL", "");
+    vi.stubEnv("CONSUS_EVENTS_WEBHOOK_URL", "");
     db = new Database(":memory:");
     runMigration(db);
     app = Fastify();
