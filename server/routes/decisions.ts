@@ -34,6 +34,7 @@ interface ItemRow {
   status: string;
   source_repo: string | null;
   source_body: string | null;
+  created_at?: string;
   decided_at: string | null;
   decision_payload: string | null;
   decision_type: string | null;
@@ -225,7 +226,8 @@ function validateDecisionPayload(payload: unknown): string | null {
  * of source_branch) is unchanged.
  *
  * `?survey=<id>` (s5-survey-grouping) further filters to items belonging to
- * a specific survey (survey_id = ?). Composes with `?all=1` and `?branch=`.
+ * a specific survey (survey_id = ?), ordered by created_at (the order they
+ * joined it). Composes with `?all=1` and `?branch=`.
  */
 export function registerDecisionRoutes(
   app: FastifyInstance,
@@ -237,8 +239,8 @@ export function registerDecisionRoutes(
     const survey = request.query?.survey;
 
     const baseSql = includeDecided
-      ? `SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch, survey_id, needs_context_requested_at, ${SUPPORTING_MATERIAL_COUNT_SQL} FROM items WHERE decision_payload IS NOT NULL ORDER BY (decided_at IS NULL) DESC, updated_at DESC, created_at ASC`
-      : `SELECT id, type, title, status, source_repo, source_body, decided_at, decision_payload, decision_type, triage_bucket, source_branch, survey_id, needs_context_requested_at, ${SUPPORTING_MATERIAL_COUNT_SQL} FROM items WHERE decision_payload IS NOT NULL AND decided_at IS NULL AND status != 'closed' ORDER BY created_at ASC`;
+      ? `SELECT id, type, title, status, source_repo, source_body, created_at, decided_at, decision_payload, decision_type, triage_bucket, source_branch, survey_id, needs_context_requested_at, ${SUPPORTING_MATERIAL_COUNT_SQL} FROM items WHERE decision_payload IS NOT NULL ORDER BY (decided_at IS NULL) DESC, updated_at DESC, created_at ASC`
+      : `SELECT id, type, title, status, source_repo, source_body, created_at, decided_at, decision_payload, decision_type, triage_bucket, source_branch, survey_id, needs_context_requested_at, ${SUPPORTING_MATERIAL_COUNT_SQL} FROM items WHERE decision_payload IS NOT NULL AND decided_at IS NULL AND status != 'closed' ORDER BY created_at ASC`;
 
     let sql = baseSql;
     const params: unknown[] = [];
@@ -249,7 +251,9 @@ export function registerDecisionRoutes(
     }
 
     if (survey) {
-      sql = sql.replace(" ORDER BY", " AND survey_id = ? ORDER BY");
+      // A survey reads top to bottom in the order its members joined (an
+      // imported ticket's question order), not by last activity (consus#211).
+      sql = sql.replace(/ ORDER BY .*$/, " AND survey_id = ? ORDER BY created_at ASC, rowid ASC");
       params.push(survey);
     }
 

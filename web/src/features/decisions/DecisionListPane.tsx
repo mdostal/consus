@@ -10,6 +10,7 @@ export interface DecisionListItem {
   decided_at: string | null;
   decision_type?: string | null;
   survey_id?: string | null;
+  created_at?: string;
 }
 
 export interface SurveyListItem {
@@ -179,6 +180,8 @@ export function DecisionListPane({
                 <SurveyRow survey={s} selected={s.id === selectedSurveyId} onSelect={onSelectSurvey ?? (() => {})} />
                 {open
                   .filter((d) => d.survey_id === s.id)
+                  // The ticket's question order, not last activity.
+                  .sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""))
                   .map((d) => (
                     <Row key={d.id} item={d} selected={d.id === selectedId} onSelect={onSelect} nested />
                   ))}

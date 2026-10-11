@@ -205,7 +205,9 @@ Plain local read — no external sync of any kind. Returns every item in the loc
 that carries a `decision_payload` (`dostal:decision-request/v1` shape — see
 `server/decision-contract/parser.ts`). By default only the *open* queue (`decided_at IS NULL`) so
 a harness never re-surfaces something already resolved (the decided-store amnesia fix). Pass
-`?all=1` to additionally include already-decided items, ordered decided-last.
+`?all=1` to additionally include already-decided items, ordered decided-last. `?survey=<id>`
+restricts the result to one survey's members, in the order they joined it (`created_at`), which
+for an imported question ticket is the ticket's question order.
 
 Items land in the `items` table via `POST /api/decisions` (below) or the propose-a-change
 mechanism — there is no background or on-read sync from any external system.
@@ -219,6 +221,7 @@ mechanism — there is no background or on-read sync from any external system.
   "status": "open",
   "source_repo": "consus",
   "source_body": null,
+  "created_at": "2026-10-08T04:00:00.000Z",
   "decided_at": null,
   "decision_payload": {
     "version": "dostal:decision-request/v1",

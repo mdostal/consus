@@ -11,8 +11,10 @@
   dropped, and plain questions import exactly as before. Survey question cards now show the
   payload's `context`. `GET /api/surveys` returns `question_ticket` (`{ ticket_id, identifier }` or
   null), and "Needs you" pins each open question ticket first, labelled with its identifier and
-  grouped with its open questions. `?survey=<id>` opens a survey directly, as `?selected=<id>`
-  opens a decision.
+  grouped with its open questions in the ticket's order. `?survey=<id>` opens a survey directly, as
+  `?selected=<id>` opens a decision, and a decision opened on its own now shows its `research` too.
+  `GET /api/decisions` returns `created_at`, and `?survey=` lists members in the order they joined
+  (imported questions are stamped 1 ms apart so that order is the ticket's).
 
 ### Changed
 

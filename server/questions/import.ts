@@ -140,7 +140,8 @@ export function importQuestionTicket(db: Database.Database, ticket: QuestionTick
   if (mapped.length === 0) return { status: "unmappable" };
 
   const surveyId = randomUUID();
-  const now = new Date().toISOString();
+  const start = Date.now();
+  const now = new Date(start).toISOString();
   const itemIds: string[] = [];
 
   const tx = db.transaction(() => {
@@ -151,18 +152,21 @@ export function importQuestionTicket(db: Database.Database, ticket: QuestionTick
       now,
     );
 
-    for (const { q, payload } of mapped) {
+    mapped.forEach(({ q, payload }, i) => {
       const itemId = randomUUID();
+      // One millisecond apart, so every list ordered by time keeps the
+      // ticket's question order instead of breaking a tie arbitrarily.
+      const at = new Date(start + i).toISOString();
       db.prepare(
         `INSERT INTO items (id, type, title, status, created_at, updated_at, decision_payload, survey_id)
          VALUES (?, 'decision_request', ?, 'open', ?, ?, ?, ?)`,
-      ).run(itemId, q.text, now, now, JSON.stringify(payload), surveyId);
+      ).run(itemId, q.text, at, at, JSON.stringify(payload), surveyId);
 
       db.prepare(
         "INSERT INTO question_links (item_id, ticket_id, qid, survey_id) VALUES (?, ?, ?, ?)",
       ).run(itemId, ticket.ticket_id, q.qid, surveyId);
       itemIds.push(itemId);
-    }
+    });
   });
   tx();
 

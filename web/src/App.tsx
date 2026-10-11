@@ -26,6 +26,7 @@ import { EventsList, type EventRow, type EventStatus } from "./features/events/E
 import { EventProposeComposer } from "./features/events/EventProposeComposer";
 import type { AnyDecisionPayload, DecisionPayload, Verdict } from "./features/decisions/answer-shapes/types";
 import { useSelectedDecisionId, useSelectedSurveyId } from "./features/decisions/useSelectedDecisionId";
+import { ResearchSections } from "./features/decisions/ResearchSections";
 import { DecisionListPane, type DecisionListItem, type SurveyListItem } from "./features/decisions/DecisionListPane";
 import { SurveyView } from "./features/decisions/SurveyView";
 import { AttachmentsPanel } from "./features/decisions/attachments/AttachmentsPanel";
@@ -221,6 +222,8 @@ function DecisionView({ item, onDecided }: { item: DecisionItem; onDecided: () =
       ) : item.source_body ? (
         <p className="dv__context">{item.source_body}</p>
       ) : null}
+
+      {payload ? <ResearchSections research={payload.research} /> : null}
 
       {isDecisionRequest && payload.previews ? (
         <section>

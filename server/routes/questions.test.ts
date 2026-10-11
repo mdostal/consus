@@ -138,6 +138,22 @@ describe("POST /api/questions/import", () => {
     });
   });
 
+  it("keeps the ticket's question order in the survey's member list", async () => {
+    const res = await importTicket({
+      ticket_id: "ticket-order",
+      questions: ["first", "second", "third", "fourth"].map((text, i) => ({
+        qid: `q${i}`,
+        text,
+        kind: "single-select",
+        options: ["Yes", "No"],
+      })),
+    });
+    const { survey_id } = res.json();
+
+    const members = await app.inject({ method: "GET", url: `/api/decisions?survey=${survey_id}&all=1` });
+    expect(members.json().map((m: { title: string }) => m.title)).toEqual(["first", "second", "third", "fourth"]);
+  });
+
   it("returns 400 for a missing ticket_id or malformed questions", async () => {
     expect((await importTicket({ questions: TICKET.questions })).statusCode).toBe(400);
     expect((await importTicket({ ticket_id: "t" })).statusCode).toBe(400);
