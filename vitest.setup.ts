@@ -13,14 +13,17 @@ declare module "vitest" {
   interface AsymmetricMatchersContaining extends AxeMatchers {}
 }
 
-// consus#198: the agent runtime exports PANTHEON_API_URL pointing at the
-// LIVE Pantheon core-api, and the route modules fall back to
-// `process.env.PANTHEON_API_URL` + the real `globalThis.fetch` when no
-// override is injected — so an unstubbed verdict POST in a test filed real
-// tickets on the live board (PANT-952/953). Clear it for every test file;
-// tests that exercise the bridge inject `pantheonApiUrl` + `fetch` instead.
-// Assigned directly rather than via vi.stubEnv: tests that call
-// vi.unstubAllEnvs() would otherwise restore the live URL mid-file.
+// consus#198: the route modules fall back to
+// `process.env.CONSUS_EVENTS_WEBHOOK_URL` + the real `globalThis.fetch` when
+// no override is injected — so an unstubbed verdict POST in a test running
+// under a live deploy's env would send real events (once Pantheon-addressed,
+// it filed real tickets on the live board: PANT-952/953). Clear it for every
+// test file; tests that exercise the webhook inject `eventsWebhookUrl` +
+// `fetch` instead. PANTHEON_API_URL (still read by the ingest repo-path check
+// in server/routes/projects.ts) is cleared for the same reason. Assigned
+// directly rather than via vi.stubEnv: tests that call vi.unstubAllEnvs()
+// would otherwise restore the live URL mid-file.
+process.env.CONSUS_EVENTS_WEBHOOK_URL = "";
 process.env.PANTHEON_API_URL = "";
 
 // RTL's automatic cleanup relies on detecting a global `afterEach`, which

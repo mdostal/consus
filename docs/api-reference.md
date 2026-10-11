@@ -10,7 +10,8 @@ local filesystem (doc scanner, epic/story YAML), and makes no outbound network c
 integration seam is `HarnessTransport` (`server/harness/transport.ts`), used by the Proposals
 routes below. Outbound HTTP happens only when you opt in: a harness transport that calls out
 (`CONSUS_HARNESS=webhook`, see [Harness transports](#harness-transports)), the thread webhook,
-or `PANTHEON_API_URL` for the verdict bridge under `POST /api/decisions/:id/verdict`.
+or the events webhook (`CONSUS_EVENTS_WEBHOOK_URL`, see [Events webhook](#events-webhook-consus_events_webhook_url))
+for answers, verdicts and needs-context requests.
 
 ## Health
 
@@ -26,8 +27,9 @@ keep matching on them.
 
 - `transport`: the active harness transport: `webhook`, `file`, `stdio`, `noop` (none configured)
   or `custom` (an injected transport).
-- `degraded`: `true` only when `PANTHEON_API_URL` is set and any push direction's last failure is
-  newer than its last success (see `pantheon.directions` under `GET /api/metrics`). Always `false` otherwise.
+- `degraded`: `true` only when `CONSUS_EVENTS_WEBHOOK_URL` is set and any event direction's last
+  failure is newer than its last success (see `events_webhook.directions` under `GET /api/metrics`).
+  Always `false` otherwise.
 
 ### `GET /api/metrics`
 Operational snapshot for dashboards (Janus, Pantheon). Computed from SQLite on each request, with
@@ -42,13 +44,13 @@ no background work or caching.
   "events": { "pending": 3, "in_review": 1 },
   "projects": [{ "name": "consus", "last_ingest_at": "2026-09-27T11:55:00.000Z", "doc_count": 2 }],
   "harness": { "transport": "webhook" },
-  "pantheon": {
+  "events_webhook": {
     "degraded": true,
-    "last_error": "pantheon down",
+    "last_error": "partial T-1: HTTP 502: bad gateway",
     "last_error_at": "2026-09-27T11:59:00.000Z",
     "last_error_direction": "question_push",
     "directions": {
-      "question_push": { "last_success_at": null, "last_failure_at": "2026-09-27T11:59:00.000Z", "last_error": "pantheon down", "failing": true },
+      "question_push": { "last_success_at": null, "last_failure_at": "2026-09-27T11:59:00.000Z", "last_error": "partial T-1: HTTP 502: bad gateway", "failing": true },
       "decision_push": { "last_success_at": null, "last_failure_at": null, "last_error": null, "failing": false },
       "needs_context_push": { "last_success_at": null, "last_failure_at": null, "last_error": null, "failing": false }
     },
@@ -64,14 +66,16 @@ no background work or caching.
 - `projects[]`: every registered project, plus any repo with indexed docs. `last_ingest_at` is
   when the project was last scanned (ingest or registration), whether or not any doc changed.
   It is `null` if the project has never been scanned since this field was added.
-- `pantheon` is present only when `PANTHEON_API_URL` is set. Directions: `question_push` (question
-  partial/submit), `decision_push` (`POST /api/events/decisions`), and `needs_context_push`
-  (`POST /api/events/decisions/needs-context`, see `POST /api/decisions`). They're kept in the
+- `events_webhook` is present only when `CONSUS_EVENTS_WEBHOOK_URL` is set (it was `pantheon`,
+  keyed on `PANTHEON_API_URL`, before PANT-998). Directions: `question_push`
+  (`consus.question.answered` / `consus.questions.submitted`), `decision_push`
+  (`consus.decision.decided`), and `needs_context_push` (`consus.decision.needs_context`, see
+  `POST /api/decisions`). They're kept in the
   `sync_status` table, so they survive restarts. A non-2xx response counts as a failure, with
   the HTTP status in `last_error`. `question_push` is recorded per delivery attempt from the
   question-answer outbox (`question_deliveries`). The pull directions (`question_pull`,
   `result_pull`) went with the Pantheon pullers (PANT-969); leftover rows for them are ignored.
-- `pantheon.undelivered_answers`: outbox rows with status `pending` / `failed`, and the age of the
+- `events_webhook.undelivered_answers`: outbox rows with status `pending` / `failed`, and the age of the
   oldest one not yet delivered (`null` when the outbox is drained). Retry them with
   `POST /api/questions/redeliver`.
 
@@ -286,13 +290,12 @@ matching an option).
 
 **Missing context is warn-only (PANT-938).** A decision with no supporting material (the
 `supporting_material_count` rule above) is always created and listed — never blocked or hidden.
-When `PANTHEON_API_URL` is set, Consus also sends a fire-and-forget
-`POST {PANTHEON_API_URL}/api/events/decisions/needs-context` with
-`{ "decision_id", "survey_id", "title", "source_repo", "missing": ["research", "attachments", "doc"] }`
+When `CONSUS_EVENTS_WEBHOOK_URL` is set, Consus also sends a fire-and-forget
+`consus.decision.needs_context` event (see [Events webhook](#events-webhook-consus_events_webhook_url))
 and stamps the item's `needs_context_requested_at`. It is sent at most once per item, with no
 retry loop or timer; a failed delivery is recorded as `needs_context_push` in
-`GET /api/metrics`' sync status and is not resent. Standalone mode (no `PANTHEON_API_URL`) sends
-nothing. The 201 response carries `supporting_material_count` and `needs_context_requested_at`.
+`GET /api/metrics`' sync status and is not resent. Standalone mode (no `CONSUS_EVENTS_WEBHOOK_URL`)
+sends nothing. The 201 response carries `supporting_material_count` and `needs_context_requested_at`.
 
 ### `PATCH /api/decisions/:id/context`
 Fixes or fills a decision's context after it was created (PANT-937). Replaces whichever of
@@ -361,30 +364,31 @@ has no meaningful answer for it (`accepted` on anything other than a decision-re
 `recommended` option, e.g. a feature-selection or free-text question). **404** if the item doesn't
 exist.
 
-**Verdict bridge (only when `PANTHEON_API_URL` is set).** After a verdict that decides the item
-(anything except `rejected_iteration_requested`), Consus calls the Pantheon host without delaying
-the response. The verdict is always recorded locally first and never changes the response.
-- **Question-linked item** (imported through `POST /api/questions/import`): `POST {PANTHEON_API_URL}/api/feed/questions/:ticket/partial`
-  with `{ "qid", "answer", "actor" }`. The first time every decision item in that ticket's survey
-  is decided, a second call `POST {PANTHEON_API_URL}/api/feed/questions/:ticket/submit` with
-  `{ "actor" }` closes the ticket. Submit is sent at most once per ticket (a later reopen and
-  re-decide posts only a partial), and never while that ticket still has an undelivered partial.
+**Verdict events (only when `CONSUS_EVENTS_WEBHOOK_URL` is set).** After a verdict that decides the
+item (anything except `rejected_iteration_requested`), Consus sends an event to the
+[events webhook](#events-webhook-consus_events_webhook_url) without delaying the response. The
+verdict is always recorded locally first and never changes the response.
+- **Question-linked item** (imported through `POST /api/questions/import`): a
+  `consus.question.answered` event with the ticket, `qid`, answer and actor. The first time every
+  decision item in that ticket's survey is decided, a second `consus.questions.submitted` event
+  follows. Submitted is sent at most once per ticket (a later reopen and re-decide sends only an
+  answer), and never while that ticket still has an undelivered answer.
   Both calls go through the `question_deliveries` outbox, written in the same transaction as the
   verdict: a non-2xx response or network error marks the row `failed` with `attempts` and
   `last_error`, and logs a warning with the ticket and qid. Failed rows are retried at server
   startup and by [`POST /api/questions/redeliver`](#post-apiquestionsredeliver).
-- **Any other item**: `POST {PANTHEON_API_URL}/api/events/decisions` with
-  `{ "decisionId", "title", "summary"?, "createdAt" }`. Question-linked items never take this path.
+- **Any other item**: one fire-and-forget `consus.decision.decided` event. Question-linked items
+  never take this path.
 
 ### `POST /api/questions/redeliver`
 Retries every `pending` or `failed` row in the question-answer delivery outbox (see the verdict
-bridge above), oldest first. Also runs once at server startup when `PANTHEON_API_URL` is set.
-There is no background retry timer; call this to retry after the Pantheon host recovers.
+events above), oldest first. Also runs once at server startup when `CONSUS_EVENTS_WEBHOOK_URL` is
+set. There is no background retry timer; call this to retry after the receiver recovers.
 
 **Response 200:** `{ "delivered": number, "failed": number, "skipped": number, "remaining": number }`
 — `skipped` counts rows held back this pass (already in flight, or a submit waiting on an
 undelivered partial); `remaining` is every row still not delivered afterwards.
-**409** if `PANTHEON_API_URL` is not configured.
+**409** if `CONSUS_EVENTS_WEBHOOK_URL` is not configured.
 
 ## Comments
 
@@ -770,7 +774,7 @@ above). **404** if the survey doesn't exist.
 An external system (Pantheon, or anything else) pushes a question ticket in, or tells Consus the
 ticket was cancelled or answered elsewhere, over plain REST. Consus never polls for questions
 (`importQuestionTicket` in `server/questions/import.ts`). Answers to an imported ticket go back
-through the question-answer outbox when `PANTHEON_API_URL` is set — see
+as events through the question-answer outbox when `CONSUS_EVENTS_WEBHOOK_URL` is set — see
 `POST /api/decisions/:id/verdict` and `POST /api/questions/redeliver`.
 
 ### `POST /api/questions/import`
@@ -1184,20 +1188,38 @@ Pantheon core-api instead (`CONSUS_HARNESS_WEBHOOK_URL=<core-api>/api/feed/chang
 Pantheon pushes results to `POST /api/proposals/:id/result` and question tickets to
 `POST /api/questions/import`.
 
+### Events webhook (`CONSUS_EVENTS_WEBHOOK_URL`)
+
+Not a transport. When set, Consus POSTs four kinds of event to that one URL, each a JSON body with
+a `type` and a `version` (`server/webhooks/events.ts`). Consus doesn't know what's on the other
+end; the receiver maps each `type` onto its own model. To run under Pantheon, point it at
+core-api's receiver for these events (`?origin=consus` names the sender, as on the harness webhook).
+
+| `type` | When | Body (besides `type`, `version: 1`) |
+|---|---|---|
+| `consus.question.answered` | A verdict decides an item imported through `POST /api/questions/import` | `ticketId` (the imported `ticket_id`), `qid`, `answer` (string), `actor` |
+| `consus.questions.submitted` | Every question in that ticket is decided and every answer was accepted; at most once per ticket | `ticketId`, `actor` |
+| `consus.decision.decided` | A verdict decides any other item | `decisionId`, `title`, `summary`? (the item's source body), `decidedAt` |
+| `consus.decision.needs_context` | `POST /api/decisions` creates a decision with no supporting material; at most once per item | `decisionId`, `surveyId`, `title`, `sourceRepo`, `missing` (`["research", "attachments", "doc"]`) |
+
+- **Accepted.** Any 2xx; the body is ignored.
+- **Failure.** A non-2xx (recorded as `HTTP <status>: <body>`), a 10-second timeout, or a network
+  error. There is one attempt per event and no retry loop. The two question events go through the
+  `question_deliveries` outbox, so a failed one is retried at startup and by
+  `POST /api/questions/redeliver`; the other two are recorded in `GET /api/metrics`' sync status
+  (`decision_push`, `needs_context_push`) and not resent.
+- **Status.** Each direction is reported under `events_webhook` in `GET /api/metrics`, and a
+  failing one sets `/health`'s `degraded`.
+
+Startup fails if the URL is not a valid URL. Unset, Consus sends nothing.
+
 ### `PANTHEON_API_URL`
 
-Not a transport. When set, it enables three outbound pushes to Pantheon core-api
-(`server/pantheon/`), each reported under `pantheon` in `GET /api/metrics`:
-
-- `decision_push`: the verdict bridge for unlinked decisions (see `POST /api/decisions/:id/verdict`),
-- `question_push`: answers to imported question tickets, through the `question_deliveries` outbox
-  (same section; retry with `POST /api/questions/redeliver`),
-- `needs_context_push`: `decision:needs-context` for a decision created without supporting material
-  (see `POST /api/decisions`),
-
-and a check in `POST /api/projects/:project/ingest` where a path shaped like
-`<REPOS_BASE_DIR>/<tenant>/<repo>` (`REPOS_BASE_DIR` defaults to `/repos`) is first validated
-against `GET {PANTHEON_API_URL}/api/repos/tenants/:tenant/repos/:repo/path`. None of these poll.
+Not a transport, and no longer used for any outbound event (PANT-998 moved answers, verdicts and
+needs-context to the events webhook above). It now only enables a check in
+`POST /api/projects/:project/ingest`: a path shaped like `<REPOS_BASE_DIR>/<tenant>/<repo>`
+(`REPOS_BASE_DIR` defaults to `/repos`) is first validated against
+`GET {PANTHEON_API_URL}/api/repos/tenants/:tenant/repos/:repo/path`. It does not poll.
 
 ### Handoff CLI (file transport)
 

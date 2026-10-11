@@ -10,8 +10,8 @@ import { buildServer } from "../index.js";
 import { openDb } from "../db/connection.js";
 import { runMigration } from "../db/migrate.js";
 import { FileHarnessTransport } from "../harness/transport.js";
-import { recordSyncFailure, recordSyncSuccess } from "../pantheon/sync-status.js";
-import { deliverQuestionDeliveries } from "../pantheon/answer-delivery.js";
+import { recordSyncFailure, recordSyncSuccess } from "../webhooks/sync-status.js";
+import { deliverQuestionDeliveries } from "../webhooks/answer-delivery.js";
 
 const NOW = new Date("2026-09-27T12:00:00.000Z");
 const ago = (seconds: number) => new Date(NOW.getTime() - seconds * 1000).toISOString();
@@ -111,7 +111,7 @@ describe("GET /api/metrics", () => {
     });
   });
 
-  it("reports the active transport name and omits pantheon when PANTHEON_API_URL is unset", async () => {
+  it("reports the active transport name and omits events_webhook when CONSUS_EVENTS_WEBHOOK_URL is unset", async () => {
     setup();
     app = buildServer({ dbPath, transport: new FileHarnessTransport(join(dir, "handoffs")) });
 
@@ -119,59 +119,59 @@ describe("GET /api/metrics", () => {
     const health = (await app.inject({ method: "GET", url: "/health" })).json();
 
     expect(body.harness).toEqual({ transport: "file" });
-    expect(body.pantheon).toBeUndefined();
+    expect(body.events_webhook).toBeUndefined();
     expect(health).toEqual({ status: "ok", sqlite: "connected", transport: "file", degraded: false });
   });
 });
 
-describe("pantheon push sync status (PANTHEON_API_URL set)", () => {
-  const PANTHEON_URL = "https://pantheon.example.com";
+describe("events webhook sync status (CONSUS_EVENTS_WEBHOOK_URL set)", () => {
+  const HOOK_URL = "https://receiver.example.com/hooks/consus";
 
-  it("a failed push sets degraded on /health and fills pantheon.last_error; a later success clears it", async () => {
+  it("a failed push sets degraded on /health and fills events_webhook.last_error; a later success clears it", async () => {
     setup();
-    app = buildServer({ dbPath, transport: new FileHarnessTransport(join(dir, "handoffs")), pantheonApiUrl: PANTHEON_URL });
+    app = buildServer({ dbPath, transport: new FileHarnessTransport(join(dir, "handoffs")), eventsWebhookUrl: HOOK_URL });
 
     const before = (await app.inject({ method: "GET", url: "/health" })).json();
     expect(before).toEqual({ status: "ok", sqlite: "connected", transport: "file", degraded: false });
 
     const db = openDb(dbPath);
-    recordSyncFailure(db, "decision_push", new Error("pantheon down"));
+    recordSyncFailure(db, "decision_push", new Error("receiver down"));
 
     const health = await app.inject({ method: "GET", url: "/health" });
     expect(health.statusCode).toBe(200);
     expect(health.json()).toEqual({ status: "ok", sqlite: "connected", transport: "file", degraded: true });
 
-    const { pantheon } = (await app.inject({ method: "GET", url: "/api/metrics" })).json();
-    expect(pantheon.degraded).toBe(true);
-    expect(pantheon.last_error).toBe("pantheon down");
-    expect(pantheon.last_error_direction).toBe("decision_push");
-    expect(Object.keys(pantheon.directions).sort()).toEqual(["decision_push", "needs_context_push", "question_push"]);
+    const { events_webhook } = (await app.inject({ method: "GET", url: "/api/metrics" })).json();
+    expect(events_webhook.degraded).toBe(true);
+    expect(events_webhook.last_error).toBe("receiver down");
+    expect(events_webhook.last_error_direction).toBe("decision_push");
+    expect(Object.keys(events_webhook.directions).sort()).toEqual(["decision_push", "needs_context_push", "question_push"]);
 
     // A later success of the same direction clears degraded; the error stays visible.
     recordSyncSuccess(db, "decision_push", new Date(Date.now() + 1000));
     expect((await app.inject({ method: "GET", url: "/health" })).json().degraded).toBe(false);
     const after = (await app.inject({ method: "GET", url: "/api/metrics" })).json();
-    expect(after.pantheon.last_error).toBe("pantheon down");
+    expect(after.events_webhook.last_error).toBe("receiver down");
     db.close();
   });
 
   it("ignores a failing row left behind by the removed pullers (PANT-969)", async () => {
     setup();
-    app = buildServer({ dbPath, pantheonApiUrl: PANTHEON_URL });
+    app = buildServer({ dbPath, eventsWebhookUrl: HOOK_URL });
     const db = openDb(dbPath);
     recordSyncFailure(db, "result_pull" as never, "Pantheon changes fetch failed: 503");
 
     expect((await app.inject({ method: "GET", url: "/health" })).json().degraded).toBe(false);
-    const { pantheon } = (await app.inject({ method: "GET", url: "/api/metrics" })).json();
-    expect(pantheon.degraded).toBe(false);
-    expect(pantheon.last_error).toBeNull();
+    const { events_webhook } = (await app.inject({ method: "GET", url: "/api/metrics" })).json();
+    expect(events_webhook.degraded).toBe(false);
+    expect(events_webhook.last_error).toBeNull();
     db.close();
   });
 
   it("counts undelivered question answers and records question_push from the delivery outbox", async () => {
     setup();
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    app = buildServer({ dbPath, pantheonApiUrl: PANTHEON_URL, now: () => NOW });
+    app = buildServer({ dbPath, eventsWebhookUrl: HOOK_URL, now: () => NOW });
     const db = openDb(dbPath);
     const row = db.prepare(
       `INSERT INTO question_deliveries (item_id, ticket_id, qid, kind, body, status, attempts, created_at, updated_at)
@@ -181,21 +181,21 @@ describe("pantheon push sync status (PANTHEON_API_URL set)", () => {
     row.run("i2", "t2", "q2", "failed", ago(300), ago(300));
     row.run("i3", "t3", "q3", "delivered", ago(9000), ago(9000));
 
-    let { pantheon } = (await app.inject({ method: "GET", url: "/api/metrics" })).json();
-    expect(pantheon.undelivered_answers).toEqual({ pending: 1, failed: 1, oldest_age_seconds: 600 });
+    let { events_webhook } = (await app.inject({ method: "GET", url: "/api/metrics" })).json();
+    expect(events_webhook.undelivered_answers).toEqual({ pending: 1, failed: 1, oldest_age_seconds: 600 });
 
     const down = vi.fn().mockResolvedValue(new Response("nope", { status: 502 }));
-    await deliverQuestionDeliveries(db, [1], { pantheonApiUrl: "https://pantheon.example.com", fetch: down });
-    ({ pantheon } = (await app.inject({ method: "GET", url: "/api/metrics" })).json());
-    expect(pantheon.undelivered_answers).toEqual({ pending: 0, failed: 2, oldest_age_seconds: 600 });
-    expect(pantheon.directions.question_push).toMatchObject({ last_error: "partial t1: HTTP 502", failing: true });
+    await deliverQuestionDeliveries(db, [1], { webhookUrl: HOOK_URL, fetch: down });
+    ({ events_webhook } = (await app.inject({ method: "GET", url: "/api/metrics" })).json());
+    expect(events_webhook.undelivered_answers).toEqual({ pending: 0, failed: 2, oldest_age_seconds: 600 });
+    expect(events_webhook.directions.question_push).toMatchObject({ last_error: "partial t1: HTTP 502: nope", failing: true });
     expect((await app.inject({ method: "GET", url: "/health" })).json().degraded).toBe(true);
 
     const up = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
-    await deliverQuestionDeliveries(db, [1, 2], { pantheonApiUrl: "https://pantheon.example.com", fetch: up });
-    ({ pantheon } = (await app.inject({ method: "GET", url: "/api/metrics" })).json());
-    expect(pantheon.undelivered_answers).toEqual({ pending: 0, failed: 0, oldest_age_seconds: null });
-    expect(pantheon.directions.question_push.failing).toBe(false);
+    await deliverQuestionDeliveries(db, [1, 2], { webhookUrl: HOOK_URL, fetch: up });
+    ({ events_webhook } = (await app.inject({ method: "GET", url: "/api/metrics" })).json());
+    expect(events_webhook.undelivered_answers).toEqual({ pending: 0, failed: 0, oldest_age_seconds: null });
+    expect(events_webhook.directions.question_push.failing).toBe(false);
     db.close();
   });
 });

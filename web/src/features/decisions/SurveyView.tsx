@@ -16,7 +16,7 @@ export interface SurveyDecisionItem {
   recommendation?: string;
   /** Live attachments + artifact links (PANT-919); absent on older servers. */
   supporting_material_count?: number;
-  /** When Consus sent `decision:needs-context` to Pantheon (PANT-938); null if never. */
+  /** When Consus sent its needs-context event (PANT-938); null if never. */
   needs_context_requested_at?: string | null;
 }
 

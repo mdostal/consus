@@ -3,9 +3,9 @@ import Fastify, { type FastifyInstance } from "fastify";
 import Database from "better-sqlite3";
 import { runMigration } from "../db/migrate.js";
 import { registerDecisionRoutes } from "./decisions.js";
-import { getSyncStatus } from "../pantheon/sync-status.js";
+import { getSyncStatus } from "../webhooks/sync-status.js";
 import { nativeContextCount } from "../decision-contract/supporting-material.js";
-import { requestNeedsContext } from "../pantheon/needs-context.js";
+import { requestNeedsContext } from "../webhooks/needs-context.js";
 
 type CapturedCall = { url: string; init: RequestInit };
 
@@ -39,11 +39,11 @@ describe("PANT-938: decision:needs-context on POST /api/decisions", () => {
   let app: FastifyInstance;
   let calls: CapturedCall[];
 
-  async function build(opts: { pantheonApiUrl?: string; status?: number } = { pantheonApiUrl: "http://core-api:3012" }) {
+  async function build(opts: { eventsWebhookUrl?: string; status?: number } = { eventsWebhookUrl: "http://core-api:3012/hooks/consus" }) {
     if (app) await app.close();
     calls = [];
     app = Fastify();
-    registerDecisionRoutes(app, { db, pantheonApiUrl: opts.pantheonApiUrl, fetch: makeFakeFetch(calls, opts.status) });
+    registerDecisionRoutes(app, { db, eventsWebhookUrl: opts.eventsWebhookUrl, fetch: makeFakeFetch(calls, opts.status) });
     await app.ready();
   }
 
@@ -76,13 +76,15 @@ describe("PANT-938: decision:needs-context on POST /api/decisions", () => {
     expect(res.json().needs_context_requested_at).toEqual(expect.any(String));
     expect(res.json().supporting_material_count).toBe(0);
     expect(calls).toHaveLength(1);
-    expect(calls[0].url).toBe("http://core-api:3012/api/events/decisions/needs-context");
+    expect(calls[0].url).toBe("http://core-api:3012/hooks/consus");
     expect(calls[0].init.method).toBe("POST");
     expect(JSON.parse(calls[0].init.body as string)).toEqual({
-      decision_id: "d-bare",
-      survey_id: "s-1",
+      type: "consus.decision.needs_context",
+      version: 1,
+      decisionId: "d-bare",
+      surveyId: "s-1",
       title: "Decision d-bare",
-      source_repo: "flayr",
+      sourceRepo: "flayr",
       missing: ["research", "attachments", "doc"],
     });
     expect(getSyncStatus(db).find((r) => r.direction === "needs_context_push")?.last_success_at).toEqual(
@@ -121,7 +123,7 @@ describe("PANT-938: decision:needs-context on POST /api/decisions", () => {
       at: string;
     };
     // The update path (e.g. a later context edit) goes through the same once-only claim.
-    expect(requestNeedsContext(db, "d-once", { pantheonApiUrl: "http://core-api:3012", fetch: makeFakeFetch(calls) })).toBeNull();
+    expect(requestNeedsContext(db, "d-once", { webhookUrl: "http://core-api:3012/hooks/consus", fetch: makeFakeFetch(calls) })).toBeNull();
     await drain();
 
     expect(calls).toHaveLength(1);
@@ -131,8 +133,8 @@ describe("PANT-938: decision:needs-context on POST /api/decisions", () => {
     expect(after.at).toBe(first.at);
   });
 
-  it("records a Pantheon 500 in sync status, and the item still exists", async () => {
-    await build({ pantheonApiUrl: "http://core-api:3012", status: 500 });
+  it("records a receiver 500 in sync status, and the item still exists", async () => {
+    await build({ eventsWebhookUrl: "http://core-api:3012/hooks/consus", status: 500 });
     const res = await create("d-500", BARE);
     await drain();
 
@@ -141,7 +143,7 @@ describe("PANT-938: decision:needs-context on POST /api/decisions", () => {
     expect(db.prepare("SELECT id FROM items WHERE id = 'd-500'").get()).toEqual({ id: "d-500" });
     const row = getSyncStatus(db).find((r) => r.direction === "needs_context_push");
     expect(row?.last_failure_at).toEqual(expect.any(String));
-    expect(row?.last_error).toBe("Pantheon needs-context event failed: 500");
+    expect(row?.last_error).toBe('needs-context event failed: HTTP 500: {"ok":false}');
 
     // Still listed in the open queue: never hidden for missing context.
     const list = await app.inject({ method: "GET", url: "/api/decisions" });
@@ -154,7 +156,7 @@ describe("PANT-938: decision:needs-context on POST /api/decisions", () => {
     app = Fastify();
     registerDecisionRoutes(app, {
       db,
-      pantheonApiUrl: "http://core-api:3012",
+      eventsWebhookUrl: "http://core-api:3012/hooks/consus",
       fetch: () => Promise.reject(new Error("network down")),
     });
     await app.ready();
@@ -164,12 +166,12 @@ describe("PANT-938: decision:needs-context on POST /api/decisions", () => {
     await drain();
 
     expect(res.statusCode).toBe(201);
-    expect(getSyncStatus(db).find((r) => r.direction === "needs_context_push")?.last_error).toBe("network down");
+    expect(getSyncStatus(db).find((r) => r.direction === "needs_context_push")?.last_error).toBe("needs-context event failed: network down");
     errSpy.mockRestore();
   });
 
-  it("sends nothing in standalone mode (no pantheonApiUrl, PANTHEON_API_URL unset)", async () => {
-    vi.stubEnv("PANTHEON_API_URL", "");
+  it("sends nothing in standalone mode (no eventsWebhookUrl, CONSUS_EVENTS_WEBHOOK_URL unset)", async () => {
+    vi.stubEnv("CONSUS_EVENTS_WEBHOOK_URL", "");
     await build({});
     const res = await create("d-standalone", BARE);
     await drain();

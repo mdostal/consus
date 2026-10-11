@@ -16,7 +16,8 @@ Consus is configured via environment variables and a JSON config file for regist
 | `CONSUS_DISCOVERY_ROOTS` | _(none)_ | Comma-separated list of absolute directory paths that `GET /api/projects/discover` should scan for candidate repos |
 | `CONSUS_HARNESS` | _(none)_ | Set to `webhook` to select the generic webhook transport (requires `CONSUS_HARNESS_WEBHOOK_URL`). `pantheon` was removed (PANT-969) and now fails at startup. See [Harness wiring](#harness-wiring). |
 | `CONSUS_HARNESS_WEBHOOK_URL` | _(none)_ | Where `CONSUS_HARNESS=webhook` POSTs each proposal. Required in webhook mode. |
-| `PANTHEON_API_URL` | _(none)_ | Base URL of Pantheon core-api. Enables the outbound Pantheon pushes (question answers, the verdict bridge, `decision:needs-context`) and the tenant-path check below; `/health` and `GET /api/metrics` then report their sync status. Not a transport. |
+| `CONSUS_EVENTS_WEBHOOK_URL` | _(none)_ | Where answers, verdicts and needs-context requests go, as `consus.*` events POSTed to this one URL (contract in `docs/api-reference.md#events-webhook-consus_events_webhook_url`). `/health` and `GET /api/metrics` then report their sync status. Startup fails on an invalid URL. Under Pantheon, point it at core-api's Consus events receiver with `?origin=consus`. Not a transport. |
+| `PANTHEON_API_URL` | _(none)_ | Base URL of Pantheon core-api. Only enables the tenant-path check below; it no longer sends any events (PANT-998: use `CONSUS_EVENTS_WEBHOOK_URL`). Not a transport. |
 | `REPOS_BASE_DIR` | `/repos` | Tenant repo mount root. When `PANTHEON_API_URL` is set, ingesting a project whose path looks like `<REPOS_BASE_DIR>/<tenant>/<repo>` first validates it against Pantheon's repo facade. |
 | `CONSUS_HARNESS_FILE_DIR` | _(none)_ | Selects the file transport: each proposal is written as `<dir>/<proposalId>.json` |
 | `CONSUS_HARNESS_COMMAND` | _(none)_ | Selects the stdio transport: the executable to spawn per proposal |

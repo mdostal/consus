@@ -1,15 +1,15 @@
 import type Database from "better-sqlite3";
 
 /**
- * PANT-809: last success / last failure per Pantheon push direction, kept in
+ * PANT-809: last success / last failure per outbound event direction, kept in
  * the `sync_status` table (server/db/migrate.ts) so `GET /api/metrics` and
  * `/health`'s `degraded` flag survive a restart. Reported only when
- * PANTHEON_API_URL is set. The two pull directions went with the pullers
- * (PANT-969); getSyncStatus ignores their leftover rows.
+ * CONSUS_EVENTS_WEBHOOK_URL is set. The two pull directions went with the
+ * pullers (PANT-969); getSyncStatus ignores their leftover rows.
  *
- *  - question_push: question delivery outbox — POST /api/feed/questions/:ticket/{partial,submit}
- *  - decision_push: verdict bridge         — POST /api/events/decisions
- *  - needs_context_push: PANT-938 warn-only readiness — POST /api/events/decisions/needs-context
+ *  - question_push: question delivery outbox — consus.question.answered / consus.questions.submitted
+ *  - decision_push: verdict on an unlinked decision — consus.decision.decided
+ *  - needs_context_push: PANT-938 warn-only readiness — consus.decision.needs_context
  */
 export const SYNC_DIRECTIONS = [
   "question_push",

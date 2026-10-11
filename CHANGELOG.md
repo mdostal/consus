@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Answers, verdicts and needs-context leave on a generic events webhook** (PANT-998). Set
+  `CONSUS_EVENTS_WEBHOOK_URL` and Consus POSTs `consus.question.answered`,
+  `consus.questions.submitted`, `consus.decision.decided` and `consus.decision.needs_context` events
+  (`{ "type", "version": 1, ... }`) to that one URL, instead of calling Pantheon core-api's
+  `/api/feed/questions/:ticket/{partial,submit}`, `/api/events/decisions` and
+  `/api/events/decisions/needs-context`. Contract: `docs/api-reference.md#events-webhook-consus_events_webhook_url`.
+  `server/pantheon/` is now `server/webhooks/`. The answer outbox, `POST /api/questions/redeliver`
+  and the startup redelivery pass are unchanged, and rows queued before the upgrade send as the
+  new events. **Breaking:** `PANTHEON_API_URL` no longer sends anything (it only drives the ingest
+  tenant-path check); `GET /api/metrics`' `pantheon` block is now `events_webhook`, and `/health`'s
+  `degraded` keys on `CONSUS_EVENTS_WEBHOOK_URL`. Under Pantheon, set
+  `CONSUS_EVENTS_WEBHOOK_URL=<core-api>/api/feed/events/webhook?origin=consus` once core-api
+  receives these events.
+
 ### Added
 
 - **Client grouping, client switcher and a cross-client inbox** (PANT-960). Projects get an
@@ -85,7 +101,8 @@
   `CONSUS_HARNESS=pantheon` now fails at startup instead of silently falling back. The question
   import moved to `server/questions/import.ts`; `POST /api/questions/:ticket/close` without an
   `actor` now records `upstream` instead of `pantheon`. The outbound Pantheon pushes
-  (answers, verdict bridge, `decision:needs-context`) stay behind `PANTHEON_API_URL`, and `/health`'s
+  (answers, verdict bridge, `decision:needs-context`) stay behind `PANTHEON_API_URL` (moved to the
+  events webhook later in this release, PANT-998), and `/health`'s
   `degraded` and `GET /api/metrics`'s `pantheon` block are now reported whenever it is set (they
   were keyed to the removed transport). The `question_pull` / `result_pull` directions are gone
   from `GET /api/metrics`.

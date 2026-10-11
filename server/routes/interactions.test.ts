@@ -21,6 +21,11 @@ function insertDecisionWithPayload(db: Database.Database, id: string, title: str
 
 type CapturedCall = { url: string; init: RequestInit };
 
+/** The `type` of the event a captured POST carried. */
+function eventType(call: CapturedCall): string {
+  return (JSON.parse(call.init.body as string) as { type: string }).type;
+}
+
 function makeFakeFetch(calls: CapturedCall[], rejectWith?: Error): typeof globalThis.fetch {
   return (url: string | URL | Request, init?: RequestInit) => {
     calls.push({ url: String(url), init: init ?? {} });
@@ -41,7 +46,7 @@ describe("POST /api/decisions/:id/verdict", () => {
     app = Fastify();
     registerInteractionRoutes(app, {
       db,
-      pantheonApiUrl: "http://core-api:3012",
+      eventsWebhookUrl: "http://core-api:3012/hooks/consus",
       fetch: makeFakeFetch(bridgeCalls),
     });
     await app.ready();
@@ -101,7 +106,7 @@ describe("POST /api/decisions/:id/verdict", () => {
     expect(row.decided_at).toBeNull();
   });
 
-  it("fires the bridge for an accepted verdict with title and createdAt", async () => {
+  it("fires consus.decision.decided for an accepted verdict with title and decidedAt", async () => {
     insertDecision(db, "dec-2", "Ship the thing");
     await app.inject({
       method: "POST",
@@ -111,11 +116,10 @@ describe("POST /api/decisions/:id/verdict", () => {
     // bridge is fire-and-forget — drain the microtask queue
     await new Promise((r) => setTimeout(r, 0));
     expect(bridgeCalls).toHaveLength(1);
-    expect(bridgeCalls[0].url).toBe("http://core-api:3012/api/events/decisions");
+    expect(bridgeCalls[0].url).toBe("http://core-api:3012/hooks/consus");
     const body = JSON.parse(bridgeCalls[0].init.body as string);
-    expect(body.decisionId).toBe("dec-2");
-    expect(body.title).toBe("Ship the thing");
-    expect(body.createdAt).toBeTruthy();
+    expect(body).toMatchObject({ type: "consus.decision.decided", version: 1, decisionId: "dec-2", title: "Ship the thing" });
+    expect(body.decidedAt).toBeTruthy();
     expect("summary" in body).toBe(false);
   });
 
@@ -169,7 +173,7 @@ describe("POST /api/decisions/:id/verdict", () => {
     });
     await new Promise((r) => setTimeout(r, 0));
     expect(bridgeCalls).toHaveLength(1);
-    expect(bridgeCalls[0].url).toBe("http://core-api:3012/api/events/decisions");
+    expect(JSON.parse(bridgeCalls[0].init.body as string).type).toBe("consus.decision.decided");
   });
 
   it("verdict succeeds even when the bridge call throws", async () => {
@@ -177,7 +181,7 @@ describe("POST /api/decisions/:id/verdict", () => {
     const failApp = Fastify();
     registerInteractionRoutes(failApp, {
       db,
-      pantheonApiUrl: "http://core-api:3012",
+      eventsWebhookUrl: "http://core-api:3012/hooks/consus",
       fetch: makeFakeFetch(failingCalls, new Error("network down")),
     });
     await failApp.ready();
@@ -194,18 +198,18 @@ describe("POST /api/decisions/:id/verdict", () => {
     await failApp.close();
   });
 
-  it("skips the bridge when no pantheonApiUrl is configured and PANTHEON_API_URL is unset", async () => {
+  it("skips the webhook when no eventsWebhookUrl is configured and CONSUS_EVENTS_WEBHOOK_URL is unset", async () => {
     const noBridgeCalls: CapturedCall[] = [];
     const noBridgeApp = Fastify();
     registerInteractionRoutes(noBridgeApp, {
       db,
       fetch: makeFakeFetch(noBridgeCalls),
-      // no pantheonApiUrl, no env var
+      // no eventsWebhookUrl, no env var
     });
     await noBridgeApp.ready();
 
-    const savedEnv = process.env.PANTHEON_API_URL;
-    delete process.env.PANTHEON_API_URL;
+    const savedEnv = process.env.CONSUS_EVENTS_WEBHOOK_URL;
+    delete process.env.CONSUS_EVENTS_WEBHOOK_URL;
 
     insertDecision(db, "dec-6", "No bridge configured");
     await noBridgeApp.inject({
@@ -216,7 +220,7 @@ describe("POST /api/decisions/:id/verdict", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(noBridgeCalls).toHaveLength(0);
 
-    if (savedEnv !== undefined) process.env.PANTHEON_API_URL = savedEnv;
+    if (savedEnv !== undefined) process.env.CONSUS_EVENTS_WEBHOOK_URL = savedEnv;
     await noBridgeApp.close();
   });
 
@@ -289,8 +293,8 @@ describe("POST /api/decisions/:id/verdict", () => {
     });
   });
 
-  describe("s6-consus-pantheon-question-adapter: question-linked items route to partial/submit, not seed", () => {
-    it("does NOT fire the seed bridge for a question-linked item verdict", async () => {
+  describe("s6-consus-pantheon-question-adapter: question-linked items send question events, not decision.decided", () => {
+    it("does NOT send consus.decision.decided for a question-linked item verdict", async () => {
       // Seed a question-linked item via POST /api/questions/import's import path
       importQuestionTicket(db, {
         ticket_id: "pant-ticket-1",
@@ -313,21 +317,17 @@ describe("POST /api/decisions/:id/verdict", () => {
 
       await new Promise((r) => setTimeout(r, 0));
 
-      // Must NOT have called the seed endpoint
-      const seedCalls = bridgeCalls.filter((c) => c.url.includes("/api/events/decisions"));
-      expect(seedCalls).toHaveLength(0);
+      // Must NOT have sent consus.decision.decided
+      expect(bridgeCalls.filter((c) => eventType(c) === "consus.decision.decided")).toHaveLength(0);
 
-      // Must have called the partial endpoint
-      const partialCalls = bridgeCalls.filter((c) => c.url.includes("/partial"));
-      expect(partialCalls).toHaveLength(1);
-      expect(partialCalls[0].url).toBe("http://core-api:3012/api/feed/questions/pant-ticket-1/partial");
-
-      const body = JSON.parse(partialCalls[0].init.body as string);
-      expect(body.qid).toBe("q1");
-      expect(body.answer).toBe("A");
+      // Must have sent the answer
+      const answered = bridgeCalls.filter((c) => eventType(c) === "consus.question.answered");
+      expect(answered).toHaveLength(1);
+      expect(answered[0].url).toBe("http://core-api:3012/hooks/consus");
+      expect(JSON.parse(answered[0].init.body as string)).toMatchObject({ ticketId: "pant-ticket-1", qid: "q1", answer: "A" });
     });
 
-    it("fires submit when the only question-linked item is decided", async () => {
+    it("sends consus.questions.submitted when the only question-linked item is decided", async () => {
       importQuestionTicket(db, {
         ticket_id: "pant-ticket-2",
         identifier: "PANT-2",
@@ -347,11 +347,11 @@ describe("POST /api/decisions/:id/verdict", () => {
 
       await new Promise((r) => setTimeout(r, 0));
 
-      const submitCalls = bridgeCalls.filter((c) => c.url.includes("/submit"));
+      const submitCalls = bridgeCalls.filter((c) => eventType(c) === "consus.questions.submitted");
       expect(submitCalls).toHaveLength(1);
     });
 
-    it("unlinked decisions still fire the seed bridge", async () => {
+    it("unlinked decisions send consus.decision.decided", async () => {
       insertDecision(db, "unlinked-dec", "Regular decision");
       bridgeCalls.length = 0;
 
@@ -363,7 +363,7 @@ describe("POST /api/decisions/:id/verdict", () => {
 
       await new Promise((r) => setTimeout(r, 0));
 
-      const seedCalls = bridgeCalls.filter((c) => c.url.includes("/api/events/decisions"));
+      const seedCalls = bridgeCalls.filter((c) => eventType(c) === "consus.decision.decided");
       expect(seedCalls).toHaveLength(1);
     });
   });
@@ -497,7 +497,7 @@ describe("PANT-807: question delivery outbox via the routes", () => {
     app = Fastify();
     registerInteractionRoutes(app, {
       db,
-      pantheonApiUrl: "http://core-api:3012",
+      eventsWebhookUrl: "http://core-api:3012/hooks/consus",
       fetch: (url, init) => {
         calls.push({ url: String(url), init: init ?? {} });
         return Promise.resolve(new Response("{}", { status: nextStatus }));
@@ -541,9 +541,9 @@ describe("PANT-807: question delivery outbox via the routes", () => {
     const redeliver = await app.inject({ method: "POST", url: "/api/questions/redeliver" });
     expect(redeliver.statusCode).toBe(200);
     expect(redeliver.json()).toEqual({ delivered: 2, failed: 0, skipped: 0, remaining: 0 });
-    expect(calls.map((c) => c.url)).toEqual([
-      "http://core-api:3012/api/feed/questions/pt-1/partial",
-      "http://core-api:3012/api/feed/questions/pt-1/submit",
+    expect(calls.map((c) => [c.url, JSON.parse(c.init.body as string).type])).toEqual([
+      ["http://core-api:3012/hooks/consus", "consus.question.answered"],
+      ["http://core-api:3012/hooks/consus", "consus.questions.submitted"],
     ]);
     warn.mockRestore();
   });
@@ -560,14 +560,14 @@ describe("PANT-807: question delivery outbox via the routes", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("409s the redeliver endpoint when no Pantheon URL is configured", async () => {
+  it("409s the redeliver endpoint when no events webhook is configured", async () => {
     const bare = Fastify();
-    const saved = process.env.PANTHEON_API_URL;
-    delete process.env.PANTHEON_API_URL;
+    const saved = process.env.CONSUS_EVENTS_WEBHOOK_URL;
+    delete process.env.CONSUS_EVENTS_WEBHOOK_URL;
     registerInteractionRoutes(bare, { db });
     const res = await bare.inject({ method: "POST", url: "/api/questions/redeliver" });
     expect(res.statusCode).toBe(409);
-    if (saved !== undefined) process.env.PANTHEON_API_URL = saved;
+    if (saved !== undefined) process.env.CONSUS_EVENTS_WEBHOOK_URL = saved;
     await bare.close();
   });
 });
