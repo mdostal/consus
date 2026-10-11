@@ -13,7 +13,8 @@ import type {
 import { validateDocPointer, validateResearchSections } from "../decision-contract/parser.js";
 import { closeOpenItems } from "../kb/store.js";
 import { classifyItem } from "../decision-contract/classifier.js";
-import { nativeContextCount, requestNeedsContext } from "../pantheon/needs-context.js";
+import { nativeContextCount } from "../decision-contract/supporting-material.js";
+import { requestNeedsContext } from "../pantheon/needs-context.js";
 
 export interface DecisionRoutesOptions {
   db: Database.Database;
@@ -285,7 +286,7 @@ export function registerDecisionRoutes(
    * twice, so a duplicate `id` is a 409, not a silent upsert.
    *
    * PANT-938: warn-only readiness. A decision with no supporting material is
-   * still created, never blocked or hidden; in Pantheon mode it also fires a
+   * still created, never blocked or hidden; with PANTHEON_API_URL set it also fires a
    * one-time `decision:needs-context` event (requestNeedsContext) that never
    * delays or fails this response.
    */

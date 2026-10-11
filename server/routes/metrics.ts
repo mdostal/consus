@@ -8,6 +8,8 @@ export interface MetricsRoutesOptions {
   repos: Record<string, string>;
   /** Active harness transport name (see transportName() in server/harness/transport.ts). */
   transport: string;
+  /** True when the Pantheon pushes (server/pantheon/) are configured; adds the `pantheon` sync block. */
+  pantheonPush?: boolean;
   /** Injectable clock so age fields are deterministic in tests. */
   now?: () => Date;
 }
@@ -71,7 +73,7 @@ export function pantheonSyncMetrics(db: Database.Database, at: Date = new Date()
  * PANT-809: operability snapshot for Janus / Pantheon dashboards. Computed
  * from SQLite on every request — no background work, no caching.
  */
-export function registerMetricsRoutes(app: FastifyInstance, { db, repos, transport, now = () => new Date() }: MetricsRoutesOptions): void {
+export function registerMetricsRoutes(app: FastifyInstance, { db, repos, transport, pantheonPush = false, now = () => new Date() }: MetricsRoutesOptions): void {
   app.get("/api/metrics", async () => {
     const at = now();
     const dayAgo = new Date(at.getTime() - DAY_MS).toISOString();
@@ -116,7 +118,7 @@ export function registerMetricsRoutes(app: FastifyInstance, { db, repos, transpo
         doc_count: docCounts.get(name) ?? 0,
       })),
       harness: { transport },
-      ...(transport === "pantheon" ? { pantheon: pantheonSyncMetrics(db, at) } : {}),
+      ...(pantheonPush ? { pantheon: pantheonSyncMetrics(db, at) } : {}),
     };
   });
 }

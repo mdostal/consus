@@ -5,7 +5,6 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import Database from "better-sqlite3";
 import { runMigration } from "../db/migrate.js";
-import { pullQuestions } from "../pantheon/question-adapter.js";
 import { registerQuestionRoutes } from "./questions.js";
 import { registerDecisionRoutes } from "./decisions.js";
 import { registerInteractionRoutes } from "./interactions.js";
@@ -114,33 +113,6 @@ describe("POST /api/questions/import", () => {
     expect((await importTicket({ ticket_id: "t", questions: [{ qid: "q1", kind: "free-text" }] })).statusCode).toBe(400);
     expect((await importTicket({ ticket_id: "t", identifier: 7, questions: TICKET.questions })).statusCode).toBe(400);
   });
-
-  it("produces the same rows as pullQuestions for the same ticket", async () => {
-    const feed = { questions: [{ ...TICKET, ticket_id: "pulled", status: "todo" }] };
-    await pullQuestions(db, {
-      pantheonApiUrl: "https://pantheon.example.com",
-      fetch: async () => new Response(JSON.stringify(feed), { status: 200 }),
-    });
-    await importTicket({ ...TICKET, ticket_id: "pushed" });
-
-    const pulled = ticketRows("pulled") as Array<Record<string, unknown>>;
-    const pushed = ticketRows("pushed") as Array<Record<string, unknown>>;
-    expect(pulled).toHaveLength(3);
-    const strip = (rows: Array<Record<string, unknown>>) => rows.map(({ ticket_id: _t, ...rest }) => rest);
-    expect(strip(pushed)).toEqual(strip(pulled));
-  });
-
-  it("is idempotent across paths: a pulled ticket pushed again returns 200 with the pulled survey", async () => {
-    await pullQuestions(db, {
-      pantheonApiUrl: "https://pantheon.example.com",
-      fetch: async () => new Response(JSON.stringify({ questions: [{ ...TICKET, status: "todo" }] }), { status: 200 }),
-    });
-    const surveyId = (db.prepare("SELECT survey_id FROM question_links LIMIT 1").get() as { survey_id: string }).survey_id;
-
-    const res = await importTicket(TICKET);
-    expect(res.statusCode).toBe(200);
-    expect(res.json().survey_id).toBe(surveyId);
-  });
 });
 
 describe("POST /api/questions/:ticket/close", () => {
@@ -165,7 +137,7 @@ describe("POST /api/questions/:ticket/close", () => {
 
     for (const id of open) {
       const audit = db.prepare("SELECT actor, field, old_value, new_value FROM audit_log WHERE item_id = ?").all(id);
-      expect(audit).toEqual([{ actor: "pantheon", field: "status", old_value: "open", new_value: "closed" }]);
+      expect(audit).toEqual([{ actor: "upstream", field: "status", old_value: "open", new_value: "closed" }]);
       const comments = db.prepare("SELECT body FROM comments WHERE item_id = ?").all(id);
       expect(comments).toEqual([{ body: "Closed upstream: ticket cancelled" }]);
     }

@@ -87,61 +87,6 @@ export class FileHarnessTransport implements HarnessTransport {
 }
 
 /**
- * Pantheon HTTP transport (opt-in). POSTs proposals to Pantheon's board
- * feed and surfaces results back via the result puller
- * (server/harness/pantheon-result-puller.ts). Selected by CONSUS_HARNESS=pantheon.
- */
-export class PantheonHarnessTransport implements HarnessTransport {
-  constructor(private readonly pantheonApiUrl: string) {}
-
-  async invoke<T = unknown>(method: string, params?: unknown): Promise<HarnessResult<T>> {
-    if (method !== "proposeChange") {
-      return { ok: false, recoverable: false, code: "UNKNOWN_METHOD" };
-    }
-    const p = params as {
-      proposalId: string;
-      itemId: string;
-      targetType: string;
-      diff: string;
-      description: string;
-      sourceRepo?: string | null;
-    };
-    if (!p.sourceRepo) {
-      return { ok: false, recoverable: false, code: "OPERATION_UNSUPPORTED", message: "item has no source_repo" };
-    }
-    try {
-      const res = await fetch(`${this.pantheonApiUrl}/api/feed/changes`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          origin: {
-            god: "consus",
-            item_ref: { itemId: p.itemId, proposalId: p.proposalId, targetType: p.targetType },
-          },
-          target_repo: p.sourceRepo,
-          diff: p.diff,
-          description: p.description,
-          requested_by: "consus",
-        }),
-      });
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        return { ok: false, recoverable: res.status >= 500, code: "INTERNAL_ERROR", message: text };
-      }
-      const body = (await res.json()) as T;
-      return { ok: true, result: body };
-    } catch (error) {
-      return {
-        ok: false,
-        recoverable: true,
-        code: "INTERNAL_ERROR",
-        message: error instanceof Error ? error.message : String(error),
-      };
-    }
-  }
-}
-
-/**
  * Generic webhook transport (opt-in). POSTs the same `{ method, params }`
  * envelope the stdio transport writes to its child's stdin to a configured
  * URL — no knowledge of what's on the other end (Pantheon or anything
@@ -250,13 +195,12 @@ export class StdioHarnessTransport implements HarnessTransport {
   }
 }
 
-export type TransportName = "pantheon" | "webhook" | "file" | "stdio" | "noop" | "custom";
+export type TransportName = "webhook" | "file" | "stdio" | "noop" | "custom";
 
 /** Human-readable name of the active transport, reported by /health and
  *  GET /api/metrics. "custom" covers injected transports (tests, embedders). */
 export function transportName(transport: HarnessTransport): TransportName {
   if (transport === NOOP_HARNESS_TRANSPORT) return "noop";
-  if (transport instanceof PantheonHarnessTransport) return "pantheon";
   if (transport instanceof WebhookHarnessTransport) return "webhook";
   if (transport instanceof FileHarnessTransport) return "file";
   if (transport instanceof StdioHarnessTransport) return "stdio";

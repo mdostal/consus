@@ -238,9 +238,9 @@ export function runMigration(db: Database.Database): void {
   // means never requested (has material, standalone mode, or predates this).
   addColumnIfMissing(db, "items", "needs_context_requested_at", "TEXT");
 
-  // s2-consus-pantheon-change-adapter: the Pantheon board ticket id returned
-  // from a successful PantheonHarnessTransport dispatch, so proposals can be
-  // cross-referenced against their Pantheon ticket.
+  // s2-consus-pantheon-change-adapter: the ticket id the harness returned
+  // from a successful dispatch (a `ticket_id` field in the webhook response),
+  // so proposals can be cross-referenced against the harness's ticket.
   addColumnIfMissing(db, "proposals", "harness_ticket_id", "TEXT");
 
   // d9-consus-generic-webhook-transport: why the last dispatch never reached
@@ -271,8 +271,8 @@ export function runMigration(db: Database.Database): void {
   `);
 
   // PANT-806: durable poll cursors for the harness pullers (keyed by puller
-  // name), so a restart resumes from the last seen result instead of
-  // replaying the whole feed.
+  // name). Unused since the Pantheon pullers were removed (PANT-969); kept so
+  // existing databases migrate without dropping anything.
   db.exec(`
     CREATE TABLE IF NOT EXISTS harness_cursors (
       name       TEXT PRIMARY KEY,
@@ -337,8 +337,9 @@ export function runMigration(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_thread_messages_thread_id ON thread_messages(thread_id);
   `);
 
-  // PANT-809: last success / failure per Pantheon sync direction
+  // PANT-809: last success / failure per Pantheon push direction
   // (server/pantheon/sync-status.ts), read by GET /api/metrics and /health.
+  // Rows for the removed pull directions are left in place and ignored.
   db.exec(`
     CREATE TABLE IF NOT EXISTS sync_status (
       direction       TEXT PRIMARY KEY,

@@ -124,11 +124,19 @@ repo's own architecture legible and editable without digging through files by ha
 
 These are settled, not open questions:
 
-- **Standalone-only.** Zero live coupling to any specific external system — `server/adapters/`
-  contains only `doc-scanner/`.
+- **Standalone-only.** No client for any specific external system — `server/adapters/` contains
+  only the local `doc-scanner/` and `gitdocs/`. Other systems reach Consus through its generic REST
+  seams (`POST /api/questions/import`, `POST /api/proposals/:id/result`,
+  `POST /api/threads/:id/replies`) and the generic webhook transport. **One known exception
+  remains:** with `PANTHEON_API_URL` set, `server/pantheon/` pushes answers to imported question
+  tickets, decided verdicts and `decision:needs-context` to Pantheon core-api, and
+  `POST /api/projects/:project/ingest` checks tenant repo paths against it. The Pantheon transport
+  and both Pantheon pullers were removed (PANT-969, PANT-813 Q1=B); these pushes go next, once
+  Pantheon takes them on a generic seam.
 - **Harness interaction only through the generic seam.** `HarnessTransport` is the sole
   integration point for "propose a change and let something apply it," with no knowledge of what's
   configured on the other end.
+- **No polling.** Consus never polls another system; everything arrives through a push.
 - **Local-only by default.** `127.0.0.1` binding on both the Vite dev server and the Fastify
   server unless explicitly overridden. The production server reads `HOST` (default `127.0.0.1`)
   so a containerized deploy can bind `0.0.0.0` — nothing changes for anyone who doesn't set it.

@@ -58,7 +58,7 @@ append-only audit log, adds a summary comment, and returns
 
 There is also a lower-level `POST /api/items/:id/decide` (`{ "actor", "newStatus" }`) that writes a
 raw status to the audit log without a verdict shape. Prefer `/verdict`: it's the only path that
-reports the answer back to Pantheon in Pantheon mode (below).
+reports the answer back to Pantheon when `PANTHEON_API_URL` is set (below).
 
 **Do not** re-decide an item already returned without a `decision_payload`, or one no longer
 present in `GET /api/decisions` — it's already resolved.
@@ -119,12 +119,10 @@ and the multi-repo event review queue (`GET /api/events`). See
 ## Standalone vs. Pantheon-plugin mode
 
 Every route above works the same in either mode — nothing in this skill is Pantheon-only. The
-difference is what happens around them when Consus runs with `CONSUS_HARNESS=pantheon` +
-`PANTHEON_API_URL`:
+difference is what happens around them when Consus runs with `PANTHEON_API_URL` set:
 
 - Pending Pantheon question tickets show up in `GET /api/decisions` as items grouped into a
-  survey when Pantheon pushes them (below), or every 60 seconds by polling if
-  `CONSUS_PANTHEON_POLL=1`.
+  survey when Pantheon pushes them (below). Consus never polls for them.
 - A deciding `POST /api/decisions/:id/verdict` on one of those items is forwarded to Pantheon as a
   partial answer, then as a submit once every item in the ticket is answered. Other decided items
   are posted to Pantheon's `/api/events/decisions`.
@@ -134,8 +132,7 @@ reachable.
 
 ### Pushing question tickets in (no polling)
 
-Any harness can push a question ticket in directly — the same shape as one entry of Pantheon's
-question feed:
+Any harness can push a question ticket in directly:
 
 ```
 POST /api/questions/import

@@ -17,10 +17,11 @@
 //      pattern that aborts on an affected build).
 //   2. Built server (dist-server/index.js), started twice against the same
 //      DB directory — a cold start, then a restart onto the now-persistent
-//      DB, like a redeploy onto the consus-data volume — in Pantheon mode
-//      with an unreachable PANTHEON_API_URL, so the startup question
-//      redelivery and both pullers run. Each boot must answer /health, take
-//      some API traffic, then stay up while idle.
+//      DB, like a redeploy onto the consus-data volume — configured like
+//      hive (webhook transport, PANTHEON_API_URL set) with both URLs
+//      unreachable, so the startup question redelivery runs and fails soft.
+//      Each boot must answer /health, take some API traffic, then stay up
+//      while idle.
 //
 // Fails on any native assertion / fatal error output, a SIGABRT, or an
 // unexpected exit. Requires `npm run build` first.
@@ -111,8 +112,9 @@ async function bootServer(dataDir, port, label) {
       CONSUS_DB_PATH: join(dataDir, "consus.sqlite"),
       CONSUS_PROJECTS_CONFIG: join(dataDir, "consus-projects.json"),
       CONSUS_ATTACHMENTS_DIR: join(dataDir, "attachments"),
-      CONSUS_HARNESS: "pantheon",
-      // Unreachable on purpose: startup redelivery and pullers must fail soft.
+      CONSUS_HARNESS: "webhook",
+      // Unreachable on purpose: startup redelivery must fail soft.
+      CONSUS_HARNESS_WEBHOOK_URL: "http://127.0.0.1:9/api/feed/changes/webhook?origin=consus",
       PANTHEON_API_URL: "http://127.0.0.1:9",
     },
   });
