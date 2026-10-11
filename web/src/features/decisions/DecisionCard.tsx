@@ -1,5 +1,6 @@
 import { AnswerControl } from "./answer-shapes/AnswerControl";
 import type { DecisionPayload, Verdict } from "./answer-shapes/types";
+import { ResearchSections } from "./ResearchSections";
 import "../../theme/tokens.css";
 
 export interface DecisionCardProps {
@@ -37,23 +38,14 @@ export function DecisionCard({
 
       {recommendation ? <p className="decision-card__recommendation">{recommendation}</p> : null}
 
-      {payload.research && payload.research.length > 0 ? (
-        <div className="decision-card__research" aria-label="Research findings">
-          {payload.research.map((section, i) => (
-            <details key={i} className="decision-card__research-section" aria-label={section.title}>
-              <summary className="decision-card__research-title">{section.title}</summary>
-              <div className="decision-card__research-body">{section.body}</div>
-              {section.sources && section.sources.length > 0 ? (
-                <ul className="decision-card__research-sources" aria-label="Sources">
-                  {section.sources.map((src, j) => (
-                    <li key={j}>{src}</li>
-                  ))}
-                </ul>
-              ) : null}
-            </details>
-          ))}
-        </div>
+      {/* Why the question is asked and what each answer leads to. Plain text
+          (not markdown) because it can come from an outside system; skipped
+          when it only repeats the question, as older imports did. */}
+      {payload.context && payload.context.trim() !== question.trim() ? (
+        <p className="decision-card__context">{payload.context}</p>
       ) : null}
+
+      <ResearchSections research={payload.research} />
 
       <div className="decision-card__answer-slot">
         <AnswerControl payload={payload} onVerdict={onVerdict} />

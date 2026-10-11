@@ -1618,3 +1618,119 @@ describe("App — creating a survey moves focus to its heading (PANT-812)", () =
     await waitFor(() => expect(heading).toHaveFocus());
   });
 });
+
+describe("App — operator question surveys: pinned, ?survey= and ?selected= deep links (consus#211)", () => {
+  const QUESTION_A = {
+    ...DECISION_ONE,
+    id: "q-a",
+    title: "Which model by default?",
+    survey_id: "sq",
+    created_at: "2026-10-11T22:59:45.260Z",
+  };
+  const QUESTION_B = {
+    ...DECISION_ONE,
+    id: "q-b",
+    title: "Which Gemini key?",
+    survey_id: "sq",
+    created_at: "2026-10-11T22:59:45.261Z",
+    decision_payload: {
+      version: "dostal:decision-request/v1" as const,
+      title: "Which Gemini key?",
+      context: "Portunus has exactly one Gemini key.",
+      options: [
+        { id: "A", title: "The shared key", tradeoffs: "Already there" },
+        { id: "B", title: "A new key", tradeoffs: "You add it first" },
+      ],
+      recommended: "A",
+      research: [{ title: "Portunus inventory", body: "One key." }],
+    },
+  };
+  const QUESTION_SURVEY = {
+    id: "sq",
+    title: "Questions: PANT-1032",
+    answered: 0,
+    total: 2,
+    question_ticket: { ticket_id: "t-uuid", identifier: "PANT-1032" },
+  };
+  const OTHER_SURVEY = { id: "so", title: "Design review", answered: 0, total: 1, question_ticket: null };
+
+  function stubFetch() {
+    // The older decisions come first from the server, as they do live, and
+    // the ticket's questions arrive newest-activity first.
+    const { fn: decisionsFetch } = buildDecisionsFetchMock([DECISION_ONE, DECISION_TWO, QUESTION_B, QUESTION_A]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url === "/api/surveys") return jsonOk([OTHER_SURVEY, QUESTION_SURVEY]);
+        if (url.startsWith("/api/decisions?survey=sq")) return jsonOk([QUESTION_A, QUESTION_B]);
+        return decisionsFetch(input, init);
+      }),
+    );
+  }
+
+  beforeEach(() => {
+    resetLocation();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetLocation();
+  });
+
+  it("pins the question survey first in Needs you, labelled with its ticket and grouped with its open questions", async () => {
+    stubFetch();
+    render(<App />);
+    const group = await screen.findByTestId("question-group-sq");
+
+    const needsYou = screen.getByRole("listbox", { name: "Needs you" });
+    const titles = within(needsYou)
+      .getAllByRole("option")
+      .map((o) => o.querySelector(".decision-list__row-title")?.textContent);
+    expect(titles).toEqual([
+      "PANT-1032 Questions for you",
+      "Which model by default?",
+      "Which Gemini key?",
+      "Design review",
+      "Decision One",
+      "Decision Two",
+    ]);
+    expect(within(group).getAllByRole("option")).toHaveLength(3);
+    expect(screen.getByText("Needs you (6)")).toBeInTheDocument();
+  });
+
+  it("opens the survey named by ?survey= on mount", async () => {
+    window.history.pushState({}, "", "/?survey=sq");
+    stubFetch();
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Questions: PANT-1032" })).toBeInTheDocument();
+    expect(screen.getByTestId("survey-row-sq")).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("opens the question named by ?selected= even though it sits in a survey", async () => {
+    window.history.pushState({}, "", "/?selected=q-b");
+    stubFetch();
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Which Gemini key?" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Which Gemini key\?/ })).toHaveAttribute("aria-selected", "true");
+    // Its research shows here too, not only inside the survey view.
+    expect(screen.getByText("Portunus inventory")).toBeInTheDocument();
+  });
+
+  it("clicking the pinned survey writes ?survey= and drops ?selected=; clicking a question does the reverse", async () => {
+    window.history.pushState({}, "", "/?selected=q-a");
+    stubFetch();
+    render(<App />);
+    await screen.findByRole("heading", { name: "Which model by default?" });
+
+    fireEvent.click(await screen.findByTestId("survey-row-sq"));
+    expect(await screen.findByRole("heading", { name: "Questions: PANT-1032" })).toBeInTheDocument();
+    expect(window.location.search).toBe("?survey=sq");
+
+    fireEvent.click(screen.getByRole("option", { name: /Which Gemini key\?/ }));
+    expect(await screen.findByRole("heading", { name: "Which Gemini key?" })).toBeInTheDocument();
+    expect(window.location.search).toBe("?selected=q-b");
+  });
+});

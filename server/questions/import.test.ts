@@ -84,4 +84,125 @@ describe("importQuestionTicket", () => {
     expect(db.prepare("SELECT COUNT(*) AS n FROM items WHERE decision_payload IS NOT NULL").get()).toEqual({ n: 2 });
     expect(db.prepare("SELECT COUNT(*) AS n FROM question_links").get()).toEqual({ n: 2 });
   });
+
+  describe("optional answerability fields (context, recommended, tradeoffs, research)", () => {
+    const research = [{ title: "Quota", body: "The shared key hit its cap twice this week.", sources: ["portunus"] }];
+
+    it("maps a rich single-select onto context, per-option tradeoffs, the recommended letter and research", () => {
+      importQuestionTicket(db, {
+        ticket_id: "t1",
+        questions: [
+          {
+            qid: "q1",
+            text: "Which model by default?",
+            kind: "single-select",
+            options: ["Claude", "Gemini", "Local"],
+            context: "The default decides whose quota every chat burns.",
+            recommended: "Gemini",
+            tradeoffs: ["Shares the build agents' quota", "Personal key, separate quota", "Free but slow"],
+            research,
+          },
+        ],
+      });
+      const payload = payloadOf() as {
+        context: string;
+        recommended: string;
+        options: Array<{ id: string; title: string; tradeoffs: string }>;
+        research: unknown;
+      };
+      expect(payload.context).toBe("The default decides whose quota every chat burns.");
+      expect(payload.recommended).toBe("B");
+      expect(payload.options).toEqual([
+        { id: "A", title: "Claude", tradeoffs: "Shares the build agents' quota" },
+        { id: "B", title: "Gemini", tradeoffs: "Personal key, separate quota" },
+        { id: "C", title: "Local", tradeoffs: "Free but slow" },
+      ]);
+      expect(payload.research).toEqual(research);
+    });
+
+    it("matches `recommended` ignoring case and surrounding space, and falls back to A when it matches nothing", () => {
+      importQuestionTicket(db, {
+        ticket_id: "t1",
+        questions: [
+          { qid: "q1", text: "One", kind: "single-select", options: ["Yes", "No"], recommended: "  no " },
+          { qid: "q2", text: "Two", kind: "single-select", options: ["Yes", "No"], recommended: "Maybe" },
+        ],
+      });
+      const rows = db.prepare("SELECT title, decision_payload FROM items WHERE decision_payload IS NOT NULL").all() as Array<{
+        title: string;
+        decision_payload: string;
+      }>;
+      const rec = Object.fromEntries(rows.map((r) => [r.title, (JSON.parse(r.decision_payload) as { recommended: string }).recommended]));
+      expect(rec).toEqual({ One: "B", Two: "A" });
+    });
+
+    it("maps multi tradeoffs onto feature descriptions and free-text context", () => {
+      importQuestionTicket(db, {
+        ticket_id: "t1",
+        questions: [
+          {
+            qid: "q1",
+            text: "Which brands?",
+            kind: "multi",
+            options: ["Acme", "Globex"],
+            context: "Each brand needs its own key.",
+            tradeoffs: ["Has a key already"],
+          },
+          { qid: "q2", text: "Anything else?", kind: "free-text", context: "Hermes refuses brands without a key." },
+        ],
+      });
+      const rows = db.prepare("SELECT decision_payload FROM items WHERE decision_payload IS NOT NULL").all() as Array<{
+        decision_payload: string;
+      }>;
+      const [multi, free] = rows.map((r) => JSON.parse(r.decision_payload) as Record<string, unknown>);
+      expect(multi.context).toBe("Each brand needs its own key.");
+      expect(multi.features).toEqual([
+        { id: "f0", name: "Acme", description: "Has a key already" },
+        // No tradeoff for this one: the label stands in, as before.
+        { id: "f1", name: "Globex", description: "Globex" },
+      ]);
+      expect(free.context).toBe("Hermes refuses brands without a key.");
+      expect(free.prompt).toBe("Anything else?");
+    });
+
+    it("leaves a plain question exactly as before", () => {
+      importQuestionTicket(db, {
+        ticket_id: "t1",
+        questions: [{ qid: "q1", text: "Pick one", kind: "single-select", options: ["Yes", "No"] }],
+      });
+      expect(payloadOf()).toEqual({
+        version: "dostal:decision-request/v1",
+        title: "Pick one",
+        context: "Pick one",
+        options: [
+          { id: "A", title: "Yes", tradeoffs: "" },
+          { id: "B", title: "No", tradeoffs: "" },
+        ],
+        recommended: "A",
+      });
+    });
+
+    it("drops malformed optional fields instead of rejecting the question", () => {
+      const result = importQuestionTicket(db, {
+        ticket_id: "t1",
+        questions: [
+          {
+            qid: "q1",
+            text: "Pick one",
+            kind: "single-select",
+            options: ["Yes", "No"],
+            context: 42,
+            recommended: ["Yes"],
+            tradeoffs: "not an array",
+            research: [{ body: "no title" }],
+          },
+        ],
+      });
+      expect(result.status).toBe("created");
+      const payload = payloadOf();
+      expect(payload.context).toBe("Pick one");
+      expect(payload.recommended).toBe("A");
+      expect(payload).not.toHaveProperty("research");
+    });
+  });
 });

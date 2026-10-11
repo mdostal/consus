@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import { runMigration } from "../db/migrate.js";
 import { registerSurveyRoutes } from "./surveys.js";
 import { registerDecisionRoutes } from "./decisions.js";
+import { importQuestionTicket } from "../questions/import.js";
 
 const VALID_PAYLOAD = {
   version: "dostal:decision-request/v1",
@@ -65,6 +66,31 @@ describe("GET /api/surveys", () => {
     expect(s).toHaveProperty("created_at");
     expect(s.total).toBe(0);
     expect(s.answered).toBe(0);
+  });
+
+  it("names the question ticket behind an imported survey, and null for any other survey (consus#211)", async () => {
+    await app.inject({ method: "POST", url: "/api/surveys", payload: { title: "Hand-made" } });
+    importQuestionTicket(db, {
+      ticket_id: "uuid-1",
+      identifier: "PANT-1044",
+      questions: [{ qid: "q1", text: "Pick", kind: "single-select", options: ["A", "B"] }],
+    });
+    importQuestionTicket(db, {
+      ticket_id: "uuid-2",
+      questions: [{ qid: "q1", text: "Pick", kind: "single-select", options: ["A", "B"] }],
+    });
+
+    const byTitle = Object.fromEntries(
+      (await app.inject({ method: "GET", url: "/api/surveys" })).json().map((s: { title: string; question_ticket: unknown }) => [
+        s.title,
+        s.question_ticket,
+      ]),
+    );
+    expect(byTitle).toEqual({
+      "Hand-made": null,
+      "Questions: PANT-1044": { ticket_id: "uuid-1", identifier: "PANT-1044" },
+      "Questions: uuid-2": { ticket_id: "uuid-2", identifier: "uuid-2" },
+    });
   });
 
   it("reports answered/total counts correctly", async () => {
