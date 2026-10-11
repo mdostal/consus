@@ -750,8 +750,11 @@ A survey is a lightweight named container over existing decision items (rows wit
 Lists every survey with its member counts.
 
 **Response 200:** array of
-`{ id, title, description, created_at, total, answered }` — `total` counts member items with a
-`decision_payload`; `answered` further restricts to `decided_at IS NOT NULL`.
+`{ id, title, description, created_at, total, answered, question_ticket }` — `total` counts member
+items with a `decision_payload`; `answered` further restricts to `decided_at IS NOT NULL`.
+`question_ticket` is `{ ticket_id, identifier }` for a survey created by `POST /api/questions/import`
+(`identifier` falls back to `ticket_id` when the import carried none) and `null` otherwise; the web
+UI pins those surveys at the top of "Needs you".
 
 ### `POST /api/surveys`
 Creates a named survey. Optionally assigns pre-existing decision items to it via `decision_ids`.
@@ -782,8 +785,16 @@ Imports one question ticket as a survey with one decision item per question that
 shape (`single-select` with ≥2 options → `dostal:decision-request/v1`, `multi` with ≥1 option →
 `dostal:feature-selection/v1`, `free-text` → `dostal:free-text/v1`; anything else is skipped).
 
-**Body:** `{ "ticket_id": string, "identifier"?: string, "questions": [{ "qid": string, "text": string, "kind": string, "options"?: string[] }] }`
+**Body:** `{ "ticket_id": string, "identifier"?: string, "questions": [{ "qid": string, "text": string, "kind": string, "options"?: string[], "context"?: string, "recommended"?: string, "tradeoffs"?: string[], "research"?: [{ "title": string, "body": string, "sources"?: string[] }] }] }`
 — Pantheon pushes this shape from its question tickets.
+
+The optional per-question fields make a question answerable on its own: `context` (why it is asked
+and what each answer leads to) becomes the payload's `context` (default: the question text);
+`tradeoffs` (one per option, same order) fill each option's `tradeoffs` on a `single-select` and
+each feature's `description` on a `multi` (default: the label); `recommended` is one of the
+`options` labels, matched exactly and then case-insensitively, and becomes that option's letter
+(default `A`); `research` is copied onto the payload. A malformed optional field is dropped, not
+rejected — the question still imports without it.
 
 **Response 201:** `{ ticket_id, survey_id, item_ids }` on first import. **200**
 `{ ticket_id, survey_id }` if the ticket is already imported — nothing is

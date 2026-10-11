@@ -1198,6 +1198,13 @@ button:focus-visible {
   font-size: 13.5px;
   margin: 0 0 14px;
 }
+.decision-card__context {
+  color: var(--consus-ink);
+  font-size: 14.5px;
+  line-height: 1.55;
+  white-space: pre-line;
+  margin: 0 0 14px;
+}
 .decision-card__source {
   margin-top: 14px;
   font-family: var(--consus-font-ui);

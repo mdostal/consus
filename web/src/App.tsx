@@ -25,7 +25,7 @@ import { NewDocForm, type NewDocCreated, type NewDocKind } from "./features/diag
 import { EventsList, type EventRow, type EventStatus } from "./features/events/EventsList";
 import { EventProposeComposer } from "./features/events/EventProposeComposer";
 import type { AnyDecisionPayload, DecisionPayload, Verdict } from "./features/decisions/answer-shapes/types";
-import { useSelectedDecisionId } from "./features/decisions/useSelectedDecisionId";
+import { useSelectedDecisionId, useSelectedSurveyId } from "./features/decisions/useSelectedDecisionId";
 import { DecisionListPane, type DecisionListItem, type SurveyListItem } from "./features/decisions/DecisionListPane";
 import { SurveyView } from "./features/decisions/SurveyView";
 import { AttachmentsPanel } from "./features/decisions/attachments/AttachmentsPanel";
@@ -125,6 +125,7 @@ interface DecisionItem {
   supporting_material_count?: number;
   /** When Consus sent its needs-context event (PANT-938); null if never. */
   needs_context_requested_at?: string | null;
+  survey_id?: string | null;
 }
 
 function verdictLabel(v: Verdict): string {
@@ -337,7 +338,8 @@ function DecisionsSection({
   // so the hook order stays stable across the loading -> loaded transition.
   const [selectedId, select] = useSelectedDecisionId();
   const [surveys, setSurveys] = useState<SurveyListItem[] | null>(null);
-  const [selectedSurveyId, setSelectedSurveyId] = useState<string | null>(null);
+  // consus#211: `?survey=<id>` opens a survey directly, like `?selected=`.
+  const [selectedSurveyId, setSelectedSurveyId] = useSelectedSurveyId();
   // The survey just created via the "New survey" form, whose view should take
   // keyboard focus when it mounts (PANT-812). Cleared by any other selection.
   const [justCreatedSurveyId, setJustCreatedSurveyId] = useState<string | null>(null);
@@ -378,10 +380,9 @@ function DecisionsSection({
 
   function handleSelectSurvey(id: string) {
     setJustCreatedSurveyId(null);
+    // Also drops ?selected=, so the right pane shows SurveyView and not a
+    // stale DecisionView, and the URL names just this survey.
     setSelectedSurveyId(id);
-    // Clear decision selection when a survey is chosen so the right pane
-    // shows SurveyView and not a stale DecisionView.
-    select(id);
   }
 
   function handleSelectDecision(id: string) {
@@ -1898,6 +1899,8 @@ export function App() {
 function selectDecisionInUrl(id: string): void {
   const params = new URLSearchParams(window.location.search);
   params.set("selected", id);
+  // A leftover ?survey= would win over the decision.
+  params.delete("survey");
   window.history.replaceState(window.history.state, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
 }
 

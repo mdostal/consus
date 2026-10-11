@@ -28,7 +28,9 @@ interface CreateSurveyBody {
 
 export function registerSurveyRoutes(app: FastifyInstance, { db }: SurveyRoutesOptions): void {
   /**
-   * GET /api/surveys — list all surveys with answered/total member counts.
+   * GET /api/surveys — list all surveys with answered/total member counts,
+   * plus `question_ticket` ({ ticket_id, identifier }, or null) for a survey
+   * imported from a question ticket.
    * Used by the UI to populate the survey section in DecisionListPane.
    */
   app.get("/api/surveys", async () => {
@@ -50,7 +52,20 @@ export function registerSurveyRoutes(app: FastifyInstance, { db }: SurveyRoutesO
           .get(survey.id) as { n: number }
       ).n;
 
-      return { ...survey, total, answered };
+      // A survey imported through POST /api/questions/import is an operator
+      // question ticket; the list pins and labels those (consus#211). The
+      // identifier lives only in the "Questions: <identifier>" title.
+      const link = db
+        .prepare("SELECT ticket_id FROM question_links WHERE survey_id = ? LIMIT 1")
+        .get(survey.id) as { ticket_id: string } | undefined;
+      const question_ticket = link
+        ? {
+            ticket_id: link.ticket_id,
+            identifier: survey.title.startsWith("Questions: ") ? survey.title.slice("Questions: ".length) : link.ticket_id,
+          }
+        : null;
+
+      return { ...survey, total, answered, question_ticket };
     });
   });
 

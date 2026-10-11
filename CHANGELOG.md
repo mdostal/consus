@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Operator questions arrive answerable, pinned, and deep-linkable** (consus#211, PANT-1051).
+  `POST /api/questions/import` now maps each question's optional `context`, `recommended` (an
+  option label → that option's letter, default A), `tradeoffs` (one per option; feature
+  descriptions on `multi`) and `research` onto the decision payload; malformed optional fields are
+  dropped, and plain questions import exactly as before. Survey question cards now show the
+  payload's `context`. `GET /api/surveys` returns `question_ticket` (`{ ticket_id, identifier }` or
+  null), and "Needs you" pins each open question ticket first, labelled with its identifier and
+  grouped with its open questions. `?survey=<id>` opens a survey directly, as `?selected=<id>`
+  opens a decision.
+
 ### Changed
 
 - **Answers, verdicts and needs-context leave on a generic events webhook** (PANT-998). Set

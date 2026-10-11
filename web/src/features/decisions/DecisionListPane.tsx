@@ -9,6 +9,7 @@ export interface DecisionListItem {
   status: string;
   decided_at: string | null;
   decision_type?: string | null;
+  survey_id?: string | null;
 }
 
 export interface SurveyListItem {
@@ -16,16 +17,21 @@ export interface SurveyListItem {
   title: string;
   answered: number;
   total: number;
+  /** Set when the survey was imported from an operator question ticket. */
+  question_ticket?: { ticket_id: string; identifier: string } | null;
 }
 
 function Row({
   item,
   selected,
   onSelect,
+  nested = false,
 }: {
   item: DecisionListItem;
   selected: boolean;
   onSelect: (id: string) => void;
+  /** A question listed under its ticket's survey row. */
+  nested?: boolean;
 }) {
   function handleKeyDown(e: KeyboardEvent<HTMLLIElement>) {
     // Space's default behavior (page scroll) is only relevant when the
@@ -42,7 +48,7 @@ function Row({
       role="option"
       aria-selected={selected}
       tabIndex={0}
-      className={`decision-list__row ${selected ? "decision-list__row--selected" : ""}`}
+      className={`decision-list__row ${nested ? "decision-list__row--question" : ""} ${selected ? "decision-list__row--selected" : ""}`}
       onClick={() => onSelect(item.id)}
       onKeyDown={handleKeyDown}
     >
@@ -83,7 +89,16 @@ function SurveyRow({
       onKeyDown={handleKeyDown}
       data-testid={`survey-row-${survey.id}`}
     >
-      <span className="decision-list__row-title">{survey.title}</span>
+      {survey.question_ticket ? (
+        <span className="decision-list__row-title">
+          <span className="decision-list__ticket" data-testid={`survey-ticket-${survey.id}`}>
+            {survey.question_ticket.identifier}
+          </span>{" "}
+          Questions for you
+        </span>
+      ) : (
+        <span className="decision-list__row-title">{survey.title}</span>
+      )}
       <span className="decision-list__row-meta">
         <span
           className={`dv__pill ${isComplete ? "dv__pill--done" : ""}`}
@@ -104,7 +119,8 @@ function SurveyRow({
  * unscannable-list problem this layout fixes).
  *
  * Surveys appear at the top of "Needs you" with an (N/M answered) badge
- * so operators can answer a multi-question session in one flow.
+ * so operators can answer a multi-question session in one flow. Operator
+ * question tickets come first of all, each grouped with its open questions.
  */
 export function DecisionListPane({
   items,
@@ -130,6 +146,14 @@ export function DecisionListPane({
   const incompleteSurveys = surveys.filter((s) => s.answered < s.total);
   const completeSurveys = surveys.filter((s) => s.total > 0 && s.answered === s.total);
 
+  // consus#211: open operator question tickets are pinned first, one group
+  // per ticket — its survey row, then its still-open questions — so a fresh
+  // question never sits behind a long tail of older decisions.
+  const questionSurveys = incompleteSurveys.filter((s) => s.question_ticket);
+  const otherSurveys = incompleteSurveys.filter((s) => !s.question_ticket);
+  const pinnedSurveyIds = new Set(questionSurveys.map((s) => s.id));
+  const openUnpinned = open.filter((d) => !(d.survey_id && pinnedSurveyIds.has(d.survey_id)));
+
   const needsYouCount = incompleteSurveys.length + open.length;
   const availableDecisions: SurveyCreateCandidate[] = items.map((d) => ({ id: d.id, title: d.title }));
 
@@ -149,7 +173,19 @@ export function DecisionListPane({
         </div>
       ) : (
         <ul className="decision-list__group" role="listbox" aria-label="Needs you">
-          {incompleteSurveys.map((s) => (
+          {questionSurveys.map((s) => (
+            <li key={s.id} role="presentation" className="decision-list__ticket-group">
+              <ul role="group" aria-label={s.title} data-testid={`question-group-${s.id}`}>
+                <SurveyRow survey={s} selected={s.id === selectedSurveyId} onSelect={onSelectSurvey ?? (() => {})} />
+                {open
+                  .filter((d) => d.survey_id === s.id)
+                  .map((d) => (
+                    <Row key={d.id} item={d} selected={d.id === selectedId} onSelect={onSelect} nested />
+                  ))}
+              </ul>
+            </li>
+          ))}
+          {otherSurveys.map((s) => (
             <SurveyRow
               key={s.id}
               survey={s}
@@ -157,7 +193,7 @@ export function DecisionListPane({
               onSelect={onSelectSurvey ?? (() => {})}
             />
           ))}
-          {open.map((d) => (
+          {openUnpinned.map((d) => (
             <Row key={d.id} item={d} selected={d.id === selectedId} onSelect={onSelect} />
           ))}
         </ul>

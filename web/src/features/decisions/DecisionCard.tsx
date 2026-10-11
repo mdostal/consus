@@ -37,6 +37,13 @@ export function DecisionCard({
 
       {recommendation ? <p className="decision-card__recommendation">{recommendation}</p> : null}
 
+      {/* Why the question is asked and what each answer leads to. Plain text
+          (not markdown) because it can come from an outside system; skipped
+          when it only repeats the question, as older imports did. */}
+      {payload.context && payload.context.trim() !== question.trim() ? (
+        <p className="decision-card__context">{payload.context}</p>
+      ) : null}
+
       {payload.research && payload.research.length > 0 ? (
         <div className="decision-card__research" aria-label="Research findings">
           {payload.research.map((section, i) => (

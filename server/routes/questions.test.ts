@@ -107,6 +107,37 @@ describe("POST /api/questions/import", () => {
     expect((db.prepare("SELECT COUNT(*) AS n FROM items").get() as { n: number }).n).toBe(0);
   });
 
+  it("carries the optional context, recommended, tradeoffs and research fields through to the payload", async () => {
+    const res = await importTicket({
+      ticket_id: "ticket-rich",
+      identifier: "PANT-2",
+      questions: [
+        {
+          qid: "q1",
+          text: "Which DB?",
+          kind: "single-select",
+          options: ["Postgres", "SQLite"],
+          context: "SQLite keeps the single-file deploy; Postgres means running a server.",
+          recommended: "SQLite",
+          tradeoffs: ["Concurrent writers, another service", "One file, one writer"],
+          research: [{ title: "Load", body: "Peak is 3 writes/s." }],
+        },
+      ],
+    });
+    expect(res.statusCode).toBe(201);
+    const [row] = ticketRows("ticket-rich") as Array<{ decision_payload: string }>;
+    const payload = JSON.parse(row.decision_payload);
+    expect(payload).toMatchObject({
+      context: "SQLite keeps the single-file deploy; Postgres means running a server.",
+      recommended: "B",
+      options: [
+        { id: "A", title: "Postgres", tradeoffs: "Concurrent writers, another service" },
+        { id: "B", title: "SQLite", tradeoffs: "One file, one writer" },
+      ],
+      research: [{ title: "Load", body: "Peak is 3 writes/s." }],
+    });
+  });
+
   it("returns 400 for a missing ticket_id or malformed questions", async () => {
     expect((await importTicket({ questions: TICKET.questions })).statusCode).toBe(400);
     expect((await importTicket({ ticket_id: "t" })).statusCode).toBe(400);

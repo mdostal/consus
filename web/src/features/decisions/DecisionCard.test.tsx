@@ -106,4 +106,33 @@ describe("DecisionCard", () => {
     expect(screen.queryByLabelText("Research findings")).not.toBeInTheDocument();
   });
 
+
+  describe("an imported operator question (consus#211)", () => {
+    const RICH = {
+      version: "dostal:decision-request/v1" as const,
+      title: "Which model by default?",
+      context: "The default decides whose quota every chat burns.",
+      options: [
+        { id: "A", title: "Claude", tradeoffs: "Shares the build agents' quota" },
+        { id: "B", title: "Gemini", tradeoffs: "Personal key, separate quota" },
+      ],
+      recommended: "B",
+    };
+
+    it("shows the context, each option's tradeoffs and the recommended badge on the right option", () => {
+      render(<DecisionCard question={RICH.title} payload={RICH} onVerdict={vi.fn()} />);
+
+      expect(screen.getByText("The default decides whose quota every chat burns.")).toBeInTheDocument();
+      expect(screen.getByText("Shares the build agents' quota")).toBeInTheDocument();
+      expect(screen.getByText("Personal key, separate quota")).toBeInTheDocument();
+      expect(screen.getByTestId("recommended-badge")).toHaveTextContent("B");
+    });
+
+    it("does not repeat the question when the context is only the question text", () => {
+      const plain = { ...RICH, context: RICH.title };
+      const { container } = render(<DecisionCard question={RICH.title} payload={plain} onVerdict={vi.fn()} />);
+
+      expect(container.querySelector(".decision-card__context")).toBeNull();
+    });
+  });
 });

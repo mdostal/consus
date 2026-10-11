@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import { closeOpenItems } from "../kb/store.js";
+import { validateResearchSections, type ResearchSection } from "../decision-contract/parser.js";
 
 /**
  * The generic question seam: an outside system pushes a ticket of questions
@@ -15,9 +16,47 @@ export interface QuestionItem {
   text: string;
   kind: string;
   options?: string[];
+  /** Why this is asked and what each answer leads to. */
+  context?: unknown;
+  /** The label (one of `options`) the asker recommends. */
+  recommended?: unknown;
+  /** One tradeoff per option, in `options` order. */
+  tradeoffs?: unknown;
+  research?: unknown;
 }
 
 // --- Payload mapping ---
+
+// The optional fields come from an outside system, so a malformed one is
+// dropped rather than failing the whole ticket: the question still imports,
+// just without that piece.
+function contextOf(q: QuestionItem): string {
+  return typeof q.context === "string" && q.context.trim() ? q.context : q.text;
+}
+
+function tradeoffAt(q: QuestionItem, i: number): string | undefined {
+  if (!Array.isArray(q.tradeoffs)) return undefined;
+  const t = q.tradeoffs[i];
+  return typeof t === "string" && t.trim() ? t : undefined;
+}
+
+function researchOf(q: QuestionItem): { research?: ResearchSection[] } {
+  if (!Array.isArray(q.research) || q.research.length === 0) return {};
+  return validateResearchSections(q.research) === null ? { research: q.research as ResearchSection[] } : {};
+}
+
+// The recommended option's letter: `recommended` is matched against the
+// option labels (exactly, then ignoring case and surrounding space).
+// Falls back to A when it is absent or matches nothing.
+function recommendedLetter(q: QuestionItem, labels: string[]): string {
+  const rec = q.recommended;
+  if (typeof rec === "string") {
+    let i = labels.indexOf(rec);
+    if (i < 0) i = labels.findIndex((l) => l.trim().toLowerCase() === rec.trim().toLowerCase());
+    if (i >= 0) return String.fromCharCode(65 + i);
+  }
+  return "A";
+}
 
 // Maps a question kind to the corresponding Consus decision payload.
 // Returns null when the kind is unrecognized or lacks required options.
@@ -29,14 +68,15 @@ function buildDecisionPayload(q: QuestionItem): object | null {
       const options = opts.map((label, i) => ({
         id: String.fromCharCode(65 + i), // A, B, C, ...
         title: label,
-        tradeoffs: "",
+        tradeoffs: tradeoffAt(q, i) ?? "",
       }));
       return {
         version: "dostal:decision-request/v1",
         title: q.text,
-        context: q.text,
+        context: contextOf(q),
         options,
-        recommended: options[0].id,
+        recommended: recommendedLetter(q, opts),
+        ...researchOf(q),
       };
     }
     case "multi": {
@@ -45,12 +85,13 @@ function buildDecisionPayload(q: QuestionItem): object | null {
       return {
         version: "dostal:feature-selection/v1",
         title: q.text,
-        context: q.text,
+        context: contextOf(q),
         features: opts.map((label, i) => ({
           id: `f${i}`,
           name: label,
-          description: label,
+          description: tradeoffAt(q, i) ?? label,
         })),
+        ...researchOf(q),
       };
     }
     case "free-text":
@@ -58,8 +99,9 @@ function buildDecisionPayload(q: QuestionItem): object | null {
       return {
         version: "dostal:free-text/v1",
         title: q.text,
-        context: q.text,
+        context: contextOf(q),
         prompt: q.text,
+        ...researchOf(q),
       };
     }
     default:
