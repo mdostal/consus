@@ -1,5 +1,6 @@
 import type { HarnessTransport } from "../harness/transport.js";
 import type { ThreadMessageEvent } from "./store.js";
+import { outboundHeaders, type OutboundHeaderProvider } from "../webhooks/outbound-headers.js";
 
 /**
  * Outbound side of agent threads (PANT-962): tells whoever is listening that
@@ -20,15 +21,16 @@ export class WebhookThreadNotifier implements ThreadNotifier {
 
   constructor(
     private readonly url: string,
-    private readonly opts: { timeoutMs?: number; fetch?: typeof globalThis.fetch } = {},
+    private readonly opts: { timeoutMs?: number; fetch?: typeof globalThis.fetch; headers?: OutboundHeaderProvider } = {},
   ) {}
 
   async notify(event: ThreadMessageEvent): Promise<{ ok: true } | { ok: false; error: string }> {
     const doFetch = this.opts.fetch ?? globalThis.fetch;
+    const extra = await outboundHeaders(this.url, this.opts.headers);
     try {
       const res = await doFetch(this.url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { ...extra, "Content-Type": "application/json" },
         body: JSON.stringify(event),
         signal: AbortSignal.timeout(this.opts.timeoutMs ?? 10_000),
       });

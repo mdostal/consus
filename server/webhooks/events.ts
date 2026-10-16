@@ -8,7 +8,12 @@
  * Same shape as the thread webhook (server/threads/notifier.ts): a `type`
  * and `version` on every body. One attempt per POST; callers record the
  * outcome and retry by hand, never on a timer.
+ *
+ * Any auth the receiver needs comes from the registered OutboundHeaderProvider
+ * (./outbound-headers.ts).
  */
+
+import { outboundHeaders, type OutboundHeaderProvider } from "./outbound-headers.js";
 
 /** A verdict on a question imported through POST /api/questions/import. */
 export interface QuestionAnsweredEvent {
@@ -60,17 +65,20 @@ export interface EventsWebhookOptions {
   webhookUrl: string;
   fetch?: typeof globalThis.fetch;
   timeoutMs?: number;
+  /** Overrides the registered provider — test seam. */
+  headers?: OutboundHeaderProvider;
 }
 
 /** POSTs one event. Never throws: a non-2xx, timeout or network error comes back as `{ ok: false }`. */
 export async function postEvent(
   event: ConsusEvent,
-  { webhookUrl, fetch: doFetch = globalThis.fetch, timeoutMs = 10_000 }: EventsWebhookOptions,
+  { webhookUrl, fetch: doFetch = globalThis.fetch, timeoutMs = 10_000, headers }: EventsWebhookOptions,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  const extra = await outboundHeaders(webhookUrl, headers);
   try {
     const res = await doFetch(webhookUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { ...extra, "Content-Type": "application/json" },
       body: JSON.stringify(event),
       signal: AbortSignal.timeout(timeoutMs),
     });
