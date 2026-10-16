@@ -17,7 +17,10 @@ Consus is configured via environment variables and a JSON config file for regist
 | `CONSUS_HARNESS` | _(none)_ | Set to `webhook` to select the generic webhook transport (requires `CONSUS_HARNESS_WEBHOOK_URL`). `pantheon` was removed (PANT-969) and now fails at startup. See [Harness wiring](#harness-wiring). |
 | `CONSUS_HARNESS_WEBHOOK_URL` | _(none)_ | Where `CONSUS_HARNESS=webhook` POSTs each proposal. Required in webhook mode. |
 | `CONSUS_EVENTS_WEBHOOK_URL` | _(none)_ | Where answers, verdicts and needs-context requests go, as `consus.*` events POSTed to this one URL (contract in `docs/api-reference.md#events-webhook-consus_events_webhook_url`). `/health` and `GET /api/metrics` then report their sync status. Startup fails on an invalid URL. Under Pantheon, point it at core-api's Consus events receiver with `?origin=consus`. Not a transport. |
-| `PANTHEON_API_URL` | _(none)_ | Base URL of Pantheon core-api. Only enables the tenant-path check below; it no longer sends any events (PANT-998: use `CONSUS_EVENTS_WEBHOOK_URL`). Not a transport. |
+| `PANTHEON_API_URL` | _(none)_ | Base URL of Pantheon core-api. Enables the tenant-path check below, and Pantheon's operator token on every webhook Consus POSTs to this origin (consus#213; see [`PANTHEON_API_URL`](api-reference.md#pantheon_api_url)). It sends no events of its own (PANT-998: use `CONSUS_EVENTS_WEBHOOK_URL`). Not a transport. Startup fails on an invalid URL. |
+| `PANTHEON_OPERATOR_TOKEN` | _(none)_ | Explicit operator token for webhooks to `PANTHEON_API_URL` (local dev). Set, it is used as-is and never looked up. |
+| `PANTHEON_SECRETS_SHARED_DIR` | `/pantheon-secrets` | Shared secrets volume Pantheon's `POST /api/secrets/inject` writes the operator token to. |
+| `CONSUS_OPERATOR_TOKEN_SOURCE` | `pantheon` | `none` never sends an operator token, even with `PANTHEON_API_URL` set. |
 | `REPOS_BASE_DIR` | `/repos` | Tenant repo mount root. When `PANTHEON_API_URL` is set, ingesting a project whose path looks like `<REPOS_BASE_DIR>/<tenant>/<repo>` first validates it against Pantheon's repo facade. |
 | `CONSUS_HARNESS_FILE_DIR` | _(none)_ | Selects the file transport: each proposal is written as `<dir>/<proposalId>.json` |
 | `CONSUS_HARNESS_COMMAND` | _(none)_ | Selects the stdio transport: the executable to spawn per proposal |

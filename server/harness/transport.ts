@@ -7,6 +7,8 @@
  * knowledge of what's on the other end.
  */
 
+import { outboundHeaders, type OutboundHeaderProvider } from "../webhooks/outbound-headers.js";
+
 export type HarnessResult<T = unknown> =
   | { ok: true; result: T }
   | { ok: false; recoverable: boolean; code: HarnessErrorCode; message?: string; retry_after_ms?: number };
@@ -95,20 +97,23 @@ export class FileHarnessTransport implements HarnessTransport {
  * proposal as a delivery failure; POST /api/proposals/:id/redeliver is the
  * manual retry. Results come back through POST /api/proposals/:id/result.
  * Selected by CONSUS_HARNESS=webhook + CONSUS_HARNESS_WEBHOOK_URL.
+ * Any auth the receiver needs comes from the registered OutboundHeaderProvider
+ * (server/webhooks/outbound-headers.ts), not from this class.
  */
 export class WebhookHarnessTransport implements HarnessTransport {
   constructor(
     private readonly url: string,
-    private readonly opts: { timeoutMs?: number; fetch?: typeof globalThis.fetch } = {},
+    private readonly opts: { timeoutMs?: number; fetch?: typeof globalThis.fetch; headers?: OutboundHeaderProvider } = {},
   ) {}
 
   async invoke<T = unknown>(method: string, params?: unknown): Promise<HarnessResult<T>> {
     const doFetch = this.opts.fetch ?? globalThis.fetch;
+    const extra = await outboundHeaders(this.url, this.opts.headers);
     let res: Response;
     try {
       res = await doFetch(this.url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { ...extra, "Content-Type": "application/json" },
         body: JSON.stringify({ method, params }),
         signal: AbortSignal.timeout(this.opts.timeoutMs ?? 30_000),
       });

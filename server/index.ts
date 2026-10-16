@@ -30,6 +30,8 @@ import { loadProjectRegistry } from "./config/project-registry.js";
 import { StdioHarnessTransport, FileHarnessTransport, WebhookHarnessTransport, NOOP_HARNESS_TRANSPORT, transportName, type HarnessTransport } from "./harness/transport.js";
 import { isSyncDegraded } from "./webhooks/sync-status.js";
 import { eventsWebhookUrlFromEnv } from "./webhooks/events.js";
+import { setOutboundHeaderProvider } from "./webhooks/outbound-headers.js";
+import { pantheonOperatorTokenProviderFromEnv } from "./adapters/pantheon/operator-token.js";
 import { createStorageAdapter } from "./storage/index.js";
 
 /** The built web SPA (`vite.config.ts`'s `build.outDir: "../dist-web"`)
@@ -244,6 +246,9 @@ if (isMain) {
 
   // Harness dispatch — see selectHarnessTransport() for priority order.
   const transport = selectHarnessTransport(process.env);
+
+  // Pantheon's operator token on webhooks to core-api (mdostal/consus#213); none without PANTHEON_API_URL.
+  setOutboundHeaderProvider(pantheonOperatorTokenProviderFromEnv(process.env));
 
   // Fail at startup on a malformed CONSUS_EVENTS_WEBHOOK_URL rather than on the first verdict.
   eventsWebhookUrlFromEnv(process.env);

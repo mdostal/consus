@@ -1235,6 +1235,19 @@ needs-context to the events webhook above). It now only enables a check in
 (`REPOS_BASE_DIR` defaults to `/repos`) is first validated against
 `GET {PANTHEON_API_URL}/api/repos/tenants/:tenant/repos/:repo/path`. It does not poll.
 
+It also turns on Pantheon's operator token for Consus's outbound webhooks (consus#213). core-api
+answers 401 to a mutating `/api` call without one once its guard is in `enforce`, which would
+drop every proposal (`CONSUS_HARNESS_WEBHOOK_URL`) and every answer, verdict and needs-context
+event (`CONSUS_EVENTS_WEBHOOK_URL`). Any of the three webhooks whose URL is on
+`PANTHEON_API_URL`'s origin is sent with `X-Pantheon-Operator-Token`; a webhook to any other
+origin never is. The token is resolved through `POST {PANTHEON_API_URL}/api/secrets/inject`
+(tags `provider=pantheon,kind=operator-token`, written to a fresh file under
+`PANTHEON_SECRETS_SHARED_DIR`, read, then deleted), held in memory only, and re-resolved at most
+once a minute on the next webhook. If it can't be resolved the webhook goes out without it and the
+reason is logged once. `PANTHEON_OPERATOR_TOKEN` overrides the lookup; `CONSUS_OPERATOR_TOKEN_SOURCE=none`
+turns it off. The webhook senders themselves stay generic: they send whatever the registered
+header provider (`server/webhooks/outbound-headers.ts`) returns, and this is the only one.
+
 ### Handoff CLI (file transport)
 
 `bin/handoff.mjs` (also `npm run handoff`, or the `consus-handoff` bin) is the harness side of the

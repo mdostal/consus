@@ -4,6 +4,14 @@
 
 ### Added
 
+- **Webhooks to Pantheon carry the operator token** (consus#213, PANT-1085). With
+  `PANTHEON_API_URL` set, every harness, events and thread webhook whose URL is on that origin is
+  sent with `X-Pantheon-Operator-Token`, resolved through Pantheon's `POST /api/secrets/inject`
+  and the shared `/pantheon-secrets` volume and refreshed at most once a minute. Without it,
+  core-api's `enforce` mode would 401 every proposal, answer, verdict and needs-context event.
+  The webhook senders stay generic: they send whatever a registered header provider
+  (`server/webhooks/outbound-headers.ts`) returns. `PANTHEON_OPERATOR_TOKEN` sets the token
+  explicitly; `CONSUS_OPERATOR_TOKEN_SOURCE=none` turns it off.
 - **Operator questions arrive answerable, pinned, and deep-linkable** (consus#211, PANT-1051).
   `POST /api/questions/import` now maps each question's optional `context`, `recommended` (an
   option label → that option's letter, default A), `tradeoffs` (one per option; feature
