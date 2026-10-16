@@ -18,14 +18,14 @@ export function diagramItemIdFor(repo: string): string {
   return `diagram:${repo}`;
 }
 
-interface DiagramStory {
+export interface DiagramStory {
   id: string;
   title: string;
   complexity: string | null;
   dependsOn: string[];
 }
 
-interface DiagramEpic {
+export interface DiagramEpic {
   id: string;
   title: string;
   stories: DiagramStory[];
@@ -69,6 +69,39 @@ function readEpic(epicYamlPath: string): DiagramEpic | null {
   return { id, title: typeof raw.title === "string" ? raw.title : id, stories };
 }
 
+/** Upserts the repo's diagram item (the target its proposals need) and
+ *  returns its id. Shared with the send-out routes, which export and import
+ *  against the same item. */
+export function ensureDiagramItem(db: Database.Database, repo: string): string {
+  const itemId = diagramItemIdFor(repo);
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO items (id, type, title, status, source_repo, created_at, updated_at)
+     VALUES (?, 'diagram', ?, 'active', ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
+  ).run(itemId, `${repo} diagram`, repo, now, now);
+  return itemId;
+}
+
+/** Every epic in a repo's .pHive/epics/, sorted by id. A repo with no
+ *  .pHive/epics yet yields [] — not an error. */
+export function readCascadeEpics(repoPath: string): DiagramEpic[] {
+  const epicsDir = join(repoPath, ".pHive", "epics");
+  let epicDirs: string[];
+  try {
+    epicDirs = readdirSync(epicsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
+  } catch {
+    return [];
+  }
+
+  return epicDirs
+    .map((dir) => readEpic(join(epicsDir, dir, "epic.yaml")))
+    .filter((e): e is DiagramEpic => e !== null)
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
 /**
  * Cascade org-tree: every epic in a repo's .pHive/epics/, each with its
  * stories and dependency edges — built entirely from this repo's own
@@ -89,30 +122,8 @@ export function registerDiagramRoutes(app: FastifyInstance, { db, repos }: Diagr
     // Ensure a target item exists for this repo's diagram before the caller
     // can propose a change to it (s3's proposeChange requires a real item
     // row) — upserted on every fetch so it's always ready by view time.
-    const itemId = diagramItemIdFor(repo);
-    const now = new Date().toISOString();
-    db.prepare(
-      `INSERT INTO items (id, type, title, status, source_repo, created_at, updated_at)
-       VALUES (?, 'diagram', ?, 'active', ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
-    ).run(itemId, `${repo} diagram`, repo, now, now);
-
-    const epicsDir = join(repoPath, ".pHive", "epics");
-    let epicDirs: string[];
-    try {
-      epicDirs = readdirSync(epicsDir, { withFileTypes: true })
-        .filter((e) => e.isDirectory())
-        .map((e) => e.name);
-    } catch {
-      return { repo, itemId, epics: [] }; // no .pHive/epics yet — not an error
-    }
-
-    const epics = epicDirs
-      .map((dir) => readEpic(join(epicsDir, dir, "epic.yaml")))
-      .filter((e): e is DiagramEpic => e !== null)
-      .sort((a, b) => a.id.localeCompare(b.id));
-
-    return { repo, itemId, epics };
+    const itemId = ensureDiagramItem(db, repo);
+    return { repo, itemId, epics: readCascadeEpics(repoPath) };
   });
 
   /**

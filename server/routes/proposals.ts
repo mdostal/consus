@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
 import type { HarnessTransport } from "../harness/transport.js";
-import { proposeChange, reportProposalResult, listProposals } from "../proposals/store.js";
+import { proposeChange, reportProposalResult, redeliverProposal, listProposals, isPrUrl } from "../proposals/store.js";
 
 export interface ProposalRoutesOptions {
   db: Database.Database;
@@ -20,6 +20,10 @@ interface ReportResultBody {
   status?: "applied" | "failed";
   appliedDiff?: string;
   reason?: string;
+  /** The PR the harness opened. `pr_url` is accepted too: Pantheon pushes
+   *  results with its own field names. */
+  prUrl?: string;
+  pr_url?: string;
 }
 
 /**
@@ -49,19 +53,42 @@ export function registerProposalRoutes(app: FastifyInstance, { db, transport }: 
     async (request, reply) => {
       const { id } = request.params;
       const { status, appliedDiff, reason } = request.body ?? {};
+      const prUrl = request.body?.prUrl ?? request.body?.pr_url ?? undefined;
       if (status !== "applied" && status !== "failed") {
         return reply.code(400).send({ error: "status must be 'applied' or 'failed'" });
       }
+      if (prUrl !== undefined && !isPrUrl(prUrl)) {
+        return reply.code(400).send({ error: "prUrl must be an http(s) URL" });
+      }
 
-      const result = await reportProposalResult(db, { proposalId: id, status, appliedDiff, reason });
+      const result = await reportProposalResult(db, { proposalId: id, status, appliedDiff, reason, prUrl });
       if (!result.ok) {
-        return reply.code(404).send({ error: result.error });
+        return reply.code(result.code === "conflict" ? 409 : 404).send({ error: result.error });
       }
 
       const row = db.prepare("SELECT * FROM proposals WHERE id = ?").get(id);
       return row;
     },
   );
+
+  // Manual retry for a delivery failure (delivery_error set): one more
+  // dispatch attempt through the active transport. 409 when there's nothing
+  // to redeliver (pending, applied, or a harness-reported failure).
+  app.post<{ Params: { id: string } }>("/api/proposals/:id/redeliver", async (request, reply) => {
+    const { id } = request.params;
+    const result = await redeliverProposal(db, transport, id);
+    if (!result.ok) {
+      return reply.code(result.code === "conflict" ? 409 : 404).send({ error: result.error });
+    }
+    return db.prepare("SELECT * FROM proposals WHERE id = ?").get(id);
+  });
+
+  // One proposal by id — what a thread reply's "view change" link opens (PANT-962).
+  app.get<{ Params: { id: string } }>("/api/proposals/:id", async (request, reply) => {
+    const row = db.prepare("SELECT * FROM proposals WHERE id = ?").get(request.params.id);
+    if (!row) return reply.code(404).send({ error: "proposal not found" });
+    return row;
+  });
 
   app.get<{ Querystring: { itemId?: string } }>("/api/proposals", async (request, reply) => {
     const { itemId } = request.query;

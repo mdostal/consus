@@ -464,10 +464,14 @@ Fires a new change proposal.
 ### `POST /api/proposals/:id/result`
 Called by the harness once it's actually applied (or failed to apply) the proposed change.
 
-**Request body:** `{ "status": "applied"|"failed", "appliedDiff"?: string, "reason"?: string }`
+**Request body:** `{ "status": "applied"|"failed", "appliedDiff"?: string, "reason"?: string, "prUrl"?: string }`
 
 On `"applied"`, writes an `audit_log` entry (`field: "proposal:<targetType>"`, `new_value` the
 applied diff). On `"failed"`, no audit_log entry.
+
+`prUrl` (also accepted as `pr_url`) is the pull request the harness opened for the change. It is
+stored on the proposal as `pr_url` and shown as a link on the item; it must be an `http(s)` URL
+(**400** otherwise) and is ignored on `"failed"`. Without it, `pr_url` stays `null`.
 
 **Response 200:** the updated proposal row. **404** for an unknown proposal id.
 
@@ -544,7 +548,7 @@ at from shape alone.
 ```json
 [
   { "kind": "audit", "id": 1, "actor": "mathew", "field": "status", "old_value": "open", "new_value": "approved", "timestamp": "..." },
-  { "kind": "proposal", "id": "uuid", "target_type": "diagram", "description": "...", "status": "applied", "requested_by": "mathew", "timestamp": "...", "applied_diff": "...", "failure_reason": null }
+  { "kind": "proposal", "id": "uuid", "target_type": "diagram", "description": "...", "status": "applied", "requested_by": "mathew", "timestamp": "...", "applied_diff": "...", "failure_reason": null, "pr_url": "https://github.com/..." }
 ]
 ```
 

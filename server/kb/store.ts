@@ -67,6 +67,39 @@ export function decideItem(db: Database.Database, { itemId, actor, newStatus }: 
   tx();
 }
 
+/**
+ * Close a set of items without deleting anything: each one still open
+ * (undecided, not already closed) gets status 'closed', an audit_log row and a
+ * comment carrying `comment`. Decided or already-closed items are skipped, so
+ * a repeat call is a no-op. Returns the ids actually closed, in input order.
+ * Shared by POST /api/questions/:ticket/close and POST /api/items/:id/close.
+ */
+export function closeOpenItems(db: Database.Database, itemIds: string[], actor: string, comment: string): string[] {
+  const now = new Date().toISOString();
+  const closed: string[] = [];
+  const tx = db.transaction(() => {
+    for (const id of itemIds) {
+      const item = db
+        .prepare("SELECT status FROM items WHERE id = ? AND decided_at IS NULL AND status != 'closed'")
+        .get(id) as { status: string } | undefined;
+      if (!item) continue;
+      db.prepare("UPDATE items SET status = 'closed', updated_at = ? WHERE id = ?").run(now, id);
+      db.prepare(
+        "INSERT INTO audit_log (item_id, actor, field, old_value, new_value, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run(id, actor, "status", item.status, "closed", now);
+      db.prepare("INSERT INTO comments (item_id, author, body, created_at) VALUES (?, ?, ?, ?)").run(
+        id,
+        actor,
+        comment,
+        now,
+      );
+      closed.push(id);
+    }
+  });
+  tx();
+  return closed;
+}
+
 export function getAuditLog(db: Database.Database, itemId: string): AuditLogRow[] {
   return db
     .prepare("SELECT * FROM audit_log WHERE item_id = ? ORDER BY timestamp ASC")

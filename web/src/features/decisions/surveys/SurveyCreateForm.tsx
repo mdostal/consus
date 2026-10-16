@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 export interface SurveyCreateCandidate {
   id: string;
@@ -32,6 +32,19 @@ export function SurveyCreateForm({ availableDecisions, onCreated }: SurveyCreate
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  // Where keyboard focus should land after the form opens or is cancelled
+  // (PANT-812). A successful create deliberately leaves focus alone: the
+  // caller selects the new survey and SurveyView focuses its heading.
+  const focusAfterToggle = useRef<"title" | "trigger" | null>(null);
+
+  useEffect(() => {
+    const target = focusAfterToggle.current;
+    focusAfterToggle.current = null;
+    if (target === "title") titleRef.current?.focus();
+    else if (target === "trigger") triggerRef.current?.focus();
+  }, [isOpen]);
 
   function reset() {
     setTitle("");
@@ -49,7 +62,19 @@ export function SurveyCreateForm({ availableDecisions, onCreated }: SurveyCreate
     });
   }
 
-  async function handleSubmit() {
+  function open() {
+    focusAfterToggle.current = "title";
+    setIsOpen(true);
+  }
+
+  function cancel() {
+    reset();
+    focusAfterToggle.current = "trigger";
+    setIsOpen(false);
+  }
+
+  async function handleSubmit(e?: FormEvent) {
+    e?.preventDefault();
     const trimmedTitle = title.trim();
     if (!trimmedTitle) return;
 
@@ -84,28 +109,28 @@ export function SurveyCreateForm({ availableDecisions, onCreated }: SurveyCreate
 
   if (!isOpen) {
     return (
-      <button type="button" className="survey-create__trigger" onClick={() => setIsOpen(true)}>
+      <button ref={triggerRef} type="button" className="survey-create__trigger" onClick={open}>
         + New survey
       </button>
     );
   }
 
   return (
-    <div className="survey-create">
-      <input
-        aria-label="Survey title"
-        placeholder="Survey title"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        disabled={isSubmitting}
-      />
-      <textarea
-        aria-label="Survey description (optional)"
-        placeholder="Description (optional)"
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        disabled={isSubmitting}
-      />
+    <form className="survey-create" aria-label="New survey" onSubmit={handleSubmit}>
+      <label className="survey-create__field">
+        Survey title
+        <input
+          ref={titleRef}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          disabled={isSubmitting}
+          required
+        />
+      </label>
+      <label className="survey-create__field">
+        Survey description (optional)
+        <textarea value={description} onChange={(e) => setDescription(e.target.value)} disabled={isSubmitting} />
+      </label>
 
       <fieldset className="survey-create__decisions">
         <legend>Include decisions ({selectedIds.size} selected)</legend>
@@ -130,23 +155,20 @@ export function SurveyCreateForm({ availableDecisions, onCreated }: SurveyCreate
         )}
       </fieldset>
 
-      {error ? <p className="state state--err">{error}</p> : null}
+      {error ? (
+        <p className="state state--err" role="alert">
+          {error}
+        </p>
+      ) : null}
 
       <div className="survey-create__actions">
-        <button type="button" onClick={handleSubmit} disabled={isSubmitting || !title.trim()}>
+        <button type="submit" disabled={isSubmitting || !title.trim()}>
           {isSubmitting ? "Creating…" : "Create survey"}
         </button>
-        <button
-          type="button"
-          onClick={() => {
-            reset();
-            setIsOpen(false);
-          }}
-          disabled={isSubmitting}
-        >
+        <button type="button" onClick={cancel} disabled={isSubmitting}>
           Cancel
         </button>
       </div>
-    </div>
+    </form>
   );
 }

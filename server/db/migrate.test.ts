@@ -148,6 +148,27 @@ describe("runMigration", () => {
     db.close();
   });
 
+  it("is idempotent for the harness_cursors table — re-running keeps a stored cursor", () => {
+    dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
+    const db = new Database(dbPath);
+
+    runMigration(db);
+    db.prepare("INSERT INTO harness_cursors (name, cursor, updated_at) VALUES (?, ?, ?)").run(
+      "pantheon-result-puller",
+      "2026-09-27T00:00:00Z",
+      "2026-09-27T00:00:00Z",
+    );
+
+    expect(() => runMigration(db)).not.toThrow();
+
+    const row = db.prepare("SELECT cursor FROM harness_cursors WHERE name = ?").get("pantheon-result-puller") as {
+      cursor: string;
+    };
+    expect(row.cursor).toBe("2026-09-27T00:00:00Z");
+
+    db.close();
+  });
+
   it("is idempotent for the attachments table — running twice does not error, duplicate, or alter existing rows", () => {
     dbPath = join(mkdtempSync(join(tmpdir(), "consus-test-")), "consus.sqlite");
     const db = new Database(dbPath);

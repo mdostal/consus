@@ -8,6 +8,7 @@ export function ArtifactLink({ url, label }: ArtifactLinkProps) {
   return (
     <a className="artifact-link" href={url} target="_blank" rel="noreferrer">
       {label ?? url}
+      <span className="visually-hidden"> (opens in a new tab)</span>
     </a>
   );
 }

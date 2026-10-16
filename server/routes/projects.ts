@@ -10,6 +10,12 @@ import {
   UnresolvableRefError,
 } from "../adapters/doc-scanner/git-ref.js";
 import { listProjects, saveProjectRegistry } from "../config/project-registry.js";
+import {
+  getProjectClients,
+  groupProjectsByClient,
+  parseClientInput,
+  setProjectClient,
+} from "../clients/store.js";
 import { listSubdirectories } from "./fs.js";
 import { detectEvents } from "../events/detect.js";
 import { parseDecisionPayload, serializeDecisionPayload } from "../decision-contract/parser.js";
@@ -211,8 +217,36 @@ export function registerProjectRoutes(
    * mutate the live registry through the response body.
    */
   app.get("/api/projects", async () => {
-    return { projects: listProjects(repos), paths: { ...repos } };
+    const projects = listProjects(repos);
+    // PANT-960: additive — project -> client (null = ungrouped).
+    return { projects, paths: { ...repos }, clients: getProjectClients(db, projects) };
   });
+
+  /** PANT-960: registered projects grouped by client, for the header switcher. */
+  app.get("/api/clients", async () => {
+    return groupProjectsByClient(getProjectClients(db, listProjects(repos)));
+  });
+
+  /** PANT-960: sets or clears (`client: null` or "") a project's client. */
+  app.patch<{ Params: { project: string }; Body: { client?: unknown } }>(
+    "/api/projects/:project",
+    async (request, reply) => {
+      const { project } = request.params;
+      if (!repos[project]) {
+        return reply.code(404).send({ error: `unknown project: ${project}` });
+      }
+      const body = request.body ?? {};
+      if (!("client" in body)) {
+        return reply.code(400).send({ error: "client is required (a string, or null to clear it)" });
+      }
+      const client = parseClientInput(body.client);
+      if (client === undefined) {
+        return reply.code(400).send({ error: "client must be a string of at most 80 characters, or null" });
+      }
+      setProjectClient(db, project, client);
+      return { project, client };
+    },
+  );
 
   /**
    * s3 (consus-phase25-project-registration-ux): zero-configuration repo
@@ -262,8 +296,12 @@ export function registerProjectRoutes(
    * immediately runs the same scan `POST /api/projects/:project/ingest`
    * does so the operator sees docs right away instead of an empty project.
    */
-  app.post<{ Body: { name?: string; path?: string } }>("/api/projects", async (request, reply) => {
+  app.post<{ Body: { name?: string; path?: string; client?: unknown } }>("/api/projects", async (request, reply) => {
     const { name, path } = request.body ?? {};
+    const client = parseClientInput(request.body?.client ?? null);
+    if (client === undefined) {
+      return reply.code(400).send({ error: "client must be a string of at most 80 characters, or null" });
+    }
 
     if (!name || !VALID_PROJECT_NAME.test(name)) {
       return reply
@@ -291,13 +329,15 @@ export function registerProjectRoutes(
 
     repos[name] = repoPath;
     saveProjectRegistry(projectsConfigPath, repos);
+    // Also clears any client left behind by an earlier project of this name.
+    setProjectClient(db, name, client);
 
     const previousHashes = snapshotDocIndexHashes(db, name);
     scanRepo(db, { repoName: name, repoPath });
     const eventsCreated = detectEvents(db, { project: name, repoName: name, repoPath, previousHashes });
     const row = db.prepare("SELECT COUNT(*) AS n FROM doc_index WHERE repo = ?").get(name) as { n: number };
 
-    return reply.code(201).send({ project: name, path: repoPath, docsScanned: row.n, eventsCreated });
+    return reply.code(201).send({ project: name, path: repoPath, client, docsScanned: row.n, eventsCreated });
   });
 
   /**

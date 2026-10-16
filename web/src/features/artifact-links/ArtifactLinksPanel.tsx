@@ -93,7 +93,11 @@ export function ArtifactLinksPanel({ itemId }: ArtifactLinksPanelProps) {
         </button>
       </div>
 
-      {addError ? <p className="state state--err">{addError}</p> : null}
+      {addError ? (
+        <p className="state state--err" role="alert">
+          {addError}
+        </p>
+      ) : null}
 
       {links === null ? (
         <p className="state">Loading artifact links…</p>

@@ -1,0 +1,36 @@
+name: Startup smoke
+# Boots the built server for real (cold start + restart onto the same DB) and
+# runs a GC-finalizer probe against the installed better-sqlite3, failing on
+# any native assertion / abort — see scripts/smoke-startup.mjs and
+# mdostal/consus#193. Kept separate from ci.yml, which is the shared gate
+# kept identical across repos.
+#
+# Node 24 is what the deployed image runs (pantheon-v2 Dockerfile.consus,
+# node:24-alpine) and is where the #193 crash reproduced; 22 matches ci.yml.
+on:
+  pull_request:
+    branches: [dev, main, master]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: smoke (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install / build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Startup smoke
+        run: npm run smoke:startup

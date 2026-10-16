@@ -78,6 +78,27 @@ export const DESIGN_ROOT = join(".pHive", "design");
  */
 export const BRAND_ROOT = join(".pHive", "brand");
 
+/**
+ * Standalone Mermaid diagrams (PANT-965): every `.mmd` file anywhere in the
+ * repo, tagged `phase: "diagram"`, `epic: null`. Unlike the doc roots above
+ * these live wherever a team keeps them (docs/architecture/, design/, the
+ * repo root), so the whole tree is walked, minus dependency/build/VCS
+ * directories that would only ever contain vendored copies.
+ */
+export const DIAGRAM_EXTENSION = ".mmd";
+export const DIAGRAM_SKIP_DIRS = new Set([
+  ".git",
+  "node_modules",
+  "dist",
+  "dist-server",
+  "build",
+  "coverage",
+  "target",
+  "vendor",
+  ".venv",
+  "venv",
+]);
+
 function walk(dir: string): string[] {
   let out: string[] = [];
   let entries: import("node:fs").Dirent[];
@@ -91,6 +112,25 @@ function walk(dir: string): string[] {
     if (entry.isDirectory()) {
       out = out.concat(walk(full));
     } else if (DOC_EXTENSIONS.has(entry.name.slice(entry.name.lastIndexOf(".")))) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+function walkDiagramFiles(dir: string): string[] {
+  let out: string[] = [];
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (!DIAGRAM_SKIP_DIRS.has(entry.name)) out = out.concat(walkDiagramFiles(full));
+    } else if (entry.isFile() && entry.name.endsWith(DIAGRAM_EXTENSION)) {
       out.push(full);
     }
   }
@@ -251,6 +291,31 @@ export function scanRepo(db: Database.Database, { repoName, repoPath }: ScanOpti
       last_scanned_at: now,
     });
   }
+
+  // Standalone .mmd diagrams (PANT-965) — always epic: null,
+  // phase: "diagram". walk() above only collects .md/.html, so no other
+  // pass ever claims one of these paths.
+  for (const absPath of walkDiagramFiles(repoPath)) {
+    const relPath = relative(repoPath, absPath);
+    const content = readFileSync(absPath, "utf-8");
+
+    upsert.run({
+      repo: repoName,
+      epic: null,
+      phase: "diagram",
+      file_path: relPath,
+      content_hash: hashContent(content),
+      last_scanned_at: now,
+    });
+  }
+
+  // PANT-809: doc_index.last_scanned_at only moves when a doc's content
+  // changes (see the upsert's WHERE above), so record the scan itself for
+  // GET /api/metrics's per-project staleness signal.
+  db.prepare(
+    `INSERT INTO project_ingests (repo, last_ingest_at) VALUES (?, ?)
+     ON CONFLICT(repo) DO UPDATE SET last_ingest_at = excluded.last_ingest_at`,
+  ).run(repoName, now);
 }
 
 export function queryDocIndex(db: Database.Database, repoName: string): DocIndexRow[] {
@@ -272,7 +337,17 @@ export class DocPathEscapesRepoError extends Error {
   }
 }
 
-export function readDocContent(repoPath: string, relFilePath: string): { content: string; format: "md" | "html" } {
+/** How a doc is rendered: markdown, raw HTML, or a standalone Mermaid
+ *  diagram source file (.mmd, PANT-965). */
+export type DocFormat = "md" | "html" | "mmd";
+
+export function docFormatFor(relFilePath: string): DocFormat {
+  if (relFilePath.endsWith(".html")) return "html";
+  if (relFilePath.endsWith(DIAGRAM_EXTENSION)) return "mmd";
+  return "md";
+}
+
+export function readDocContent(repoPath: string, relFilePath: string): { content: string; format: DocFormat } {
   const absPath = resolve(repoPath, relFilePath);
 
   // SECURITY: the boundary check must happen before any filesystem call,
@@ -291,6 +366,5 @@ export function readDocContent(repoPath: string, relFilePath: string): { content
   }
 
   const content = readFileSync(absPath, "utf-8");
-  const format = relFilePath.endsWith(".html") ? "html" : "md";
-  return { content, format };
+  return { content, format: docFormatFor(relFilePath) };
 }
