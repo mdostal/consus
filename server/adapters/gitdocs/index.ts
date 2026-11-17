@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { docFormatFor, readDocContent, type DocFormat } from "../doc-scanner/index.js";
+import { existsInside } from "../../security/paths.js";
 
 /**
  * REQ-20 foundation: port of `mdostal/delphi`'s `server/gitdocs.mjs` pipeline
@@ -54,7 +55,8 @@ export function resolveInRepos(
     const withinRepoRoot = resolved === repoRoot || resolved.startsWith(repoRoot + sep);
     if (!withinRepoRoot) continue;
 
-    if (existsSync(resolved)) {
+    // Real path too (t1e): a symlink out of the repo doesn't resolve.
+    if (existsSync(resolved) && existsInside(repoRoot, resolved)) {
       return { repo: name, path: candidate };
     }
   }

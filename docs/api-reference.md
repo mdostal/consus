@@ -125,6 +125,9 @@ subdirectories (reusing `GET /api/fs/list`'s `listSubdirectories` directly — n
 readdir/isRepo logic), filters to entries where `isRepo` is `true` and the path isn't already
 registered, and returns the deduplicated result.
 
+Candidates `POST /api/projects` would refuse (outside `CONSUS_DISCOVERY_ROOTS` under Pantheon, or
+touching the secrets dir) are left out.
+
 **Response 200:** `{ "candidates": [{ "name": string, "path": string }] }`. Returns
 `{ "candidates": [] }` (never an error) when no roots resolve to anything — e.g. an empty registry
 and no `CONSUS_DISCOVERY_ROOTS`.
@@ -139,7 +142,18 @@ letters, numbers, `-` and `_` (it doubles as a URL segment and part of internal 
 resolved to an absolute path and must exist on disk; `client` optionally puts the project in a
 client group (see `PATCH /api/projects/:project`).
 
+**Auth and allowed paths** (first-cut-trust t1e). Under Pantheon (`PANTHEON_API_URL` or
+`PANTHEON_OPERATOR_TOKEN` set) this route needs Pantheon's operator token, as
+`X-Pantheon-Operator-Token: <token>` or `Authorization: Bearer <token>`, and `path` must sit inside
+one of `CONSUS_DISCOVERY_ROOTS` (with none set, nothing can be registered). Standalone, neither
+applies. Always, in both modes: a `path` that is, sits inside, or contains the shared secrets dir
+(`PANTHEON_SECRETS_SHARED_DIR`, default `/pantheon-secrets`, when it exists) is refused. Every
+check uses the real path (symlinks resolved), and the real path is what gets registered.
+
 **Response 201:** `{ "project": string, "path": string, "client": string | null, "docsScanned": number, "eventsCreated": number }`.
+**401** under Pantheon without the operator token, or with a wrong one. **403** for a path outside
+`CONSUS_DISCOVERY_ROOTS` (under Pantheon) or touching the secrets dir. **503** under Pantheon when
+Consus can't resolve the token itself (it refuses rather than guess).
 **400** for a missing/invalid `name`, a `path` that doesn't exist, or an invalid `client`. **409** if `name` is already
 registered, or if the resolved `path` is already registered under a *different* name (found live:
 registering the same repo under two names silently produced duplicate decisions, one per name,
@@ -192,11 +206,16 @@ filters on it. `path` is resolved with the same `resolve()` + `existsSync` + `st
 runs. A subdirectory entry that can't be stat'd (permission denied, broken symlink) is silently
 omitted rather than failing the whole listing.
 
+Under Pantheon (`PANTHEON_API_URL` or `PANTHEON_OPERATOR_TOKEN` set) listing is confined to
+`CONSUS_DISCOVERY_ROOTS` (real paths) and defaults to the first root; standalone it is unconfined.
+The shared secrets dir is never listed.
+
 **Query:** `path` (optional) — absolute or relative directory path. Defaults to the OS home
-directory (`os.homedir()`) when omitted.
+directory (`os.homedir()`) when omitted, or to the first `CONSUS_DISCOVERY_ROOTS` entry under Pantheon.
 
 **Response 200:** `{ "path": string, "entries": [{ "name": string, "path": string, "isRepo": boolean }] }`.
-**400** if `path` doesn't exist, isn't a directory, or contains a `..` segment.
+**400** if `path` doesn't exist, isn't a directory, or contains a `..` segment. **403** for a path
+outside `CONSUS_DISCOVERY_ROOTS` under Pantheon, or inside the secrets dir.
 
 ## Decisions (the queue an agent harness reads)
 
@@ -542,7 +561,12 @@ injection). **400** if `ref` doesn't resolve (bad ref, path not present at that 
 (`ref` present only when the request included one). `phase` is the doc's current `doc_index`
 tag (`planning`, `overview`, `brand`, `diagram`, …), or `null` if the working-tree file isn't indexed.
 `format` is `mmd` for a standalone Mermaid diagram file (`.mmd`).
-**404** if `repo` isn't configured or the file doesn't exist; **400** if `path` escapes the repo.
+**404** if `repo` isn't configured or the file doesn't exist; **400** if `path` escapes the repo,
+including through a symlink: the file's real path must stay inside the project's real path
+(t1e), and a working-tree read serves only `.md`, `.html` and `.mmd` files (what the scan
+indexes), so a checkout's `.env` or keys are never returned (400). The same holds for `GET /api/docs/search`, `GET /api/export/doc`, `GET /api/design-assets`
+and `GET /api/docs/resolve`, and the scan never indexes a file whose real path is outside the
+project (nor does the diagram cascade read such an `epic.yaml`).
 
 ### `GET /api/docs/features?project=<name>`
 The same `doc_index` rows as `GET /api/docs`, regrouped for the feature-review UI: one bucket per
@@ -1247,6 +1271,14 @@ once a minute on the next webhook. If it can't be resolved the webhook goes out 
 reason is logged once. `PANTHEON_OPERATOR_TOKEN` overrides the lookup; `CONSUS_OPERATOR_TOKEN_SOURCE=none`
 turns it off. The webhook senders themselves stay generic: they send whatever the registered
 header provider (`server/webhooks/outbound-headers.ts`) returns, and this is the only one.
+
+The same cached token guards Consus's own project registration (first-cut-trust t1e,
+`server/auth/operator-token-guard.ts`): with `PANTHEON_API_URL` or `PANTHEON_OPERATOR_TOKEN` set,
+`POST /api/projects` needs `X-Pantheon-Operator-Token` (or `Authorization: Bearer`) and a path inside
+`CONSUS_DISCOVERY_ROOTS`, and `GET /api/fs/list` stays inside those roots. `CONSUS_OPERATOR_TOKEN_SOURCE=none`
+only stops the lookup: without an explicit token the guarded route then answers 503. At startup a
+persisted project that is, sits in, or contains the secrets dir is dropped, and one outside
+`CONSUS_DISCOVERY_ROOTS` is logged for the operator to remove.
 
 ### Handoff CLI (file transport)
 

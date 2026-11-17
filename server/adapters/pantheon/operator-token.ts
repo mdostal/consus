@@ -29,11 +29,17 @@ import type { OutboundHeaderProvider } from "../../webhooks/outbound-headers.js"
  * keeps the last token that worked. When none resolves the request goes out
  * without it and core-api's mode decides; the reason is logged once per miss.
  *
+ * The same cached token also guards Consus's own sensitive routes
+ * (server/auth/operator-token-guard.ts, t1e-consus-project-guard): project
+ * registration needs it whenever PANTHEON_API_URL or PANTHEON_OPERATOR_TOKEN
+ * is set.
+ *
  * Env:
  *   PANTHEON_API_URL                   core-api base URL; unset, there is no provider.
  *   PANTHEON_OPERATOR_TOKEN            explicit token (local dev); wins over the facade.
  *   PANTHEON_SECRETS_SHARED_DIR        shared secrets volume; default /pantheon-secrets.
- *   CONSUS_OPERATOR_TOKEN_SOURCE       "pantheon" (default) or "none" (never send one).
+ *   CONSUS_OPERATOR_TOKEN_SOURCE       "pantheon" (default) or "none" (never look one up;
+ *                                      guarded routes then answer 503 unless the token is explicit).
  */
 
 export const OPERATOR_TOKEN_HEADER = "X-Pantheon-Operator-Token";
@@ -77,9 +83,14 @@ function originOf(url: string): string | undefined {
   }
 }
 
-export function createPantheonOperatorTokenProvider(opts: PantheonOperatorTokenOptions): OutboundHeaderProvider {
+/** The operator token, resolved on demand and cached (see the module comment). Shared by the outbound header provider and the inbound route guard. */
+export interface PantheonOperatorTokenSource {
+  /** The current token, or undefined when none resolves. Never throws. */
+  current(): Promise<string | undefined>;
+}
+
+export function createPantheonOperatorTokenSource(opts: PantheonOperatorTokenOptions): PantheonOperatorTokenSource {
   const apiUrl = opts.apiUrl.replace(/\/+$/, "");
-  const apiOrigin = originOf(apiUrl);
   const explicit = opts.token?.trim() || undefined;
   const sharedDir = opts.sharedSecretsDir ?? DEFAULT_SECRETS_SHARED_DIR;
   const refreshIntervalMs = opts.refreshIntervalMs ?? DEFAULT_REFRESH_INTERVAL_MS;
@@ -134,33 +145,88 @@ export function createPantheonOperatorTokenProvider(opts: PantheonOperatorTokenO
     }
   }
 
+  return {
+    async current() {
+      if (explicit) return explicit;
+      if (now() - resolvedAt >= refreshIntervalMs) {
+        inflight ??= refresh().finally(() => {
+          inflight = undefined;
+        });
+      }
+      if (inflight) await inflight;
+      return token;
+    },
+  };
+}
+
+/** Sends `source`'s token only to URLs on `apiUrl`'s origin. */
+export function operatorTokenHeaderProvider(apiUrl: string, source: PantheonOperatorTokenSource): OutboundHeaderProvider {
+  const apiOrigin = originOf(apiUrl.replace(/\/+$/, ""));
   return async (url: string): Promise<Record<string, string>> => {
     if (!apiOrigin || originOf(url) !== apiOrigin) return {};
-    if (explicit) return { [OPERATOR_TOKEN_HEADER]: explicit };
-    if (now() - resolvedAt >= refreshIntervalMs) {
-      inflight ??= refresh().finally(() => {
-        inflight = undefined;
-      });
-    }
-    if (inflight) await inflight;
+    const token = await source.current();
     return token ? { [OPERATOR_TOKEN_HEADER]: token } : {};
   };
 }
 
-/** The provider the environment asks for, or undefined (no PANTHEON_API_URL, or the source is "none"). Throws on a malformed PANTHEON_API_URL or source. */
-export function pantheonOperatorTokenProviderFromEnv(env: {
+export function createPantheonOperatorTokenProvider(opts: PantheonOperatorTokenOptions): OutboundHeaderProvider {
+  return operatorTokenHeaderProvider(opts.apiUrl, createPantheonOperatorTokenSource(opts));
+}
+
+export interface PantheonOperatorTokenEnv {
   PANTHEON_API_URL?: string;
   PANTHEON_OPERATOR_TOKEN?: string;
   PANTHEON_SECRETS_SHARED_DIR?: string;
   CONSUS_OPERATOR_TOKEN_SOURCE?: string;
-}): OutboundHeaderProvider | undefined {
+}
+
+function parseSource(env: PantheonOperatorTokenEnv): "pantheon" | "none" {
   const source = (env.CONSUS_OPERATOR_TOKEN_SOURCE?.trim() || "pantheon").toLowerCase();
   if (source !== "pantheon" && source !== "none") {
     throw new Error(`CONSUS_OPERATOR_TOKEN_SOURCE must be "pantheon" or "none", got: ${env.CONSUS_OPERATOR_TOKEN_SOURCE}`);
   }
+  return source;
+}
+
+/**
+ * The token that guards Consus's own sensitive routes (t1e-consus-project-guard),
+ * or undefined for a standalone install (no PANTHEON_API_URL and no
+ * PANTHEON_OPERATOR_TOKEN), which keeps them open on its loopback binding.
+ *
+ * On whenever either is set, and CONSUS_OPERATOR_TOKEN_SOURCE does not turn
+ * it off: "none" only stops the lookup, so without an explicit token every
+ * guarded route answers 503 (fail closed). Throws on a malformed
+ * PANTHEON_API_URL or source.
+ */
+export function pantheonOperatorTokenSourceFromEnv(env: PantheonOperatorTokenEnv): PantheonOperatorTokenSource | undefined {
+  const source = parseSource(env);
   const apiUrl = env.PANTHEON_API_URL?.trim();
-  if (source === "none" || !apiUrl) return undefined;
+  const explicit = env.PANTHEON_OPERATOR_TOKEN?.trim() || undefined;
+  if (!apiUrl && !explicit) return undefined;
+  if (apiUrl && !URL.canParse(apiUrl)) throw new Error(`PANTHEON_API_URL is not a valid URL: ${apiUrl}`);
+  if (explicit) return { current: async () => explicit };
+  if (source === "none") return { current: async () => undefined };
+  return createPantheonOperatorTokenSource({
+    apiUrl: apiUrl!,
+    sharedSecretsDir: env.PANTHEON_SECRETS_SHARED_DIR?.trim() || undefined,
+  });
+}
+
+/**
+ * The outbound provider the environment asks for, or undefined (no
+ * PANTHEON_API_URL, or the source is "none"). Pass the server's
+ * PantheonOperatorTokenSource to share one cached token with the route
+ * guard. Throws on a malformed PANTHEON_API_URL or source.
+ */
+export function pantheonOperatorTokenProviderFromEnv(
+  env: PantheonOperatorTokenEnv,
+  source?: PantheonOperatorTokenSource,
+): OutboundHeaderProvider | undefined {
+  const mode = parseSource(env);
+  const apiUrl = env.PANTHEON_API_URL?.trim();
+  if (mode === "none" || !apiUrl) return undefined;
   if (!URL.canParse(apiUrl)) throw new Error(`PANTHEON_API_URL is not a valid URL: ${apiUrl}`);
+  if (source) return operatorTokenHeaderProvider(apiUrl, source);
   return createPantheonOperatorTokenProvider({
     apiUrl,
     token: env.PANTHEON_OPERATOR_TOKEN,

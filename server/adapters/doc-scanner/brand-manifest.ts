@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { load as parseYaml } from "js-yaml";
 import { classifyItem } from "../../decision-contract/classifier.js";
 import { BRAND_ROOT } from "./index.js";
+import { existsInside } from "../../security/paths.js";
 
 /**
  * s4-manifest-decision-synthesis (consus-phase29-brand-decision-review):
@@ -127,7 +128,7 @@ export function synthesizeBrandManifestDecision(
   { repoName, repoPath }: { repoName: string; repoPath: string },
 ): boolean {
   const absPath = join(repoPath, LOGO_CONCEPTS_MANIFEST_PATH);
-  if (!existsSync(absPath)) return false;
+  if (!existsSync(absPath) || !existsInside(repoPath, absPath)) return false;
 
   let raw: unknown;
   try {

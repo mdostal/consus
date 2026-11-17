@@ -16,7 +16,10 @@ filesystem. The most relevant categories of report are:
 - Anything that would let a request from outside the host reach the server when it's still
   bound to `127.0.0.1` (or bypass the `HOST` opt-in a deployer explicitly configured).
 - Path traversal or arbitrary file read/write through the doc scanner, KB store, or diagram
-  routes.
+  routes, including through a symlink inside a registered project (every reader compares real
+  paths).
+- Registering a project without Pantheon's operator token when Consus runs under Pantheon, or
+  registering the shared secrets dir in any mode.
 - SQL injection against the SQLite layer.
 - Any way for the `HarnessTransport` seam to invoke something other than the locally configured
   command.

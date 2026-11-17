@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Security
+
+- **Project registration needs Pantheon's operator token, and no read follows a symlink out of a
+  project** (pantheon-v2 first-cut-trust t1e). Under Pantheon (`PANTHEON_API_URL` or
+  `PANTHEON_OPERATOR_TOKEN` set), `POST /api/projects` answers 401 without
+  `X-Pantheon-Operator-Token` (or `Authorization: Bearer`), 503 when Consus can't resolve the token
+  itself, and 403 for a path outside `CONSUS_DISCOVERY_ROOTS`; `GET /api/fs/list` and
+  `GET /api/projects/discover` stay inside those roots. In every mode a path that is, sits in, or
+  contains the shared secrets dir (`PANTHEON_SECRETS_SHARED_DIR`) is refused, and a persisted one
+  is dropped at startup. `GET /api/docs/content`, `/api/docs/search`, `/api/export/doc`,
+  `/api/design-assets`, `/api/docs/resolve`, the scan and the diagram cascade compare real paths, so a
+  symlink inside a project that points outside it is refused (400) or skipped; those working-tree
+  reads also serve only `.md`, `.html` and `.mmd` files, so a registered checkout's `.env` is never
+  returned. Closes the chain
+  where an agent registered `/pantheon-secrets` and read the operator token back. **Breaking under
+  Pantheon:** the web UI's "Add project" sends no token, so it now shows the 401; register with the
+  token from a shell instead. Standalone installs keep token-free registration of any path.
+
 ### Added
 
 - **Webhooks to Pantheon carry the operator token** (consus#213, PANT-1085). With

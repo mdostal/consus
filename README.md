@@ -177,6 +177,13 @@ docker run --rm -p 8722:8722 -v consus-data:/data \
 
 With no projects config, Consus registers one project, `consus`, at the working directory (`/app`). The image ships this repo's `.pHive/planning` and `.pHive/epics` there, so a fresh container has docs to show.
 
+Under Pantheon (`PANTHEON_API_URL` or `PANTHEON_OPERATOR_TOKEN` set), registering a project needs Pantheon's operator token and a path inside `CONSUS_DISCOVERY_ROOTS`; the web UI sends no token, so register from a shell:
+
+```bash
+curl -X POST http://127.0.0.1:8722/api/projects -H 'Content-Type: application/json' \
+  -H "X-Pantheon-Operator-Token: $PANTHEON_OPERATOR_TOKEN" -d '{"name":"my-repo","path":"/repos/my-repo"}'
+```
+
 ## Desktop app
 
 Consus also ships as a native macOS app (Tauri) — a menu-bar-resident window around the same server, with its own app-local SQLite/config under `~/Library/Application Support/com.mdostal.consus/` (fully separate from any `.pHive/consus.sqlite` used by the CLI/dev flow, so the app always starts with an empty project list on first run).

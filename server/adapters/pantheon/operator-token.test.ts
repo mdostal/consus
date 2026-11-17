@@ -16,7 +16,9 @@ import {
   OPERATOR_TOKEN_HEADER,
   OPERATOR_TOKEN_TAGS,
   createPantheonOperatorTokenProvider,
+  createPantheonOperatorTokenSource,
   pantheonOperatorTokenProviderFromEnv,
+  pantheonOperatorTokenSourceFromEnv,
   parseEnvFile,
 } from "./operator-token.js";
 import { outboundHeaders, setOutboundHeaderProvider } from "../../webhooks/outbound-headers.js";
@@ -221,6 +223,48 @@ describe("pantheonOperatorTokenProviderFromEnv", () => {
   it("fails at startup on a malformed URL or source", () => {
     expect(() => pantheonOperatorTokenProviderFromEnv({ PANTHEON_API_URL: "not a url" })).toThrow(/PANTHEON_API_URL/);
     expect(() => pantheonOperatorTokenProviderFromEnv({ PANTHEON_API_URL: "http://x", CONSUS_OPERATOR_TOKEN_SOURCE: "vault" })).toThrow(/CONSUS_OPERATOR_TOKEN_SOURCE/);
+  });
+});
+
+describe("pantheonOperatorTokenSourceFromEnv (the inbound guard's token, t1e-consus-project-guard)", () => {
+  it("is off for a standalone install: neither PANTHEON_API_URL nor PANTHEON_OPERATOR_TOKEN", () => {
+    expect(pantheonOperatorTokenSourceFromEnv({})).toBeUndefined();
+    expect(pantheonOperatorTokenSourceFromEnv({ PANTHEON_API_URL: " ", PANTHEON_OPERATOR_TOKEN: " " })).toBeUndefined();
+  });
+
+  it("an explicit token is the token, with or without PANTHEON_API_URL", async () => {
+    expect(await pantheonOperatorTokenSourceFromEnv({ PANTHEON_OPERATOR_TOKEN: "t" })!.current()).toBe("t");
+    expect(await pantheonOperatorTokenSourceFromEnv({ PANTHEON_API_URL: "http://x", PANTHEON_OPERATOR_TOKEN: "t", CONSUS_OPERATOR_TOKEN_SOURCE: "none" })!.current()).toBe("t");
+  });
+
+  it("CONSUS_OPERATOR_TOKEN_SOURCE=none under Pantheon keeps the guard on and resolves nothing (fail closed)", async () => {
+    const source = pantheonOperatorTokenSourceFromEnv({ PANTHEON_API_URL: "http://core-api:3012", CONSUS_OPERATOR_TOKEN_SOURCE: "none" });
+    expect(source).toBeDefined();
+    expect(await source!.current()).toBeUndefined();
+  });
+
+  it("fails at startup on a malformed URL or source", () => {
+    expect(() => pantheonOperatorTokenSourceFromEnv({ PANTHEON_API_URL: "not a url" })).toThrow(/PANTHEON_API_URL/);
+    expect(() => pantheonOperatorTokenSourceFromEnv({ CONSUS_OPERATOR_TOKEN_SOURCE: "vault" })).toThrow(/CONSUS_OPERATOR_TOKEN_SOURCE/);
+  });
+
+  it("one source serves the webhooks and the guard with a single inject", async () => {
+    let injects = 0;
+    const source = createPantheonOperatorTokenSource({
+      apiUrl: "http://core-api:3012",
+      fetch: (async () => {
+        injects += 1;
+        return new Response("{}", { status: 200 });
+      }) as typeof fetch,
+      readFile: async () => "PANTHEON_OPERATOR_TOKEN=shared\n",
+      deleteFile: async () => {},
+      log: () => {},
+    });
+    const provider = pantheonOperatorTokenProviderFromEnv({ PANTHEON_API_URL: "http://core-api:3012" }, source);
+    expect(await provider!("http://core-api:3012/api/feed/events/webhook")).toEqual({ [OPERATOR_TOKEN_HEADER]: "shared" });
+    expect(await provider!("http://elsewhere/hook")).toEqual({});
+    expect(await source.current()).toBe("shared");
+    expect(injects).toBe(1);
   });
 });
 

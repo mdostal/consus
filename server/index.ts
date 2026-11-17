@@ -31,7 +31,13 @@ import { StdioHarnessTransport, FileHarnessTransport, WebhookHarnessTransport, N
 import { isSyncDegraded } from "./webhooks/sync-status.js";
 import { eventsWebhookUrlFromEnv } from "./webhooks/events.js";
 import { setOutboundHeaderProvider } from "./webhooks/outbound-headers.js";
-import { pantheonOperatorTokenProviderFromEnv } from "./adapters/pantheon/operator-token.js";
+import {
+  DEFAULT_SECRETS_SHARED_DIR,
+  pantheonOperatorTokenProviderFromEnv,
+  pantheonOperatorTokenSourceFromEnv,
+} from "./adapters/pantheon/operator-token.js";
+import type { OperatorTokenResolver } from "./auth/operator-token-guard.js";
+import { insideAnyRoot, protectedDirTouched, realOrResolved } from "./security/paths.js";
 import { createStorageAdapter } from "./storage/index.js";
 
 /** The built web SPA (`vite.config.ts`'s `build.outDir: "../dist-web"`)
@@ -89,6 +95,29 @@ export function selectHarnessTransport(env: {
   return NOOP_HARNESS_TRANSPORT;
 }
 
+/**
+ * t1e-consus-project-guard: a persisted registry (CONSUS_PROJECTS_CONFIG) may
+ * predate the project guard. A project that is, sits in, or contains a
+ * protected dir is dropped (in place, so every route sees the same map) and
+ * logged; one outside `allowedRoots` is only logged, since dropping it could
+ * hide a long-registered project — the operator removes it by hand.
+ */
+export function dropUnsafeProjects(
+  repos: Record<string, string>,
+  { protectedDirs, allowedRoots }: { protectedDirs: string[]; allowedRoots?: string[] },
+): void {
+  for (const [name, path] of Object.entries(repos)) {
+    const real = realOrResolved(path);
+    const touched = protectedDirTouched(real, protectedDirs);
+    if (touched) {
+      delete repos[name];
+      console.warn(`[consus] project "${name}" (${path}) touches the protected directory ${touched}; not served`);
+    } else if (allowedRoots && !insideAnyRoot(real, allowedRoots)) {
+      console.warn(`[consus] project "${name}" (${path}) is outside CONSUS_DISCOVERY_ROOTS; remove it from the projects config if it shouldn't be served`);
+    }
+  }
+}
+
 export interface BuildServerOptions {
   dbPath: string;
   /** repo name -> absolute path on disk, scanned for generated docs */
@@ -132,6 +161,17 @@ export interface BuildServerOptions {
    *  whether /health and GET /api/metrics report its sync status — each
    *  route still resolves its own URL. */
   eventsWebhookUrl?: string;
+  /** t1e-consus-project-guard: resolves Pantheon's operator token. Set,
+   *  `POST /api/projects` needs it and a path inside `discoveryRoots`, and
+   *  `GET /api/fs/list` stays inside `discoveryRoots`. Unset (standalone and
+   *  every test that doesn't pass it), both stay open as before. */
+  operatorToken?: OperatorTokenResolver;
+  /** Directories no project may be, sit in, or contain, and that are never
+   *  listed. Defaults to the shared secrets volume
+   *  (PANTHEON_SECRETS_SHARED_DIR, else /pantheon-secrets); ignored when it
+   *  doesn't exist. A persisted project that touches one is dropped at
+   *  startup. */
+  protectedDirs?: string[];
 }
 
 export function buildServer({
@@ -146,8 +186,11 @@ export function buildServer({
   threadNotifier,
   publicUrl,
   eventsWebhookUrl = process.env.CONSUS_EVENTS_WEBHOOK_URL?.trim() || undefined,
+  operatorToken,
+  protectedDirs = [process.env.PANTHEON_SECRETS_SHARED_DIR?.trim() || DEFAULT_SECRETS_SHARED_DIR],
 }: BuildServerOptions): FastifyInstance {
   const app = Fastify({ logger: false });
+  dropUnsafeProjects(repos, { protectedDirs, allowedRoots: operatorToken ? discoveryRoots : undefined });
   const db = openDb(dbPath);
   runMigration(db);
 
@@ -155,8 +198,8 @@ export function buildServer({
 
   registerDocRoutes(app, { db, repos });
   registerNewDocRoutes(app, { db, repos, transport });
-  registerProjectRoutes(app, { db, repos, projectsConfigPath, discoveryRoots });
-  registerFsRoutes(app, {});
+  registerProjectRoutes(app, { db, repos, projectsConfigPath, discoveryRoots, operatorToken, protectedDirs });
+  registerFsRoutes(app, { allowedRoots: operatorToken ? discoveryRoots : undefined, protectedDirs });
   registerKbRoutes(app, { db });
   registerArtifactLinkRoutes(app, { db });
   registerDecisionRoutes(app, { db });
@@ -241,14 +284,17 @@ if (isMain) {
   // paths, same split convention as CONSUS_HARNESS_ARGS below. Feeds
   // GET /api/projects/discover's candidate-root resolution.
   const discoveryRoots = process.env.CONSUS_DISCOVERY_ROOTS
-    ? process.env.CONSUS_DISCOVERY_ROOTS.split(",")
+    ? process.env.CONSUS_DISCOVERY_ROOTS.split(",").map((root) => root.trim()).filter(Boolean)
     : [];
 
   // Harness dispatch — see selectHarnessTransport() for priority order.
   const transport = selectHarnessTransport(process.env);
 
-  // Pantheon's operator token on webhooks to core-api (mdostal/consus#213); none without PANTHEON_API_URL.
-  setOutboundHeaderProvider(pantheonOperatorTokenProviderFromEnv(process.env));
+  // Pantheon's operator token (mdostal/consus#213, t1e-consus-project-guard): one cached
+  // lookup serves both the webhooks to core-api and the guard on project registration.
+  // Neither PANTHEON_API_URL nor PANTHEON_OPERATOR_TOKEN set: no token, nothing guarded.
+  const operatorTokenSource = pantheonOperatorTokenSourceFromEnv(process.env);
+  setOutboundHeaderProvider(pantheonOperatorTokenProviderFromEnv(process.env, operatorTokenSource));
 
   // Fail at startup on a malformed CONSUS_EVENTS_WEBHOOK_URL rather than on the first verdict.
   eventsWebhookUrlFromEnv(process.env);
@@ -266,6 +312,7 @@ if (isMain) {
     discoveryRoots,
     threadNotifier,
     publicUrl,
+    operatorToken: operatorTokenSource ? () => operatorTokenSource.current() : undefined,
   });
 
   app.listen({ port, host }).then(() => {

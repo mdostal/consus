@@ -1,7 +1,8 @@
 import type Database from "better-sqlite3";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, relative, resolve, sep } from "node:path";
+import { extname, join, relative, resolve, sep } from "node:path";
+import { existsInside, realPathInside } from "../../security/paths.js";
 
 export interface DocIndexRow {
   id: number;
@@ -216,8 +217,11 @@ export function scanRepo(db: Database.Database, { repoName, repoPath }: ScanOpti
     WHERE doc_index.content_hash != excluded.content_hash
   `);
 
-  const files = SCAN_ROOTS.flatMap((root) => walk(join(repoPath, root)));
-  const overviewFiles = walkOverviewFiles(repoPath);
+  // t1e-consus-project-guard: a symlink whose target is outside the repo is
+  // never read or indexed (a git checkout can carry one).
+  const inRepo = (absPath: string) => existsInside(repoPath, absPath);
+  const files = SCAN_ROOTS.flatMap((root) => walk(join(repoPath, root))).filter(inRepo);
+  const overviewFiles = walkOverviewFiles(repoPath).filter(inRepo);
 
   for (const absPath of files) {
     const relPath = relative(repoPath, absPath);
@@ -257,7 +261,7 @@ export function scanRepo(db: Database.Database, { repoName, repoPath }: ScanOpti
   // epic derived from the topic directory name (see deriveDesignTopic
   // above). A file directly under .pHive/design/ with no topic segment is
   // skipped rather than indexed with a null/guessed epic.
-  for (const absPath of walkDesignFiles(repoPath)) {
+  for (const absPath of walkDesignFiles(repoPath).filter(inRepo)) {
     const relPath = relative(repoPath, absPath);
     const epic = deriveDesignTopic(relPath);
     if (epic === null) continue;
@@ -278,7 +282,7 @@ export function scanRepo(db: Database.Database, { repoName, repoPath }: ScanOpti
   // — always epic: null, phase: "brand", the same repo-wide, fixed-tag
   // convention as the overview docs above (never derived from path
   // structure the way .pHive/epics/** or .pHive/design/** docs are).
-  for (const absPath of walkBrandFiles(repoPath)) {
+  for (const absPath of walkBrandFiles(repoPath).filter(inRepo)) {
     const relPath = relative(repoPath, absPath);
     const content = readFileSync(absPath, "utf-8");
 
@@ -295,7 +299,7 @@ export function scanRepo(db: Database.Database, { repoName, repoPath }: ScanOpti
   // Standalone .mmd diagrams (PANT-965) — always epic: null,
   // phase: "diagram". walk() above only collects .md/.html, so no other
   // pass ever claims one of these paths.
-  for (const absPath of walkDiagramFiles(repoPath)) {
+  for (const absPath of walkDiagramFiles(repoPath).filter(inRepo)) {
     const relPath = relative(repoPath, absPath);
     const content = readFileSync(absPath, "utf-8");
 
@@ -347,6 +351,19 @@ export function docFormatFor(relFilePath: string): DocFormat {
   return "md";
 }
 
+/** Thrown for a working-tree read of a file Consus never indexes (anything
+ *  but .md, .html, .mmd), e.g. a checkout's `.env`. A subclass of
+ *  DocPathEscapesRepoError so every caller answers it the same way (400). */
+export class DocTypeNotServedError extends DocPathEscapesRepoError {
+  constructor(relFilePath: string) {
+    super(relFilePath);
+    this.message = `not a doc file (.md, .html, .mmd): ${relFilePath}`;
+    this.name = "DocTypeNotServedError";
+  }
+}
+
+const SERVED_DOC_EXTENSIONS = new Set([...DOC_EXTENSIONS, DIAGRAM_EXTENSION]);
+
 export function readDocContent(repoPath: string, relFilePath: string): { content: string; format: DocFormat } {
   const absPath = resolve(repoPath, relFilePath);
 
@@ -364,7 +381,21 @@ export function readDocContent(repoPath: string, relFilePath: string): { content
   if (!withinRepoRoot) {
     throw new DocPathEscapesRepoError(relFilePath);
   }
+  // t1e-consus-project-guard: only the file types the scan indexes are ever
+  // served, so a registered checkout's untracked secrets (`.env`, keys) stay unread.
+  if (!SERVED_DOC_EXTENSIONS.has(extname(relFilePath).toLowerCase())) {
+    throw new DocTypeNotServedError(relFilePath);
+  }
 
-  const content = readFileSync(absPath, "utf-8");
+  // t1e-consus-project-guard: the lexical check above stops `..` but not a
+  // symlink inside the repo pointing out of it, so the real path (symlinks
+  // resolved, on both sides) must stay inside too. A missing file throws
+  // ENOENT here, as before.
+  const realPath = realPathInside(repoPath, absPath);
+  if (realPath === null) {
+    throw new DocPathEscapesRepoError(relFilePath);
+  }
+
+  const content = readFileSync(realPath, "utf-8");
   return { content, format: docFormatFor(relFilePath) };
 }

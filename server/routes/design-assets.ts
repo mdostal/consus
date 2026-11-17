@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { existsSync, readFileSync } from "node:fs";
 import { extname, resolve, sep } from "node:path";
+import { realPathInside } from "../security/paths.js";
 
 export interface DesignAssetRoutesOptions {
   /** repo name -> absolute path on disk. Same map every other route keyed
@@ -111,9 +112,14 @@ export function registerDesignAssetRoutes(app: FastifyInstance, { repos }: Desig
     if (!existsSync(absPath)) {
       return reply.code(404).send({ error: `no such file: ${path}` });
     }
+    // t1e-consus-project-guard: a symlink out of .pHive/design/ is refused.
+    const realPath = realPathInside(resolve(repoPath, ".pHive", "design"), absPath);
+    if (realPath === null) {
+      return reply.code(400).send({ error: new DesignAssetPathEscapesRootError(path).message });
+    }
 
     const mimeType = EXTENSION_MIME_TYPES[ext];
-    const buffer = readFileSync(absPath);
+    const buffer = readFileSync(realPath);
 
     // Every allowed extension here is an image type, so — unlike
     // attachments.ts, which forces non-inline-safe types to download — this
