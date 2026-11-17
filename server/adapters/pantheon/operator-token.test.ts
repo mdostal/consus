@@ -6,15 +6,21 @@
  * implements POST /api/secrets/inject against a temp secrets dir and guards
  * its webhook routes the way core-api's `enforce` mode does — no fetch mocks.
  */
-import { describe, it, expect, afterEach, beforeEach } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  CONSUS_CALLER_TOKEN_TAGS,
+  DEFAULT_SECRETS_SHARED_DIR,
   OPERATOR_TOKEN_HEADER,
   OPERATOR_TOKEN_TAGS,
+  callerTokenTagsFromEnv,
+  operatorTokenDirFromEnv,
+  pantheonCallerTokenSourceFromEnv,
+  secretsDirsFromEnv,
   createPantheonOperatorTokenProvider,
   createPantheonOperatorTokenSource,
   pantheonOperatorTokenProviderFromEnv,
@@ -265,6 +271,84 @@ describe("pantheonOperatorTokenSourceFromEnv (the inbound guard's token, t1e-con
     expect(await provider!("http://elsewhere/hook")).toEqual({});
     expect(await source.current()).toBe("shared");
     expect(injects).toBe(1);
+  });
+});
+
+describe("Consus's own caller token toward core-api (t2 follow-up: CONSUS_CALLER_TOKEN_TAGS)", () => {
+  it("reads and checks the selector", () => {
+    expect(callerTokenTagsFromEnv({})).toBeUndefined();
+    expect(callerTokenTagsFromEnv({ CONSUS_CALLER_TOKEN_TAGS: " " })).toBeUndefined();
+    expect(callerTokenTagsFromEnv({ CONSUS_CALLER_TOKEN_TAGS: ` ${CONSUS_CALLER_TOKEN_TAGS} ` })).toBe(CONSUS_CALLER_TOKEN_TAGS);
+    expect(() => callerTokenTagsFromEnv({ CONSUS_CALLER_TOKEN_TAGS: "caller consus" })).toThrow(/CONSUS_CALLER_TOKEN_TAGS/);
+    expect(() => pantheonCallerTokenSourceFromEnv({ PANTHEON_API_URL: "http://x", CONSUS_CALLER_TOKEN_TAGS: "a=b,,c=d" })).toThrow(/CONSUS_CALLER_TOKEN_TAGS/);
+  });
+
+  it("looks the operator token up where core-api will put it", () => {
+    // Before: one dir for both.
+    expect(operatorTokenDirFromEnv({})).toBe(DEFAULT_SECRETS_SHARED_DIR);
+    expect(operatorTokenDirFromEnv({ PANTHEON_SECRETS_SHARED_DIR: "/s" })).toBe("/s");
+    // With caller tags, PANTHEON_SECRETS_SHARED_DIR is Consus's own dir, which never takes the operator token.
+    const own = { PANTHEON_SECRETS_SHARED_DIR: "/pantheon-secrets/consus", CONSUS_CALLER_TOKEN_TAGS };
+    expect(operatorTokenDirFromEnv(own)).toBe(DEFAULT_SECRETS_SHARED_DIR);
+    expect(operatorTokenDirFromEnv({ ...own, CONSUS_OPERATOR_TOKEN_DIR: "/op" })).toBe("/op");
+    expect(secretsDirsFromEnv({ ...own, CONSUS_OPERATOR_TOKEN_DIR: "/op" })).toEqual(["/pantheon-secrets/consus", "/op", DEFAULT_SECRETS_SHARED_DIR]);
+    expect(secretsDirsFromEnv({})).toEqual([DEFAULT_SECRETS_SHARED_DIR]);
+  });
+
+  it("without caller tags, the outbound token is the operator token, from the same cached source", async () => {
+    const shared = { current: async () => "op" };
+    expect(pantheonCallerTokenSourceFromEnv({ PANTHEON_API_URL: "http://core-api:3012" }, shared)).toBe(shared);
+    expect(await pantheonCallerTokenSourceFromEnv({ PANTHEON_API_URL: "http://core-api:3012", PANTHEON_OPERATOR_TOKEN: "t" })!.current()).toBe("t");
+    expect(pantheonCallerTokenSourceFromEnv({ PANTHEON_OPERATOR_TOKEN: "t" })).toBeUndefined(); // nowhere to send it
+    expect(pantheonCallerTokenSourceFromEnv({ PANTHEON_API_URL: "http://x", CONSUS_OPERATOR_TOKEN_SOURCE: "none", CONSUS_CALLER_TOKEN_TAGS })).toBeUndefined();
+  });
+
+  it("with caller tags, webhooks carry the caller token from Consus's own dir and the guard still checks the operator token", async () => {
+    const own = mkdtempSync(join(secretsDir, "consus-"));
+    const tokens: Record<string, string> = { [CONSUS_CALLER_TOKEN_TAGS]: "caller-tok", [OPERATOR_TOKEN_TAGS]: "op-tok" };
+    const injects: Array<{ tags: string; path: string }> = [];
+    const server = createServer((req, res) => {
+      let raw = "";
+      req.on("data", (c) => (raw += c));
+      req.on("end", () => {
+        const body = JSON.parse(raw);
+        injects.push({ tags: body.tags, path: body.path });
+        writeFileSync(body.path, `${body.key}=${tokens[body.tags]}\n`);
+        res.writeHead(200).end("{}");
+      });
+    });
+    servers.push(server);
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const apiUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const env = {
+      PANTHEON_API_URL: apiUrl,
+      PANTHEON_SECRETS_SHARED_DIR: own,
+      CONSUS_CALLER_TOKEN_TAGS,
+      CONSUS_OPERATOR_TOKEN_DIR: secretsDir,
+      PANTHEON_OPERATOR_TOKEN: "", // an explicit operator token is never sent outbound anyway
+    };
+
+    const operator = pantheonOperatorTokenSourceFromEnv(env)!;
+    const provider = pantheonOperatorTokenProviderFromEnv(env, pantheonCallerTokenSourceFromEnv(env, operator))!;
+    expect(await provider(`${apiUrl}/api/feed/events/webhook`)).toEqual({ [OPERATOR_TOKEN_HEADER]: "caller-tok" });
+    expect(await operator.current()).toBe("op-tok");
+    expect(injects).toEqual([
+      { tags: CONSUS_CALLER_TOKEN_TAGS, path: expect.stringMatching(new RegExp(`^${own}/consus-caller-token-`)) },
+      { tags: OPERATOR_TOKEN_TAGS, path: expect.stringMatching(new RegExp(`^${secretsDir}/consus-operator-token-`)) },
+    ]);
+    expect(readdirSync(own)).toEqual([]);
+  });
+
+  it("an explicit PANTHEON_OPERATOR_TOKEN guards inbound but is not what goes out once caller tags are set", async () => {
+    // Nothing listens on port 1, so the caller token can't resolve: nothing goes out, not "op".
+    const env = { PANTHEON_API_URL: "http://127.0.0.1:1", PANTHEON_OPERATOR_TOKEN: "op", CONSUS_CALLER_TOKEN_TAGS, PANTHEON_SECRETS_SHARED_DIR: secretsDir };
+    const operator = pantheonOperatorTokenSourceFromEnv(env)!;
+    expect(await operator.current()).toBe("op");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const provider = pantheonOperatorTokenProviderFromEnv(env, pantheonCallerTokenSourceFromEnv(env, operator))!;
+    expect(await provider("http://127.0.0.1:1/api/feed/events/webhook")).toEqual({});
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("caller token unavailable"));
+    warn.mockRestore();
   });
 });
 

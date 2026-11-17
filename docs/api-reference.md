@@ -13,6 +13,42 @@ routes below. Outbound HTTP happens only when you opt in: a harness transport th
 or the events webhook (`CONSUS_EVENTS_WEBHOOK_URL`, see [Events webhook](#events-webhook-consus_events_webhook_url))
 for answers, verdicts and needs-context requests.
 
+## Operator routes (under Pantheon)
+
+Pantheon registers Consus as a `liaison`: an answer Consus relays to core-api is recorded as the
+operator's, `relayed_by: consus`. So under Pantheon (`PANTHEON_API_URL` or
+`PANTHEON_OPERATOR_TOKEN` set) every route below needs Pantheon's **operator token**, as
+`X-Pantheon-Operator-Token: <token>` or `Authorization: Bearer <token>` (pantheon-v2
+first-cut-trust t1e and the t2 review follow-up; `server/auth/operator-routes.ts`). Each one
+answers, verdicts, decides, closes, or relays something to core-api under Consus's own token:
+
+| Route | Why |
+|---|---|
+| `POST /api/decisions/:id/verdict` | a verdict; relays `consus.question.answered` / `consus.questions.submitted` or `consus.decision.decided` |
+| `POST /api/items/:id/decide` | a decision |
+| `POST /api/items/:id/close` | closes a decision or a survey |
+| `POST /api/questions/:ticket/close` | closes an imported question ticket |
+| `POST /api/decisions` | files a decision; one with no material relays `consus.decision.needs_context` |
+| `POST /api/questions/redeliver` | resends recorded answers |
+| `POST /api/proposals`, `POST /api/proposals/:id/redeliver`, `POST /api/events/:id/propose`, `POST /api/docs/new`, `POST /api/items/:id/import` | relay a proposed change, which core-api turns into a change ticket |
+| `POST /api/threads`, `POST /api/threads/:id/messages`, `POST /api/threads/:id/redeliver` | relay an operator message, which core-api files or comments on a ticket |
+| `POST /api/projects` | registers a directory whose files Consus then serves |
+
+**401** without the token, or with any other token (Consus's own caller token included). **503**
+when Consus can't resolve the operator token itself: it refuses rather than guess. Standalone
+(neither variable set), all of them stay open, as before. Every other write route stays open and is
+listed with its reason in `OPEN_WRITE_ROUTES`; `server/routes/operator-routes.test.ts` fails on a
+write route in neither list. The startup answer redelivery presents the token itself.
+
+**The web UI sends no token**, so under Pantheon these actions in Consus's own UI answer 401 (the UI
+shows `HTTP 401`). Reading stays open. The operator answers, decides and closes in Janus (the
+Consus surface, `/p/consus`): Janus sends the operator token to core-api's `/api/consus/*` facade,
+and core-api forwards the call to Consus with the operator token. A shell works too, with the
+token: `curl -X POST .../api/decisions/<id>/verdict -H "X-Pantheon-Operator-Token: $TOKEN" ...`.
+
+Outbound, Consus sends its own caller token when `CONSUS_CALLER_TOKEN_TAGS` is set (see
+[`PANTHEON_API_URL`](#pantheon_api_url)), so core-api can tell a Consus relay from the operator.
+
 ## Health
 
 ### `GET /health`
@@ -366,6 +402,10 @@ The web UI's structured alternative to the generic decide endpoint above: record
 verdict shapes and, for a reject, reopens the item (clears `decided_at`) instead of closing it —
 the only path that puts a decision back into the open queue. Also appends a system comment
 summarizing the verdict.
+
+An [operator route](#operator-routes-under-pantheon): under Pantheon it needs the operator token
+(401 without, 503 when Consus can't resolve it), since a question-linked verdict is relayed to
+core-api as the operator's answer.
 
 **Request body:** `{ "verdict": Verdict, "actor"?: string }` where `Verdict` is one of:
 ```json
@@ -1259,26 +1299,40 @@ needs-context to the events webhook above). It now only enables a check in
 (`REPOS_BASE_DIR` defaults to `/repos`) is first validated against
 `GET {PANTHEON_API_URL}/api/repos/tenants/:tenant/repos/:repo/path`. It does not poll.
 
-It also turns on Pantheon's operator token for Consus's outbound webhooks (consus#213). core-api
-answers 401 to a mutating `/api` call without one once its guard is in `enforce`, which would
-drop every proposal (`CONSUS_HARNESS_WEBHOOK_URL`) and every answer, verdict and needs-context
-event (`CONSUS_EVENTS_WEBHOOK_URL`). Any of the three webhooks whose URL is on
+It also turns on a Pantheon token for Consus's outbound webhooks (consus#213). core-api answers
+401 to a mutating `/api` call without one, which would drop every proposal
+(`CONSUS_HARNESS_WEBHOOK_URL`), every answer, verdict and needs-context event
+(`CONSUS_EVENTS_WEBHOOK_URL`) and every thread message. Any of the three webhooks whose URL is on
 `PANTHEON_API_URL`'s origin is sent with `X-Pantheon-Operator-Token`; a webhook to any other
-origin never is. The token is resolved through `POST {PANTHEON_API_URL}/api/secrets/inject`
-(tags `provider=pantheon,kind=operator-token`, written to a fresh file under
-`PANTHEON_SECRETS_SHARED_DIR`, read, then deleted), held in memory only, and re-resolved at most
-once a minute on the next webhook. If it can't be resolved the webhook goes out without it and the
-reason is logged once. `PANTHEON_OPERATOR_TOKEN` overrides the lookup; `CONSUS_OPERATOR_TOKEN_SOURCE=none`
-turns it off. The webhook senders themselves stay generic: they send whatever the registered
-header provider (`server/webhooks/outbound-headers.ts`) returns, and this is the only one.
+origin never is. Which token:
 
-The same cached token guards Consus's own project registration (first-cut-trust t1e,
-`server/auth/operator-token-guard.ts`): with `PANTHEON_API_URL` or `PANTHEON_OPERATOR_TOKEN` set,
-`POST /api/projects` needs `X-Pantheon-Operator-Token` (or `Authorization: Bearer`) and a path inside
-`CONSUS_DISCOVERY_ROOTS`, and `GET /api/fs/list` stays inside those roots. `CONSUS_OPERATOR_TOKEN_SOURCE=none`
-only stops the lookup: without an explicit token the guarded route then answers 503. At startup a
-persisted project that is, sits in, or contains the secrets dir is dropped, and one outside
-`CONSUS_DISCOVERY_ROOTS` is logged for the operator to remove.
+- **`CONSUS_CALLER_TOKEN_TAGS` set** (Pantheon sets
+  `provider=pantheon,kind=caller-token,caller=consus`): Consus's own caller token, resolved
+  through `POST {PANTHEON_API_URL}/api/secrets/inject` with those tags into a fresh file under
+  `PANTHEON_SECRETS_SHARED_DIR` (Pantheon: Consus's own dir, `/pantheon-secrets/consus`).
+  core-api records what Consus relays as the operator's with `relayed_by: consus`.
+  `PANTHEON_OPERATOR_TOKEN` is never sent then.
+- **Unset**: the operator token (tags `provider=pantheon,kind=operator-token`), from
+  `PANTHEON_SECRETS_SHARED_DIR`, or `PANTHEON_OPERATOR_TOKEN` as-is. This is the behaviour before
+  the variable existed.
+
+The file is read, then deleted; the token is held in memory only and re-resolved at most once a
+minute, on demand. If it can't be resolved the webhook goes out without it and the reason is logged
+once. `CONSUS_OPERATOR_TOKEN_SOURCE=none` turns all of it off. The webhook senders themselves stay
+generic: they send whatever the registered header provider (`server/webhooks/outbound-headers.ts`)
+returns, and this is the only one.
+
+Inbound, the [operator routes](#operator-routes-under-pantheon) check the **operator token**, never
+the caller token (`server/auth/operator-token-guard.ts`). Consus looks it up the same way, with the
+operator tags, in `CONSUS_OPERATOR_TOKEN_DIR`. That defaults to the shared `/pantheon-secrets` when
+`CONSUS_CALLER_TOKEN_TAGS` is set (core-api never injects the operator token into a caller's own
+dir), else to `PANTHEON_SECRETS_SHARED_DIR`, so without caller tags one cached lookup serves both
+directions. `PANTHEON_OPERATOR_TOKEN` overrides the lookup. `CONSUS_OPERATOR_TOKEN_SOURCE=none` only
+stops it: without an explicit token every operator route then answers 503. Under Pantheon,
+`POST /api/projects` also needs a path inside `CONSUS_DISCOVERY_ROOTS`, and `GET /api/fs/list` stays
+inside those roots. At startup a persisted project that is, sits in, or contains a secrets dir
+(`PANTHEON_SECRETS_SHARED_DIR`, `CONSUS_OPERATOR_TOKEN_DIR` or `/pantheon-secrets`) is dropped, and
+one outside `CONSUS_DISCOVERY_ROOTS` is logged for the operator to remove.
 
 ### Handoff CLI (file transport)
 

@@ -32,11 +32,14 @@ import { isSyncDegraded } from "./webhooks/sync-status.js";
 import { eventsWebhookUrlFromEnv } from "./webhooks/events.js";
 import { setOutboundHeaderProvider } from "./webhooks/outbound-headers.js";
 import {
-  DEFAULT_SECRETS_SHARED_DIR,
+  OPERATOR_TOKEN_HEADER,
+  pantheonCallerTokenSourceFromEnv,
   pantheonOperatorTokenProviderFromEnv,
   pantheonOperatorTokenSourceFromEnv,
+  secretsDirsFromEnv,
 } from "./adapters/pantheon/operator-token.js";
 import type { OperatorTokenResolver } from "./auth/operator-token-guard.js";
+import { guardOperatorRoutes } from "./auth/operator-routes.js";
 import { insideAnyRoot, protectedDirTouched, realOrResolved } from "./security/paths.js";
 import { createStorageAdapter } from "./storage/index.js";
 
@@ -161,15 +164,17 @@ export interface BuildServerOptions {
    *  whether /health and GET /api/metrics report its sync status — each
    *  route still resolves its own URL. */
   eventsWebhookUrl?: string;
-  /** t1e-consus-project-guard: resolves Pantheon's operator token. Set,
-   *  `POST /api/projects` needs it and a path inside `discoveryRoots`, and
+  /** Resolves Pantheon's operator token (never Consus's own caller token).
+   *  Set, every route in server/auth/operator-routes.ts needs it (answers,
+   *  verdicts, decisions, closes, relays to core-api, project registration),
+   *  `POST /api/projects` needs a path inside `discoveryRoots`, and
    *  `GET /api/fs/list` stays inside `discoveryRoots`. Unset (standalone and
-   *  every test that doesn't pass it), both stay open as before. */
+   *  every test that doesn't pass it), all of them stay open as before. */
   operatorToken?: OperatorTokenResolver;
   /** Directories no project may be, sit in, or contain, and that are never
-   *  listed. Defaults to the shared secrets volume
-   *  (PANTHEON_SECRETS_SHARED_DIR, else /pantheon-secrets); ignored when it
-   *  doesn't exist. A persisted project that touches one is dropped at
+   *  listed. Defaults to every secrets dir Consus may hold a token in
+   *  (PANTHEON_SECRETS_SHARED_DIR, CONSUS_OPERATOR_TOKEN_DIR and
+   *  /pantheon-secrets); one that doesn't exist is ignored. A persisted project that touches one is dropped at
    *  startup. */
   protectedDirs?: string[];
 }
@@ -187,9 +192,11 @@ export function buildServer({
   publicUrl,
   eventsWebhookUrl = process.env.CONSUS_EVENTS_WEBHOOK_URL?.trim() || undefined,
   operatorToken,
-  protectedDirs = [process.env.PANTHEON_SECRETS_SHARED_DIR?.trim() || DEFAULT_SECRETS_SHARED_DIR],
+  protectedDirs = secretsDirsFromEnv(process.env),
 }: BuildServerOptions): FastifyInstance {
   const app = Fastify({ logger: false });
+  // Before any route is registered: the hook only sees routes added after it.
+  guardOperatorRoutes(app, operatorToken);
   dropUnsafeProjects(repos, { protectedDirs, allowedRoots: operatorToken ? discoveryRoots : undefined });
   const db = openDb(dbPath);
   runMigration(db);
@@ -290,11 +297,14 @@ if (isMain) {
   // Harness dispatch — see selectHarnessTransport() for priority order.
   const transport = selectHarnessTransport(process.env);
 
-  // Pantheon's operator token (mdostal/consus#213, t1e-consus-project-guard): one cached
-  // lookup serves both the webhooks to core-api and the guard on project registration.
-  // Neither PANTHEON_API_URL nor PANTHEON_OPERATOR_TOKEN set: no token, nothing guarded.
+  // Pantheon's tokens (mdostal/consus#213, first-cut-trust t1e and the t2 follow-up).
+  // Inbound, the operator routes check the operator token. Outbound, webhooks to core-api
+  // carry Consus's own caller token when CONSUS_CALLER_TOKEN_TAGS is set, else the same
+  // operator token (one cached lookup for both). Neither PANTHEON_API_URL nor
+  // PANTHEON_OPERATOR_TOKEN set: no token, nothing guarded.
   const operatorTokenSource = pantheonOperatorTokenSourceFromEnv(process.env);
-  setOutboundHeaderProvider(pantheonOperatorTokenProviderFromEnv(process.env, operatorTokenSource));
+  const outboundTokenSource = pantheonCallerTokenSourceFromEnv(process.env, operatorTokenSource);
+  setOutboundHeaderProvider(pantheonOperatorTokenProviderFromEnv(process.env, outboundTokenSource));
 
   // Fail at startup on a malformed CONSUS_EVENTS_WEBHOOK_URL rather than on the first verdict.
   eventsWebhookUrlFromEnv(process.env);
@@ -320,9 +330,16 @@ if (isMain) {
     console.log(`Consus server listening on :${port} (db: ${dbPath})`);
     // PANT-807: one redelivery pass over the question-answer outbox at
     // startup (no timer — later retries go through the same endpoint).
+    // It is an operator route under Pantheon, so the startup pass presents the operator token.
     if (eventsWebhookUrlFromEnv(process.env)) {
-      void app
-        .inject({ method: "POST", url: "/api/questions/redeliver" })
+      void (operatorTokenSource ? operatorTokenSource.current() : Promise.resolve(undefined))
+        .then((token) =>
+          app.inject({
+            method: "POST",
+            url: "/api/questions/redeliver",
+            headers: token ? { [OPERATOR_TOKEN_HEADER]: token } : {},
+          }),
+        )
         .then((res) => console.log(`[startup] question redelivery: ${res.body}`))
         .catch((err: unknown) => console.warn("[startup] question redelivery failed", err));
     }

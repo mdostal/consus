@@ -4,6 +4,27 @@
 
 ### Security
 
+- **Answers, verdicts, decisions, closes and every relay to core-api need Pantheon's operator
+  token** (pantheon-v2 first-cut-trust t2 review finding 3). Pantheon records what Consus relays as
+  the operator's (`relayed_by: consus`), but Consus took a verdict from anyone. Under Pantheon
+  (`PANTHEON_API_URL` or `PANTHEON_OPERATOR_TOKEN` set) these answer 401 without
+  `X-Pantheon-Operator-Token` (or `Authorization: Bearer`) and 503 when Consus can't resolve it:
+  `POST /api/decisions/:id/verdict`, `/api/items/:id/decide`, `/api/items/:id/close`,
+  `/api/questions/:ticket/close`, `/api/questions/redeliver`, `/api/decisions`, `/api/proposals`,
+  `/api/proposals/:id/redeliver`, `/api/events/:id/propose`, `/api/docs/new`,
+  `/api/items/:id/import`, `/api/threads`, `/api/threads/:id/messages`, `/api/threads/:id/redeliver`
+  (and `/api/projects`, as before). One table, `server/auth/operator-routes.ts`, guards them; a test
+  fails on any write route it doesn't classify. **Breaking under Pantheon:** Consus's own web UI
+  sends no token, so those actions show `HTTP 401` there: answer and decide in Janus. Pantheon's
+  core-api has to forward the operator token on its `/api/consus/*` writes and on its question-close
+  push. Standalone installs are unchanged.
+- **Consus's own token toward core-api** (pantheon-v2 t2 follow-up). `CONSUS_CALLER_TOKEN_TAGS`
+  (Pantheon: `provider=pantheon,kind=caller-token,caller=consus`) makes every webhook to core-api
+  carry Consus's caller token, injected into `PANTHEON_SECRETS_SHARED_DIR`
+  (`/pantheon-secrets/consus`), so core-api can tell a Consus relay from the operator. The operator
+  routes keep checking the operator token, looked up in `CONSUS_OPERATOR_TOKEN_DIR` (default the
+  shared `/pantheon-secrets` once caller tags are set). Unset, Consus sends the operator token as
+  before.
 - **Project registration needs Pantheon's operator token, and no read follows a symlink out of a
   project** (pantheon-v2 first-cut-trust t1e). Under Pantheon (`PANTHEON_API_URL` or
   `PANTHEON_OPERATOR_TOKEN` set), `POST /api/projects` answers 401 without

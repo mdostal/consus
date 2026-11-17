@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
 import { existsSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { operatorTokenGuard, type OperatorTokenResolver } from "../auth/operator-token-guard.js";
+import type { OperatorTokenResolver } from "../auth/operator-token-guard.js";
 import { checkProjectPath, realOrResolved, type ProjectPathPolicy } from "../security/paths.js";
 import { scanRepo } from "../adapters/doc-scanner/index.js";
 import {
@@ -217,8 +217,8 @@ export function registerProjectRoutes(
     protectedDirs = [],
   }: ProjectRoutesOptions,
 ): void {
-  // t1e-consus-project-guard: who may register a project, and where.
-  const requireOperatorToken = operatorTokenGuard(operatorToken);
+  // t1e-consus-project-guard: where a project may be registered. Who may
+  // (the operator token) is server/auth/operator-routes.ts, applied by buildServer.
   const pathPolicy: ProjectPathPolicy = {
     allowedRoots: operatorToken ? discoveryRoots : undefined,
     protectedDirs,
@@ -322,7 +322,7 @@ export function registerProjectRoutes(
    * refused everywhere (403). The real path (symlinks resolved) is what's
    * checked and registered.
    */
-  app.post<{ Body: { name?: string; path?: string; client?: unknown } }>("/api/projects", { preHandler: requireOperatorToken }, async (request, reply) => {
+  app.post<{ Body: { name?: string; path?: string; client?: unknown } }>("/api/projects", async (request, reply) => {
     const { name, path } = request.body ?? {};
     const client = parseClientInput(request.body?.client ?? null);
     if (client === undefined) {
