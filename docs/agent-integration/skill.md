@@ -44,6 +44,11 @@ Returns every open, undecided item carrying a `decision_payload` (the `dostal:de
 
 ### Submitting a verdict
 
+**Under Pantheon** (Consus started with `PANTHEON_API_URL` or `PANTHEON_OPERATOR_TOKEN`) a verdict,
+a decide, a close, filing a decision, a proposal and a thread message are the operator's: they need
+Pantheon's operator token (`X-Pantheon-Operator-Token`) and answer 401 to an agent. An agent asks;
+the operator answers in Janus. See "Operator routes" in the [API Reference](../api-reference.md#operator-routes-under-pantheon).
+
 ```
 POST /api/items/:id/decide
 Body: { "actor": "<your agent/harness identity>", "newStatus": "<verdict-derived status>" }

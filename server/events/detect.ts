@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
-import { queryDocIndex, readDocContent, type DocIndexRow } from "../adapters/doc-scanner/index.js";
+import { queryDocIndex, readDocContent, DocPathEscapesRepoError, type DocIndexRow } from "../adapters/doc-scanner/index.js";
 import { synthesizeBrandManifestDecision } from "../adapters/doc-scanner/brand-manifest.js";
 import { readGitDoc } from "../adapters/gitdocs/index.js";
 import { parseDecisionPayload, serializeDecisionPayload, type DecisionPayload } from "../decision-contract/parser.js";
@@ -161,13 +161,26 @@ export function composePrompt(input: ComposePromptInput): string {
   ].join("\n");
 }
 
+/** A doc_index row's working-tree content, or null when its file now points
+ *  out of the repo (a symlink, t1e-consus-project-guard): such a row is
+ *  skipped by detection, never read. Other read errors propagate as before. */
+function readRowContent(repoPath: string, row: DocIndexRow): string | null {
+  try {
+    return readDocContent(repoPath, row.file_path).content;
+  } catch (err) {
+    if (err instanceof DocPathEscapesRepoError) return null;
+    throw err;
+  }
+}
+
 function detectDocChangedForRow(
   db: Database.Database,
   { project, repoName, repoPath }: { project: string; repoName: string; repoPath: string },
   row: DocIndexRow,
   previousHash: string | null,
 ): boolean {
-  const { content } = readDocContent(repoPath, row.file_path);
+  const content = readRowContent(repoPath, row);
+  if (content === null) return false;
 
   let diff: string;
   let usedFallback: boolean;
@@ -241,7 +254,8 @@ function detectDecisionNeededForRow(
   { project, repoName, repoPath }: { project: string; repoName: string; repoPath: string },
   row: DocIndexRow,
 ): boolean {
-  const { content } = readDocContent(repoPath, row.file_path);
+  const content = readRowContent(repoPath, row);
+  if (content === null) return false;
   const payload = parseDecisionPayload(content);
   if (!payload) return false;
 

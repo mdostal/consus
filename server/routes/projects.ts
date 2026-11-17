@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import type Database from "better-sqlite3";
 import { existsSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import type { OperatorTokenResolver } from "../auth/operator-token-guard.js";
+import { checkProjectPath, realOrResolved, type ProjectPathPolicy } from "../security/paths.js";
 import { scanRepo } from "../adapters/doc-scanner/index.js";
 import {
   listBranches,
@@ -57,6 +59,14 @@ export interface ProjectRoutesOptions {
   /** Override for `fetch` — injected in tests so the suite never touches a
    *  real network. Production callers leave this unset. */
   fetchImpl?: typeof fetch;
+  /** t1e-consus-project-guard: resolves Pantheon's operator token. Set (any
+   *  Pantheon deployment), `POST /api/projects` needs that token and a path
+   *  inside `discoveryRoots`; unset (standalone), neither applies. */
+  operatorToken?: OperatorTokenResolver;
+  /** Directories no project may be, sit in, or contain — the shared secrets
+   *  volume (PANTHEON_SECRETS_SHARED_DIR, default /pantheon-secrets). Always
+   *  applied, guarded or not; a dir that doesn't exist is ignored. */
+  protectedDirs?: string[];
 }
 
 /**
@@ -203,8 +213,16 @@ export function registerProjectRoutes(
     pantheonApiUrl,
     reposBaseDir,
     fetchImpl,
+    operatorToken,
+    protectedDirs = [],
   }: ProjectRoutesOptions,
 ): void {
+  // t1e-consus-project-guard: where a project may be registered. Who may
+  // (the operator token) is server/auth/operator-routes.ts, applied by buildServer.
+  const pathPolicy: ProjectPathPolicy = {
+    allowedRoots: operatorToken ? discoveryRoots : undefined,
+    protectedDirs,
+  };
   const effectivePantheonApiUrl = pantheonApiUrl ?? process.env.PANTHEON_API_URL;
   const effectiveReposBaseDir = (reposBaseDir ?? process.env.REPOS_BASE_DIR ?? "/repos").replace(/\/+$/, "");
   const effectiveFetch = fetchImpl ?? globalThis.fetch;
@@ -281,6 +299,8 @@ export function registerProjectRoutes(
       for (const entry of listSubdirectories(root)) {
         if (!entry.isRepo) continue;
         if (registeredPaths.has(entry.path)) continue;
+        // Never suggest what POST /api/projects would refuse (t1e).
+        if (!checkProjectPath(entry.path, pathPolicy).ok) continue;
         candidatesByPath.set(entry.path, { name: entry.name, path: entry.path });
       }
     }
@@ -295,6 +315,12 @@ export function registerProjectRoutes(
    * disk, persists that to the config file so it survives a restart, and
    * immediately runs the same scan `POST /api/projects/:project/ingest`
    * does so the operator sees docs right away instead of an empty project.
+   *
+   * t1e-consus-project-guard: under Pantheon this needs the operator token
+   * (401 without it), and the path must sit inside CONSUS_DISCOVERY_ROOTS
+   * (403). A path that is, sits in, or contains the shared secrets dir is
+   * refused everywhere (403). The real path (symlinks resolved) is what's
+   * checked and registered.
    */
   app.post<{ Body: { name?: string; path?: string; client?: unknown } }>("/api/projects", async (request, reply) => {
     const { name, path } = request.body ?? {};
@@ -315,12 +341,13 @@ export function registerProjectRoutes(
       return reply.code(409).send({ error: `project "${name}" is already registered` });
     }
 
-    const repoPath = resolve(path);
-    if (!existsSync(repoPath) || !statSync(repoPath).isDirectory()) {
-      return reply.code(400).send({ error: `path does not exist or is not a directory: ${repoPath}` });
+    const checked = checkProjectPath(path, pathPolicy);
+    if (!checked.ok) {
+      return reply.code(checked.status).send({ error: checked.error });
     }
+    const repoPath = checked.path;
 
-    const existingName = Object.entries(repos).find(([, existingPath]) => resolve(existingPath) === repoPath)?.[0];
+    const existingName = Object.entries(repos).find(([, existingPath]) => realOrResolved(existingPath) === repoPath)?.[0];
     if (existingName) {
       return reply
         .code(409)

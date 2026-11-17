@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { load as parseYaml } from "js-yaml";
+import { existsInside } from "../security/paths.js";
 import { generateArchitectureDiagrams } from "../lib/diagram-generator.js";
 
 export interface DiagramRoutesOptions {
@@ -97,7 +98,10 @@ export function readCascadeEpics(repoPath: string): DiagramEpic[] {
   }
 
   return epicDirs
-    .map((dir) => readEpic(join(epicsDir, dir, "epic.yaml")))
+    .map((dir) => join(epicsDir, dir, "epic.yaml"))
+    // t1e-consus-project-guard: never follow a symlink out of the repo.
+    .filter((epicYamlPath) => existsInside(repoPath, epicYamlPath))
+    .map((epicYamlPath) => readEpic(epicYamlPath))
     .filter((e): e is DiagramEpic => e !== null)
     .sort((a, b) => a.id.localeCompare(b.id));
 }

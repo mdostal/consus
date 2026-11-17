@@ -33,6 +33,11 @@ track what you've already seen.
 
 ## Submitting a verdict
 
+**Under Pantheon** (Consus started with `PANTHEON_API_URL` or `PANTHEON_OPERATOR_TOKEN`) a verdict,
+a decide, a close, filing a decision, a proposal and a thread message are the operator's: they need
+Pantheon's operator token (`X-Pantheon-Operator-Token`) and answer 401 to an agent. An agent asks;
+the operator answers in Janus. See "Operator routes" in `docs/api-reference.md`.
+
 ```
 POST /api/decisions/:id/verdict
 Body: { "verdict": <Verdict>, "actor": "<your agent/harness identity>" }
