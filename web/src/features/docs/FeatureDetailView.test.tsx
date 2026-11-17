@@ -352,6 +352,44 @@ describe("FeatureDetailView — approve/deny/request-change (s4)", () => {
     expect(await within(section).findByText(/proposal · pending/i)).toBeInTheDocument();
   });
 
+  it("shows a clickable PR link for an applied proposal in the doc view (consus#203)", async () => {
+    const itemId = "doc:consus:.pHive/epics/sample-epic/docs/prd.md";
+    vi.stubGlobal(
+      "fetch",
+      fetchMockFor(
+        { ".pHive/epics/sample-epic/docs/prd.md": { format: "md", content: "# PRD" } },
+        {
+          auditTrail: {
+            [itemId]: [
+              {
+                kind: "proposal",
+                id: "proposal-1",
+                target_type: "doc",
+                description: "Approved",
+                status: "applied",
+                requested_by: "Mathew",
+                timestamp: "2026-08-01T00:00:00Z",
+                applied_diff: "+ line",
+                failure_reason: null,
+                pr_url: "https://github.com/acme/repo/pull/7",
+              },
+            ],
+          },
+        },
+      ),
+    );
+
+    render(<FeatureDetailView epic="sample-epic" docs={ONE_DOC} onBack={vi.fn()} />);
+    const section = await screen.findByTestId("feature-doc-.pHive/epics/sample-epic/docs/prd.md");
+
+    const pill = await within(section).findByRole("link", { name: /change applied · view pr/i });
+    expect(pill).toHaveAttribute("href", "https://github.com/acme/repo/pull/7");
+    expect(within(section).getByRole("link", { name: /^view pr$/i })).toHaveAttribute(
+      "href",
+      "https://github.com/acme/repo/pull/7",
+    );
+  });
+
   it("shows a failed proposal's history entry with its failure reason after a doc is re-viewed", async () => {
     const itemId = "doc:consus:.pHive/epics/sample-epic/docs/prd.md";
     vi.stubGlobal(

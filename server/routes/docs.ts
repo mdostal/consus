@@ -4,6 +4,7 @@ import {
   queryDocIndex,
   readDocContent,
   DocPathEscapesRepoError,
+  type DocFormat,
   type DocIndexRow,
 } from "../adapters/doc-scanner/index.js";
 import { extractDocCandidates, readGitDoc, resolveInRepos } from "../adapters/gitdocs/index.js";
@@ -49,12 +50,30 @@ interface FeatureGroupedDocs {
    *  ships, this bucket carries an active pending decision overview never
    *  does. */
   brand: FeatureDoc[];
+  /** PANT-965: phase='diagram' rows — every standalone `.mmd` file in the
+   *  repo, epic=null always. Opened through the diagram editor, not
+   *  DocRenderer. */
+  diagrams: FeatureDoc[];
 }
 
 /** The item id a doc's propose-a-change proposals target (s5). One item per
  *  repo+path, mirroring diagrams' one-item-per-repo-diagram approach. */
 export function docItemIdFor(repo: string, path: string): string {
   return `doc:${repo}:${path}`;
+}
+
+/** Upserts a doc's item row (the target its proposals need) and returns its
+ *  id. Shared with the send-out routes, which export and import against the
+ *  same item. */
+export function ensureDocItem(db: Database.Database, repo: string, path: string): string {
+  const itemId = docItemIdFor(repo, path);
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO items (id, type, title, status, source_repo, source_ref, created_at, updated_at)
+     VALUES (?, 'doc', ?, 'active', ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
+  ).run(itemId, path, repo, path, now, now);
+  return itemId;
 }
 
 export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutesOptions): void {
@@ -132,6 +151,7 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutes
     // (.pHive/brand/**), epic=null always — same fixed-tag shape as
     // overview above, bucketed separately (see FeatureGroupedDocs.brand).
     const brand: FeatureDoc[] = [];
+    const diagrams: FeatureDoc[] = [];
 
     for (const repo of scopedRepos) {
       for (const row of queryDocIndex(db, repo)) {
@@ -144,6 +164,8 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutes
           overview.push(doc);
         } else if (row.phase === "brand") {
           brand.push(doc);
+        } else if (row.phase === "diagram") {
+          diagrams.push(doc);
         } else if (row.epic !== null) {
           const docs = docsByEpic.get(row.epic) ?? [];
           docs.push(doc);
@@ -156,7 +178,7 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutes
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([epic, docs]) => ({ epic, docCount: docs.length, docs }));
 
-    const result: FeatureGroupedDocs = { features, overview, brand };
+    const result: FeatureGroupedDocs = { features, overview, brand, diagrams };
     return result;
   });
 
@@ -170,7 +192,7 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutes
       }
 
       let content: string;
-      let format: "md" | "html";
+      let format: DocFormat;
       if (ref) {
         // git show exits non-zero (execFileSync throws) for an invalid/
         // nonexistent ref — caught here so callers get a clear 400 instead
@@ -199,13 +221,7 @@ export function registerDocRoutes(app: FastifyInstance, { db, repos }: DocRoutes
       // Ensure a target item exists before the caller can propose a change to
       // this doc (s3's proposeChange requires a real item row) — upserted on
       // every open, matching the diagram route's pattern (s4).
-      const itemId = docItemIdFor(repo, path);
-      const now = new Date().toISOString();
-      db.prepare(
-        `INSERT INTO items (id, type, title, status, source_repo, source_ref, created_at, updated_at)
-       VALUES (?, 'doc', ?, 'active', ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
-      ).run(itemId, path, repo, path, now, now);
+      const itemId = ensureDocItem(db, repo, path);
 
       // s3 (consus-phase29-brand-decision-review): the doc's current
       // doc_index phase tag ('brand', 'overview', 'planning', etc.), looked

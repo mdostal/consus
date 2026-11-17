@@ -118,6 +118,74 @@ describe("POST /api/proposals/:id/result", () => {
     expect(body[0].status).toBe("applied");
   });
 
+  it("stores a reported PR link and returns it as pr_url from GET /api/proposals (consus#203)", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/proposals/${proposalId}/result`,
+      payload: { status: "applied", prUrl: "https://github.com/acme/repo/pull/7" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().pr_url).toBe("https://github.com/acme/repo/pull/7");
+    const list = await app.inject({ method: "GET", url: "/api/proposals?itemId=item-1" });
+    expect(list.json()[0]).toMatchObject({ status: "applied", pr_url: "https://github.com/acme/repo/pull/7" });
+  });
+
+  it("accepts Pantheon's pr_url field name too", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/proposals/${proposalId}/result`,
+      payload: { status: "applied", pr_url: "https://github.com/acme/repo/pull/9" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().pr_url).toBe("https://github.com/acme/repo/pull/9");
+  });
+
+  it("leaves pr_url null when the result carries no PR link", async () => {
+    const res = await app.inject({ method: "POST", url: `/api/proposals/${proposalId}/result`, payload: { status: "applied" } });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ status: "applied", pr_url: null });
+  });
+
+  it("rejects a PR link that isn't an http(s) URL with 400 and leaves the proposal pending", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/proposals/${proposalId}/result`,
+      payload: { status: "applied", prUrl: "javascript:alert(1)" },
+    });
+
+    expect(res.statusCode).toBe(400);
+    const list = await app.inject({ method: "GET", url: "/api/proposals?itemId=item-1" });
+    expect(list.json()[0].status).toBe("pending");
+  });
+
+  it("returns 200 with the unchanged row when the same result is reported again", async () => {
+    const url = `/api/proposals/${proposalId}/result`;
+    const first = await app.inject({ method: "POST", url, payload: { status: "applied" } });
+    const second = await app.inject({ method: "POST", url, payload: { status: "applied" } });
+
+    expect(second.statusCode).toBe(200);
+    expect(second.json()).toEqual(first.json());
+    const audit = db.prepare("SELECT COUNT(*) AS n FROM audit_log").get() as { n: number };
+    expect(audit.n).toBe(1);
+  });
+
+  it.each([
+    ["applied", "failed"],
+    ["failed", "applied"],
+  ] as const)("409s on %s -> %s and leaves the row unchanged", async (first, second) => {
+    const url = `/api/proposals/${proposalId}/result`;
+    const firstRes = await app.inject({ method: "POST", url, payload: { status: first } });
+
+    const res = await app.inject({ method: "POST", url, payload: { status: second } });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toMatch(/already/);
+    expect(db.prepare("SELECT * FROM proposals WHERE id = ?").get(proposalId)).toEqual(firstRes.json());
+  });
+
   it("404s for an unknown proposal id", async () => {
     const res = await app.inject({
       method: "POST",

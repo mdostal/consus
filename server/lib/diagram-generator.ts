@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { basename, join } from "node:path";
+import { existsInside } from "../security/paths.js";
 
 export interface DiagramResult {
   topLevel: string;
@@ -99,7 +100,7 @@ function findDesignDiscussionDocs(repoPath: string): string[] {
   }
   return epicNames
     .map((epic) => join(epicsDir, epic, "docs", "design-discussion.md"))
-    .filter((docPath) => existsSync(docPath));
+    .filter((docPath) => existsSync(docPath) && existsInside(repoPath, docPath));
 }
 
 /** Pulls file-path-shaped inline code spans (e.g. `server/adapters/foo.ts`) out of a design doc as component mentions. */

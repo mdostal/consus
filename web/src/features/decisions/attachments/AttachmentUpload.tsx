@@ -1,10 +1,12 @@
-import { useCallback, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from "react";
+import { useCallback, useId, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent } from "react";
 
 export interface AttachmentUploadProps {
   onUpload: (file: File) => void;
   isUploading: boolean;
   uploadingFileName: string | null;
   error: string | null;
+  /** Name of the most recent successful upload, announced to screen readers. */
+  lastUploadedFileName?: string | null;
 }
 
 /**
@@ -22,8 +24,15 @@ export interface AttachmentUploadProps {
  *    which file types are allowed; this component just surfaces whatever
  *    specific error the server returns.
  */
-export function AttachmentUpload({ onUpload, isUploading, uploadingFileName, error }: AttachmentUploadProps) {
+export function AttachmentUpload({
+  onUpload,
+  isUploading,
+  uploadingFileName,
+  error,
+  lastUploadedFileName = null,
+}: AttachmentUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const hintId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
@@ -66,6 +75,18 @@ export function AttachmentUpload({ onUpload, isUploading, uploadingFileName, err
 
   return (
     <div className="attachments__upload-wrap">
+      {/* Kept outside the role="button" dropzone (nesting a focusable input
+          inside it is an axe nested-interactive violation) and out of the
+          tab order -- the dropzone is the one keyboard stop, and opens this
+          picker on Enter/Space. */}
+      <input
+        ref={inputRef}
+        type="file"
+        className="attachments__file-input"
+        aria-label="Choose a file to upload"
+        tabIndex={-1}
+        onChange={handleFileInput}
+      />
       <div
         className={`attachments__dropzone ${isDragging ? "attachments__dropzone--active" : ""}`}
         onDragOver={handleDragOver}
@@ -76,24 +97,26 @@ export function AttachmentUpload({ onUpload, isUploading, uploadingFileName, err
         role="button"
         tabIndex={0}
         aria-label="Upload attachment"
+        aria-describedby={hintId}
       >
-        <input
-          ref={inputRef}
-          type="file"
-          className="attachments__file-input"
-          aria-label="Choose a file to upload"
-          onChange={handleFileInput}
-        />
-        <p className="attachments__dropzone-hint">Drag and drop a file here, or click to choose one (max 10MB).</p>
+        <p id={hintId} className="attachments__dropzone-hint">
+          Drag and drop a file here, or click to choose one (max 10MB).
+        </p>
       </div>
-
-      {isUploading ? (
-        <p className="state" role="status">
-          Uploading {uploadingFileName ?? "file"}…
+      {/* Always mounted so screen readers pick up the change -- a live region
+          that appears together with its first message is often not announced. */}
+      <div role="status" aria-live="polite" className="attachments__status">
+        {isUploading ? (
+          <p className="state">Uploading {uploadingFileName ?? "file"}…</p>
+        ) : lastUploadedFileName ? (
+          <span className="visually-hidden">Uploaded {lastUploadedFileName}.</span>
+        ) : null}
+      </div>
+      {error ? (
+        <p className="state state--err" role="alert">
+          {error}
         </p>
       ) : null}
-
-      {error ? <p className="state state--err">{error}</p> : null}
     </div>
   );
 }

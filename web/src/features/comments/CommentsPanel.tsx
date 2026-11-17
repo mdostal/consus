@@ -21,6 +21,7 @@ export interface CommentsPanelProps {
 export function CommentsPanel({ itemId }: CommentsPanelProps) {
   const [comments, setComments] = useState<Comment[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState("");
 
   const loadComments = useCallback(async () => {
     try {
@@ -40,6 +41,7 @@ export function CommentsPanel({ itemId }: CommentsPanelProps) {
 
   async function submitComment(body: string) {
     setError(null);
+    setAnnouncement("");
     try {
       const res = await fetch(`/api/items/${encodeURIComponent(itemId)}/comments`, {
         method: "POST",
@@ -48,6 +50,7 @@ export function CommentsPanel({ itemId }: CommentsPanelProps) {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       await loadComments();
+      setAnnouncement("Comment posted.");
     } catch {
       setError("Could not post comment.");
     }
@@ -60,7 +63,14 @@ export function CommentsPanel({ itemId }: CommentsPanelProps) {
   return (
     <div className="comments-panel">
       <CommentThread comments={comments} onSubmit={submitComment} />
-      {error ? <p className="state state--err">{error}</p> : null}
+      <p role="status" aria-live="polite" className="visually-hidden">
+        {announcement}
+      </p>
+      {error ? (
+        <p className="state state--err" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

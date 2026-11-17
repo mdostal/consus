@@ -37,6 +37,7 @@ export function AttachmentsPanel({ itemId }: AttachmentsPanelProps) {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadingFileName, setUploadingFileName] = useState<string | null>(null);
+  const [lastUploadedFileName, setLastUploadedFileName] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadAttachments = useCallback(async () => {
@@ -58,6 +59,7 @@ export function AttachmentsPanel({ itemId }: AttachmentsPanelProps) {
 
   async function handleUpload(file: File) {
     setUploadError(null);
+    setLastUploadedFileName(null);
     setIsUploading(true);
     setUploadingFileName(file.name);
     try {
@@ -81,6 +83,7 @@ export function AttachmentsPanel({ itemId }: AttachmentsPanelProps) {
       // source of truth for list state, no risk of the appended item's
       // shape drifting from what a real GET returns.
       await loadAttachments();
+      setLastUploadedFileName(file.name);
     } catch (e) {
       setUploadError(`Could not upload file: ${(e as Error).message}`);
     } finally {
@@ -110,9 +113,14 @@ export function AttachmentsPanel({ itemId }: AttachmentsPanelProps) {
         isUploading={isUploading}
         uploadingFileName={uploadingFileName}
         error={uploadError}
+        lastUploadedFileName={lastUploadedFileName}
       />
 
-      {deleteError ? <p className="state state--err">{deleteError}</p> : null}
+      {deleteError ? (
+        <p className="state state--err" role="alert">
+          {deleteError}
+        </p>
+      ) : null}
 
       {attachments === null ? (
         <p className="state">Loading attachments…</p>

@@ -72,6 +72,25 @@ describe("GET /api/decisions", () => {
 
     expect(body[0].decision_payload).toEqual(JSON.parse(PAYLOAD));
   });
+
+  it("reports supporting_material_count as live attachments + artifact links (PANT-919)", async () => {
+    insertItem(db, "bare", PAYLOAD);
+    insertItem(db, "rich", PAYLOAD);
+    const now = new Date().toISOString();
+    const insertAttachment = db.prepare(
+      "INSERT INTO attachments (id, item_id, file_name, mime_type, size, actor, created_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    );
+    insertAttachment.run("att-1", "rich", "a.png", "image/png", 1, "agent", now, null);
+    insertAttachment.run("att-2", "rich", "gone.png", "image/png", 1, "agent", now, now); // soft-deleted: not counted
+    db.prepare("INSERT INTO artifact_links (item_id, url, label) VALUES (?, ?, ?)").run("rich", "https://example.com", null);
+
+    const res = await app.inject({ method: "GET", url: "/api/decisions" });
+    const counts = Object.fromEntries(
+      res.json().map((i: { id: string; supporting_material_count: number }) => [i.id, i.supporting_material_count]),
+    );
+
+    expect(counts).toEqual({ bare: 0, rich: 2 });
+  });
 });
 
 describe("POST /api/decisions", () => {
