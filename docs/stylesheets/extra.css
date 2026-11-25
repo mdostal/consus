@@ -69,3 +69,55 @@ h1, h2, h3,
 .md-typeset .admonition {
   border-left-color: #9C6316;
 }
+
+/* Mermaid diagrams — Material derives label text from --md-code-fg-color
+   (parchment here), which made every label unreadable. Set them explicitly. */
+[data-md-color-scheme="default"] {
+  --md-mermaid-node-bg-color:  #ECE8F6;
+  --md-mermaid-node-fg-color:  #362B6B;
+  --md-mermaid-label-bg-color: #FAF7F0;
+  --md-mermaid-label-fg-color: #241d4d;
+  --md-mermaid-edge-color:     #6b6575;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-mermaid-node-bg-color:  #2a2250;
+  --md-mermaid-node-fg-color:  #c9bfff;
+  --md-mermaid-label-bg-color: #1a1530;
+  --md-mermaid-label-fg-color: #ECE8F5;
+  --md-mermaid-edge-color:     #a59fb3;
+}
+
+/* Code blocks are always the dark indigo surface, so syntax colours must be
+   tuned for a dark background in BOTH schemes (Material's light defaults failed contrast). */
+:root,
+[data-md-color-scheme="default"],
+[data-md-color-scheme="slate"] {
+  --md-code-fg-color:                #FAF7F0;
+  --md-code-hl-color:                rgba(196, 136, 43, 0.25);
+  --md-code-hl-number-color:         #ff9a8a;
+  --md-code-hl-special-color:        #ff9ec0;
+  --md-code-hl-function-color:       #e6a8f5;
+  --md-code-hl-constant-color:       #c2b8ff;
+  --md-code-hl-keyword-color:        #9fbcff;
+  --md-code-hl-string-color:         #7ee0ad;
+  --md-code-hl-name-color:           #FAF7F0;
+  --md-code-hl-operator-color:       #ddd7ec;
+  --md-code-hl-punctuation-color:    #ddd7ec;
+  --md-code-hl-comment-color:        #bdb5d6;
+  --md-code-hl-generic-color:        #ddd7ec;
+  --md-code-hl-variable-color:       #ffd59a;
+}
+
+/* Inline code inside a link keeps a readable gold on the dark pill */
+.md-typeset a code {
+  color: #f0c27a;
+}
+
+/* Dark mode: the hard-coded gold link colour is too dark on #1a1530 */
+[data-md-color-scheme="slate"] .md-typeset a {
+  color: #e0a94e;
+}
+[data-md-color-scheme="slate"] .md-typeset a:hover {
+  color: #f0c27a;
+}
