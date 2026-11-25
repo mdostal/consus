@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { insideAnyRoot, isWithin, realOrResolved } from "../security/paths.js";
 
 export interface FsListEntry {
   name: string;
@@ -15,6 +16,14 @@ export interface FsRoutesOptions {
    *  mirroring server/index.ts's webRoot override convention. Production
    *  callers (server/index.ts's buildServer) never pass this. */
   homeDir?: string;
+  /** t1e-consus-project-guard: when set (Consus is guarded by Pantheon's
+   *  operator token), listing is confined to these roots
+   *  (CONSUS_DISCOVERY_ROOTS) and defaults to the first one instead of the
+   *  home directory; an empty array refuses every listing. Undefined
+   *  (standalone): unconfined, as before. */
+  allowedRoots?: string[];
+  /** Never listed, guarded or not (the shared secrets volume). */
+  protectedDirs?: string[];
 }
 
 /** True when `path` (raw, pre-resolve query value) contains a literal `..`
@@ -66,7 +75,10 @@ export function listSubdirectories(dirPath: string): FsListEntry[] {
  * docs/api-reference.md's callout for why this is unsuitable behind
  * HOST=0.0.0.0.
  */
-export function registerFsRoutes(app: FastifyInstance, { homeDir = homedir() }: FsRoutesOptions = {}): void {
+export function registerFsRoutes(
+  app: FastifyInstance,
+  { homeDir = homedir(), allowedRoots, protectedDirs = [] }: FsRoutesOptions = {},
+): void {
   app.get<{ Querystring: { path?: string } }>("/api/fs/list", async (request, reply) => {
     const { path } = request.query ?? {};
 
@@ -74,9 +86,21 @@ export function registerFsRoutes(app: FastifyInstance, { homeDir = homedir() }: 
       return reply.code(400).send({ error: `path may not contain ".." segments: ${path}` });
     }
 
-    const dirPath = resolve(path || homeDir);
+    const defaultDir = allowedRoots ? allowedRoots[0] : homeDir;
+    if (!path && !defaultDir) {
+      return reply.code(403).send({ error: "directory listing is closed: CONSUS_DISCOVERY_ROOTS is not set" });
+    }
+    const dirPath = resolve(path || defaultDir!);
     if (!existsSync(dirPath) || !statSync(dirPath).isDirectory()) {
       return reply.code(400).send({ error: `path does not exist or is not a directory: ${dirPath}` });
+    }
+    const realDir = realpathSync(dirPath);
+    if (allowedRoots && !insideAnyRoot(realDir, allowedRoots)) {
+      return reply.code(403).send({ error: `path is outside CONSUS_DISCOVERY_ROOTS: ${dirPath}` });
+    }
+    const inProtected = protectedDirs.find((dir) => dir && isWithin(realOrResolved(dir), realDir));
+    if (inProtected) {
+      return reply.code(403).send({ error: `path is inside the protected directory ${inProtected}` });
     }
 
     return { path: dirPath, entries: listSubdirectories(dirPath) };

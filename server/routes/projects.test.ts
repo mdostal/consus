@@ -32,6 +32,7 @@ describe("GET /api/projects", () => {
     expect(res.json()).toEqual({
       projects: ["consus", "other"],
       paths: { consus: "/tmp/consus", other: "/tmp/other" },
+      clients: { consus: null, other: null },
     });
   });
 
@@ -189,6 +190,7 @@ describe("POST /api/projects", () => {
     expect(res.json()).toEqual({
       project: "new-repo",
       path: newRepoDir,
+      client: null,
       docsScanned: 1,
       eventsCreated: 1,
     });

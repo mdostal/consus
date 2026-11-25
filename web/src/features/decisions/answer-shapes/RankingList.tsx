@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { RankingPayload, Verdict } from "./types";
 
 export interface RankingListProps {
@@ -20,6 +20,24 @@ export interface RankingListProps {
 export function RankingList({ payload, onVerdict }: RankingListProps) {
   const [order, setOrder] = useState<string[]>(() => payload.items.map((item) => item.id));
   const [dragId, setDragId] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  // Keyboard reordering (PANT-812): the moved row keeps its DOM node (rows
+  // are keyed by item id), so focus normally rides along on the pressed
+  // button. When that button becomes disabled (the row reached the top or
+  // bottom) focus would drop to <body>, so it is handed to the row's other
+  // move button instead.
+  const moveButtons = useRef(new Map<string, HTMLButtonElement | null>());
+  const pendingFocus = useRef<{ id: string; direction: "up" | "down" } | null>(null);
+
+  useEffect(() => {
+    const pending = pendingFocus.current;
+    if (!pending) return;
+    pendingFocus.current = null;
+    const pressed = moveButtons.current.get(`${pending.id}:${pending.direction}`);
+    if (pressed && pressed.disabled) {
+      moveButtons.current.get(`${pending.id}:${pending.direction === "up" ? "down" : "up"}`)?.focus();
+    }
+  }, [order]);
 
   const byId = new Map(payload.items.map((item) => [item.id, item]));
 
@@ -33,12 +51,21 @@ export function RankingList({ payload, onVerdict }: RankingListProps) {
     });
   }
 
+  function move(index: number, direction: "up" | "down") {
+    const toIndex = direction === "up" ? index - 1 : index + 1;
+    if (toIndex < 0 || toIndex >= order.length) return;
+    const id = order[index];
+    pendingFocus.current = { id, direction };
+    reorder(index, toIndex);
+    setAnnouncement(`${byId.get(id)?.label ?? id} moved to position ${toIndex + 1} of ${order.length}.`);
+  }
+
   function moveUp(index: number) {
-    reorder(index, index - 1);
+    move(index, "up");
   }
 
   function moveDown(index: number) {
-    reorder(index, index + 1);
+    move(index, "down");
   }
 
   function handleDrop(index: number) {
@@ -72,11 +99,22 @@ export function RankingList({ payload, onVerdict }: RankingListProps) {
             >
               <span className="ranking-list__item-rank">{index + 1}</span>
               <span className="ranking-list__item-label">{item.label}</span>
-              <button type="button" aria-label={`Move ${item.label} up`} disabled={index === 0} onClick={() => moveUp(index)}>
+              <button
+                type="button"
+                ref={(el) => {
+                  moveButtons.current.set(`${id}:up`, el);
+                }}
+                aria-label={`Move ${item.label} up`}
+                disabled={index === 0}
+                onClick={() => moveUp(index)}
+              >
                 ↑
               </button>
               <button
                 type="button"
+                ref={(el) => {
+                  moveButtons.current.set(`${id}:down`, el);
+                }}
                 aria-label={`Move ${item.label} down`}
                 disabled={index === order.length - 1}
                 onClick={() => moveDown(index)}
@@ -87,6 +125,9 @@ export function RankingList({ payload, onVerdict }: RankingListProps) {
           );
         })}
       </ol>
+      <p role="status" aria-live="polite" className="visually-hidden">
+        {announcement}
+      </p>
 
       <div className="ranking-list__actions">
         <button type="button" onClick={() => onVerdict({ kind: "ranked", order })}>

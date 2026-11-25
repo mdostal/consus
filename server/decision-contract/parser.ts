@@ -372,6 +372,34 @@ export function parseDecisionPayload(input: string): DecisionPayload | null {
   return parseHeuristicPayload(input);
 }
 
+/**
+ * PANT-937: structural check for a `research` array (ResearchSection[]) an
+ * agent edits in after creation. Returns the first problem found, or null.
+ */
+export function validateResearchSections(value: unknown): string | null {
+  if (!Array.isArray(value)) return "research must be an array";
+  for (const [i, section] of value.entries()) {
+    if (!section || typeof section !== "object") return `research[${i}] must be an object`;
+    const { title, body, sources } = section as { title?: unknown; body?: unknown; sources?: unknown };
+    if (typeof title !== "string" || !title.trim()) return `research[${i}].title must be a non-empty string`;
+    if (typeof body !== "string") return `research[${i}].body must be a string`;
+    if (sources !== undefined && (!Array.isArray(sources) || !sources.every((s) => typeof s === "string"))) {
+      return `research[${i}].sources must be an array of strings`;
+    }
+  }
+  return null;
+}
+
+/** PANT-937: structural check for a `doc` live-git pointer (DecisionDocPointer). */
+export function validateDocPointer(value: unknown): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "doc must be an object";
+  const { repo, path, ref } = value as { repo?: unknown; path?: unknown; ref?: unknown };
+  if (typeof repo !== "string" || !repo) return "doc.repo must be a non-empty string";
+  if (typeof path !== "string" || !path) return "doc.path must be a non-empty string";
+  if (ref !== undefined && typeof ref !== "string") return "doc.ref must be a string";
+  return null;
+}
+
 export function serializeDecisionPayload(payload: DecisionPayload): string {
   return JSON.stringify(payload);
 }

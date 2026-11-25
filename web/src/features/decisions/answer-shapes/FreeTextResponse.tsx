@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { FreeTextPayload, Verdict } from "./types";
 
 export interface FreeTextResponseProps {
@@ -15,16 +15,18 @@ export interface FreeTextResponseProps {
  */
 export function FreeTextResponse({ payload, onVerdict }: FreeTextResponseProps) {
   const [text, setText] = useState("");
+  // Unique per instance: a survey can render several free-text members at
+  // once, and a fixed id would point every <label> at the first textarea.
+  const inputId = useId();
 
   return (
     <div className="free-text-response">
       <p className="free-text-response__context">{payload.context}</p>
-      <label className="free-text-response__prompt" htmlFor="free-text-response-input">
+      <label className="free-text-response__prompt" htmlFor={inputId}>
         {payload.prompt}
       </label>
       <textarea
-        id="free-text-response-input"
-        aria-label={payload.prompt}
+        id={inputId}
         value={text}
         onChange={(e) => setText(e.target.value)}
       />

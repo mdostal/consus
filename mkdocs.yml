@@ -70,6 +70,7 @@ nav:
   - Agent Integration:
     - Claude Code Skill: agent-integration/skill.md
     - Harness Transport: agent-integration/harness-transport.md
+    - Agent Threads: agent-integration/threads.md
     - Examples: agent-integration/examples.md
   - Visual System:
     - Skins: visual/skins.md

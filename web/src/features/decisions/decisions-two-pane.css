@@ -64,6 +64,33 @@
   border-color: color-mix(in srgb, var(--consus-accent) 40%, transparent);
 }
 
+/* consus#211: one pinned group per operator question ticket — the survey
+ * row, then its open questions indented beneath it. */
+.decision-list__ticket-group > ul {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--consus-accent) 35%, transparent);
+  border-radius: calc(12px * var(--consus-radius-scale, 1));
+  background: color-mix(in srgb, var(--consus-accent) 5%, transparent);
+}
+
+.decision-list__row--question {
+  margin-left: 14px;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+.decision-list__ticket {
+  font-family: var(--consus-font-mono, monospace);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--consus-accent);
+}
+
 .decision-list__row-title {
   font-family: var(--consus-font-ui);
   font-size: 13.5px;

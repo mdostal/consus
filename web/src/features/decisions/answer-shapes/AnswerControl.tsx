@@ -95,7 +95,7 @@ export function AnswerControl({ payload, onVerdict }: AnswerControlProps) {
             <label>
               <input
                 type="checkbox"
-                aria-label={option.title}
+                aria-label={`Include ${option.title} in mix`}
                 checked={mixSelected.includes(option.id)}
                 onChange={() => toggleMix(option.id)}
               />

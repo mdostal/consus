@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { DocRenderer } from "./DocRenderer";
 import { DocDiffCheck } from "./DocDiffCheck";
+import { SendOutPanel } from "../send-out/SendOutPanel";
 import type { AuditTrailEntry } from "../audit/AuditPanel";
 import type { FeatureDoc } from "./FeatureBrowser";
 import { designAssetUrl, isDesignDoc, resolveDesignImageSrc } from "./designAssets";
@@ -272,6 +273,13 @@ export function FeatureDetailView({ epic, docs, onBack, branch }: FeatureDetailV
             ) : null}
 
             {rev.reviewError ? <p className="state state--err">{rev.reviewError}</p> : null}
+
+            {state && state.status === "done" ? (
+              <SendOutPanel
+                target={{ type: "doc", repo: doc.repo, path: doc.file_path }}
+                onProposalCreated={() => loadAuditTrail(key, state.itemId)}
+              />
+            ) : null}
 
             {branch ? <DocDiffCheck repo={doc.repo} path={doc.file_path} branch={branch} /> : null}
             {!state || state.status === "loading" ? (
